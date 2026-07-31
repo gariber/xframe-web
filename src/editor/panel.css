@@ -28,3 +28,19 @@
 .xf-swatches { display: grid; grid-template-columns: repeat(8, 1fr); gap: 5px; margin-top: 10px; }
 .xf-sw { aspect-ratio: 3/4; border-radius: 6px; border: 1px solid #d9d3c9; cursor: pointer; padding: 0; }
 .xf-sw[aria-pressed="true"] { outline: 2px solid #16130f; outline-offset: 1px; }
+
+/* 手動輸入模式（spec §4.0 的降級路徑） */
+.xf-manual { display: flex; flex-direction: column; gap: 10px; padding: 16px; }
+.xf-manual label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #7a736a; }
+.xf-manual input, .xf-manual textarea {
+  font: inherit; padding: 7px 9px; border: 1px solid #d9d3c9; border-radius: 8px;
+  background: #fff; color: #16130f; width: 100%; box-sizing: border-box;
+}
+.xf-manual textarea { resize: vertical; line-height: 1.5; }
+.xf-manual-note { font-size: 12px; line-height: 1.5; color: #9a938a; }
+.xf-manual-actions { display: flex; gap: 8px; }
+.xf-manual-actions button {
+  flex: 1; padding: 9px; border-radius: 8px; border: 1px solid #d9d3c9;
+  background: #fff; color: #16130f; font: inherit; cursor: pointer;
+}
+.xf-manual-actions button[type="submit"] { background: #16130f; color: #fff; border-color: #16130f; }

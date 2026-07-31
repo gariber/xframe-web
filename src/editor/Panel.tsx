@@ -5,6 +5,7 @@ import { PRESETS, generate, randomPreset } from '../render/backgrounds'
 import { exportPng, buildFilename, downloadBlob } from '../render/export'
 import { loadSettings, saveSettings } from './store'
 import { parseTweet, extractTweetId } from '../parse/microdata'
+import { buildManualTweet, type ManualInput } from './manual'
 // type-only：只要背景模組的型別，不能把 `addListener` 的側作用拉進內容腳本的
 // bundle。混進值匯入的話，vite 會把整個 background/index.ts（包含它 import
 // 的 fetch-tweet、asset-proxy）一起打進 content script。
@@ -14,6 +15,10 @@ type Status =
   | { phase: 'loading' }
   | { phase: 'ready'; tweet: TweetData }
   | { phase: 'error'; message: string }
+  // 手動輸入。spec §4.0 把它列為「X 停止對未登入請求提供 microdata」這個
+  // 殘餘風險的唯一緩解手段：屆時每一則推文都會解析失敗，沒有這條路擴充功能
+  // 就完全沒有可用的降級模式。
+  | { phase: 'manual' }
 
 const ERROR_TEXT: Record<string, string> = {
   'not-found': '這則推文已不存在',
@@ -44,6 +49,7 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
   // 重試不改變 permalink，所以不能只靠 permalink 當 effect 依賴——需要一個
   // 每次點「重試」就變動的值，讓下面抓推文的 effect 重新跑一次。
   const [retryCount, setRetryCount] = useState(0)
+  const [manualInput, setManualInput] = useState<ManualInput>({ name: '', handle: '', text: '' })
   const cardRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -101,7 +107,52 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
             <button type="button" class="xf-retry" onClick={() => setRetryCount((n) => n + 1)}>
               重試
             </button>
+            <button type="button" class="xf-retry" onClick={() => setStatus({ phase: 'manual' })}>
+              手動輸入
+            </button>
           </div>
+        )}
+        {status.phase === 'manual' && (
+          <form
+            class="xf-manual"
+            onSubmit={(e) => {
+              e.preventDefault()
+              const tweet = buildManualTweet(manualInput)
+              // 必填欄位不齊時 buildManualTweet 回傳 null。停在原地讓 required
+              // 屬性提示使用者，絕不產出殘缺圖（spec §7）。
+              if (tweet) setStatus({ phase: 'ready', tweet })
+            }}
+          >
+            <label>
+              作者名稱
+              <input
+                type="text" required value={manualInput.name}
+                onInput={(e) => setManualInput({ ...manualInput, name: e.currentTarget.value })}
+              />
+            </label>
+            <label>
+              帳號
+              <input
+                type="text" required placeholder="thsottiaux" value={manualInput.handle}
+                onInput={(e) => setManualInput({ ...manualInput, handle: e.currentTarget.value })}
+              />
+            </label>
+            <label class="xf-manual-text">
+              推文內文
+              <textarea
+                required rows={6} value={manualInput.text}
+                onInput={(e) => setManualInput({ ...manualInput, text: e.currentTarget.value })}
+              />
+            </label>
+            <div class="xf-manual-note">
+              手動模式不含頭像、圖片、互動數與引用推文 —— 這些無法由你補上，
+              卡片會以既有的降級樣式呈現。
+            </div>
+            <div class="xf-manual-actions">
+              <button type="submit">套用</button>
+              <button type="button" onClick={() => setRetryCount((n) => n + 1)}>取消</button>
+            </div>
+          </form>
         )}
         {status.phase === 'ready' && <Card tweet={status.tweet} settings={settings} />}
       </div>
