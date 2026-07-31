@@ -1,4 +1,4 @@
-import type { TweetData, Stats, Author } from '../types'
+import type { TweetData, Stats, Author, Media } from '../types'
 
 const INTERACTION: Record<string, keyof Stats> = {
   'https://schema.org/ReplyAction': 'replies',
@@ -66,6 +66,21 @@ function parseStats(article: Element): Stats {
   return stats
 }
 
+/**
+ * 取得屬於此 article 的圖片。
+ * `img.closest('article') === article` 是正確歸屬的關鍵：若圖片位於巢狀的
+ * 引用推文內，其最近的 article 祖先會是引用推文而非外層推文。
+ */
+function parseMedia(article: Element): Media[] {
+  return [...article.querySelectorAll('img[src*="pbs.twimg.com/media/"]')]
+    .filter((img) => img.closest('article') === article)
+    .map((img) => ({
+      url: img.getAttribute('src') ?? '',
+      alt: img.getAttribute('alt') ?? '',
+    }))
+    .filter((m) => m.url !== '')
+}
+
 /** 解析單一 article 節點。不含引用推文與圖片，由 Task 4 補上。 */
 export function parseArticle(article: Element): Omit<TweetData, 'quoted' | 'media' | 'text'> | null {
   const author = parseAuthor(article)
@@ -100,5 +115,20 @@ export function parseTweet(html: string, tweetId: string): TweetData | null {
   const base = parseArticle(article)
   if (!base) return null
 
-  return { ...base, text: [], media: [] }
+  // 引用推文不是直接子節點，須以後代選擇器尋找
+  const citeEl = article.querySelector('article[itemprop="citation"]')
+  let quoted: Omit<TweetData, 'quoted'> | undefined
+  if (citeEl) {
+    const cbase = parseArticle(citeEl)
+    if (cbase) {
+      quoted = { ...cbase, text: [], media: parseMedia(citeEl) }
+    }
+  }
+
+  return {
+    ...base,
+    text: [],
+    media: parseMedia(article),
+    ...(quoted ? { quoted } : {}),
+  }
 }

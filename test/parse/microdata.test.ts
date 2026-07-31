@@ -96,3 +96,60 @@ describe('parseTweet 失敗路徑', () => {
     expect(parseTweet('<html><body><p>hi</p></body></html>', '123')).toBeNull()
   })
 })
+
+describe('parseTweet 圖片', () => {
+  it('抓到推文自己的圖片', () => {
+    const t = parseTweet(fx('media'), '2083061426923475451')!
+    expect(t.media.length).toBeGreaterThan(0)
+    expect(t.media[0].url).toContain('pbs.twimg.com/media/')
+  })
+
+  it('純文字推文的 media 為空陣列', () => {
+    const t = parseTweet(fx('plain'), '2083053369351090254')!
+    expect(t.media).toEqual([])
+  })
+
+  it('不把引用推文的圖片算成外層推文的圖片', () => {
+    const t = parseTweet(fx('quoted-with-media'), '2082981910209540352')!
+    const quotedUrls = new Set(t.quoted?.media.map((m) => m.url) ?? [])
+    for (const m of t.media) expect(quotedUrls.has(m.url)).toBe(false)
+  })
+
+  // 上一個測試在 quoted-with-media.html 上其實是空集合對空集合：該 fixture 裡，外層
+  // 推文（2082981910209540352）與其引用推文（2082855170296205719）皆沒有符合
+  // `pbs.twimg.com/media/` 的 <img>（引用推文帶的是 amplify_video_thumb 影片縮圖，
+  // 不是靜態圖片），所以那個測試即使完全不做歸屬過濾也會通過，證明不了任何事。
+  //
+  // 真正能證明 `img.closest('article') === article` 有效的案例是 quoted.html：
+  // 外層推文（2082883636177916306）本身沒有圖片，但其引用推文
+  // （2082878156483219672）帶有一張 `pbs.twimg.com/media/HOfepUra4AAUEZi` 圖片。
+  // 已實測驗證：若對外層 article 做未加範圍限制的
+  // `querySelectorAll('img[src*="pbs.twimg.com/media/"]')`，會把這張引用推文的圖片
+  // 一併撈出來；只有用 closest('article') === article 過濾才能正確把它排除、同時保留
+  // 在引用推文自己的 media 裡。
+  it('引用推文有自己的圖片時，該圖片不會外洩到外層推文的 media（非空集合驗證）', () => {
+    const t = parseTweet(fx('quoted'), '2082883636177916306')!
+    expect(t.quoted?.media.length).toBeGreaterThan(0)
+    expect(t.quoted?.media[0].url).toContain('pbs.twimg.com/media/')
+    const quotedUrls = new Set(t.quoted?.media.map((m) => m.url) ?? [])
+    expect(t.media.some((m) => quotedUrls.has(m.url))).toBe(false)
+    expect(t.media).toEqual([])
+  })
+})
+
+describe('parseTweet 引用推文', () => {
+  const t = parseTweet(fx('quoted'), '2082883636177916306')!
+
+  it('有 quoted 欄位', () => expect(t.quoted).toBeDefined())
+  it('引用推文的作者不同於外層', () =>
+    expect(t.quoted!.author.handle).not.toBe(t.author.handle))
+  it('引用推文有內文', () =>
+    expect(t.quoted!.rawText.length).toBeGreaterThan(0))
+  it('引用推文不再遞迴巢狀', () =>
+    expect((t.quoted as Record<string, unknown>).quoted).toBeUndefined())
+
+  it('純文字推文沒有 quoted', () => {
+    const p = parseTweet(fx('plain'), '2083053369351090254')!
+    expect(p.quoted).toBeUndefined()
+  })
+})
