@@ -2420,7 +2420,253 @@ git commit -m "feat: 編輯器面板與端到端串接"
 
 ---
 
-## Task 12: 上架素材
+## Task 12: 開發預覽頁
+
+**Files:**
+- Create: `dev/index.html`
+- Create: `dev/main.tsx`
+- Create: `dev/fixture.ts`
+- Modify: `vite.config.ts`（加入 dev 模式的 rollup 進入點）
+- Modify: `package.json`（加入 `dev:preview` script）
+
+**Interfaces:**
+- Consumes: `Card`、`DEFAULT_SETTINGS`、`parseTweet`、`Panel` 的控制項
+- Produces: `npm run dev:preview` 啟動一個純網頁，可在無擴充功能環境下驗證渲染與匯出
+
+**存在理由：** 擴充功能必須載入真 Chrome 才能測，開發過程中無法自動驗證渲染層。本頁把 `Card` 與控制項當普通網頁跑，讓渲染、中文換行、引用推文、PNG 匯出都能在開發時驗證，也用於產生商店截圖。不打包進擴充功能。
+
+- [ ] **Step 1: 建立 fixture 載入模組**
+
+`dev/fixture.ts`：
+
+```ts
+import type { TweetData } from '../src/types'
+import { parseTweet } from '../src/parse/microdata'
+import { upgradeAvatarUrl, upgradeMediaUrl } from '../src/background/asset-proxy'
+
+/** 開發頁直接以瀏覽器 fetch 取得資產並轉 data URL，不經 service worker。 */
+async function toDataUrl(url: string): Promise<string | undefined> {
+  try {
+    const res = await fetch(url)
+    if (!res.ok) return undefined
+    const blob = await res.blob()
+    return await new Promise((resolve) => {
+      const r = new FileReader()
+      r.onload = () => resolve(r.result as string)
+      r.onerror = () => resolve(undefined as never)
+      r.readAsDataURL(blob)
+    })
+  } catch {
+    return undefined
+  }
+}
+
+async function hydrate<T extends Omit<TweetData, 'quoted'>>(t: T): Promise<T> {
+  const avatarUrl = upgradeAvatarUrl(t.author.avatarUrl)
+  return {
+    ...t,
+    author: { ...t.author, avatarUrl, avatarDataUrl: await toDataUrl(avatarUrl) },
+    media: await Promise.all(
+      t.media.map(async (m) => {
+        const url = upgradeMediaUrl(m.url)
+        return { ...m, url, dataUrl: await toDataUrl(url) }
+      }),
+    ),
+  }
+}
+
+export const FIXTURES = {
+  plain: '2083053369351090254',
+  quoted: '2082883636177916306',
+  media: '2083061426923475451',
+  'quoted-with-media': '2082981910209540352',
+} as const
+
+export async function loadFixture(name: keyof typeof FIXTURES): Promise<TweetData> {
+  const html = await (await fetch(`/test/fixtures/${name}.html`)).text()
+  const tweet = parseTweet(html, FIXTURES[name])
+  if (!tweet) throw new Error(`fixture ${name} 解析失敗`)
+  const outer = await hydrate(tweet)
+  return tweet.quoted ? { ...outer, quoted: await hydrate(tweet.quoted) } : outer
+}
+```
+
+- [ ] **Step 2: 建立預覽頁 HTML**
+
+`dev/index.html`：
+
+```html
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>XFrame 開發預覽</title>
+    <style>
+      body { margin: 0; font: 14px/1.5 -apple-system, "PingFang TC", system-ui, sans-serif; background: #f3efe8; }
+      #app { display: grid; grid-template-columns: 1fr 420px; min-height: 100vh; }
+      .stage { padding: 32px; overflow: auto; }
+      .stage > * { max-width: 720px; margin: 0 auto; box-shadow: 0 12px 40px rgba(0,0,0,.15); }
+      .picker { display: flex; gap: 8px; max-width: 720px; margin: 0 auto 16px; }
+      .picker button { padding: 6px 12px; border-radius: 8px; border: 1px solid #d9d3c9; background: #fff; cursor: pointer; }
+      .picker button[aria-pressed="true"] { background: #16130f; color: #fff; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>
+```
+
+- [ ] **Step 3: 建立預覽頁進入點**
+
+`dev/main.tsx`：
+
+```tsx
+import { render } from 'preact'
+import { useEffect, useState } from 'preact/hooks'
+import type { TweetData, CardSettings } from '../src/types'
+import { Card, DEFAULT_SETTINGS } from '../src/render/Card'
+import { PRESETS, generate, randomPreset } from '../src/render/backgrounds'
+import { exportPng, buildFilename, downloadBlob } from '../src/render/export'
+import { loadFixture, FIXTURES } from './fixture'
+
+type Name = keyof typeof FIXTURES
+
+function App() {
+  const [name, setName] = useState<Name>('plain')
+  const [tweet, setTweet] = useState<TweetData | null>(null)
+  const [settings, setSettings] = useState<CardSettings>(DEFAULT_SETTINGS)
+
+  useEffect(() => {
+    setTweet(null)
+    loadFixture(name).then(setTweet)
+  }, [name])
+
+  const patch = (p: Partial<CardSettings>) => setSettings({ ...settings, ...p })
+
+  const doExport = async () => {
+    const node = document.querySelector('[data-part="canvas"]') as HTMLElement | null
+    if (!node || !tweet) return
+    downloadBlob(await exportPng(node, settings), buildFilename(tweet))
+  }
+
+  return (
+    <>
+      <div class="stage">
+        <div class="picker">
+          {(Object.keys(FIXTURES) as Name[]).map((n) => (
+            <button key={n} type="button" aria-pressed={n === name} onClick={() => setName(n)}>{n}</button>
+          ))}
+        </div>
+        {tweet ? <Card tweet={tweet} settings={settings} /> : <p style="text-align:center">載入中…</p>}
+      </div>
+      <div class="xf-panel" style="padding:16px;background:#faf7f2;overflow:auto">
+        <button type="button" onClick={doExport} style="width:100%;padding:12px;margin-bottom:16px">下載 PNG</button>
+        <label>留白 {settings.padding}
+          <input type="range" min={24} max={160} value={settings.padding}
+            onInput={(e) => patch({ padding: +e.currentTarget.value })} />
+        </label>
+        <label>文字尺寸 {settings.fontSize}
+          <input type="range" min={13} max={40} value={settings.fontSize}
+            onInput={(e) => patch({ fontSize: +e.currentTarget.value })} />
+        </label>
+        <label>底板透明度 {Math.round(settings.panelOpacity * 100)}%
+          <input type="range" min={0} max={100} value={settings.panelOpacity * 100}
+            onInput={(e) => patch({ panelOpacity: +e.currentTarget.value / 100 })} />
+        </label>
+        <label>比例
+          <select value={settings.aspect}
+            onChange={(e) => patch({ aspect: e.currentTarget.value as CardSettings['aspect'] })}>
+            <option value="auto">自動高度</option>
+            <option value="1:1">1:1</option>
+            <option value="4:5">4:5</option>
+            <option value="16:9">16:9</option>
+          </select>
+        </label>
+        <button type="button" onClick={() => patch({ background: randomPreset() })}>隨機生成</button>
+        <div style="display:grid;grid-template-columns:repeat(8,1fr);gap:5px;margin-top:10px">
+          {PRESETS.map((p) => (
+            <button key={`${p.kind}-${p.palette}`} type="button"
+              aria-label={`${p.kind} ${p.palette}`}
+              style={{ aspectRatio: '3/4', borderRadius: 6, border: '1px solid #d9d3c9', cursor: 'pointer', padding: 0, background: generate(p.kind, p.palette, p.seed) }}
+              onClick={() => patch({ background: { ...p } })} />
+          ))}
+        </div>
+      </div>
+    </>
+  )
+}
+
+render(<App />, document.getElementById('app')!)
+```
+
+- [ ] **Step 4: 加入 npm script**
+
+在 `package.json` 的 `scripts` 加入：
+
+```json
+"dev:preview": "vite --config vite.preview.config.ts"
+```
+
+- [ ] **Step 5: 建立預覽頁專用 vite 設定**
+
+`vite.preview.config.ts`（獨立設定，避免 CRXJS 外掛干擾一般網頁模式）：
+
+```ts
+import { defineConfig } from 'vite'
+import preact from '@preact/preset-vite'
+
+export default defineConfig({
+  root: 'dev',
+  publicDir: false,
+  plugins: [preact()],
+  server: {
+    port: 5199,
+    fs: { allow: ['..'] },
+  },
+})
+```
+
+安裝所需依賴：
+
+```bash
+npm i -D @preact/preset-vite
+```
+
+> `dev/fixture.ts` 以 `/test/fixtures/*.html` 路徑取得 fixture。因為 `root: 'dev'`，需在 `vite.preview.config.ts` 加入靜態對應：於 `server` 同層加上
+> ```ts
+> resolve: { alias: { '/test': new URL('./test', import.meta.url).pathname } },
+> ```
+> 若仍取不到，改為在 `dev/fixture.ts` 使用 `import.meta.glob('../test/fixtures/*.html', { query: '?raw', import: 'default', eager: true })` 直接內嵌。以能跑通為準。
+
+- [ ] **Step 6: 驗證預覽頁**
+
+Run: `npm run dev:preview`
+Expected: 服務啟動於 `http://localhost:5199`
+
+在瀏覽器開啟並確認：
+
+- [ ] 四個 fixture 按鈕都能切換且卡片正確渲染
+- [ ] 頭像清晰、非破圖
+- [ ] `quoted` fixture 顯示巢狀引用區塊
+- [ ] `media` fixture 顯示推文圖片
+- [ ] `quoted-with-media` 的圖片歸屬正確（不重複出現在外層）
+- [ ] 拉動滑桿預覽即時更新
+- [ ] 點背景縮圖預覽即時更新
+- [ ] 下載 PNG 成功，且與預覽一致
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add -A
+git commit -m "feat: 開發預覽頁，可在無擴充功能環境驗證渲染與匯出"
+```
+
+---
+
+## Task 13: 上架素材
 
 **Files:**
 - Create: `PRIVACY.md`
@@ -2498,7 +2744,7 @@ XFrame 僅對以下網域發出請求：
 
 - [ ] **Step 3: 產生商店截圖**
 
-在 X 上開啟編輯器，用系統截圖工具拍下四張 1280×800 PNG，存入 `store/screenshots/`：
+用 Task 12 的開發預覽頁（`npm run dev:preview`）拍攝，視窗設為 1280×800。存入 `store/screenshots/`：
 
 1. `01-editor.png` — 編輯器開啟，顯示卡片預覽與側邊控制項
 2. `02-backgrounds.png` — 背景選擇區展開，40 張縮圖可見
