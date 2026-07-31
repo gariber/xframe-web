@@ -1,6 +1,7 @@
+import { useLayoutEffect, useRef, useState } from 'preact/hooks'
 import type { TweetData, CardSettings, Segment, Media } from '../types'
 import { generate, GRAIN_DATA_URI } from './backgrounds'
-import { ASPECT_RATIO, accentFrom } from './card.css'
+import { ASPECT_VALUE, accentFrom } from './card.css'
 
 export const DEFAULT_SETTINGS: CardSettings = {
   background: { kind: 'mesh', palette: 'sunset', seed: 1 },
@@ -97,16 +98,38 @@ function MediaGrid({ media }: { media: Media[] }) {
 }
 
 /**
+ * 固定比例模式下，同一份寬度能分到的高度差異很大：4:5 是三種固定比例裡最高的
+ * （height = width × 1.25），1:1 居中（height = width），16:9 最矮
+ * （height = width × 0.5625，只有 4:5 的約 45%）。用同一個縮小係數對待三者，
+ * 16:9 會嚴重不夠、4:5 又可能縮過頭，所以按比例分開調。這些是手動調校的經驗
+ * 值，不是量測後反覆逼近——量測寬度只用於 Card 元件下面的定值 height 計算。
+ */
+const ASPECT_SHRINK: Record<CardSettings['aspect'], number> = {
+  auto: 1,
+  '1:1': 0.85,
+  '4:5': 0.92,
+  '16:9': 0.6,
+}
+
+const ASPECT_MAX_CHARS: Record<CardSettings['aspect'], number> = {
+  auto: 900,
+  '1:1': 640,
+  '4:5': 760,
+  '16:9': 300,
+}
+
+/**
  * 推文過長時自動縮字級。
  * 以字元數估算：中日韓文字寬度約為拉丁字母兩倍，故加權計算。
  *
- * `aspect` 也是輸入之一：固定比例模式下畫布高度被 aspect-ratio 鎖死、不會像
- * auto 模式隨內容長高，可用的內容高度遠小於 auto。因此非 auto 比例額外套一層
- * 適度的縮小係數（作用在 base 上，不動下面既有的 floor 鎖定值），讓固定比例
- * 模式傾向縮字級而不是把畫布撐出比例。
+ * `aspect` 也是輸入之一：固定比例模式下畫布高度是量測寬度後算出的定值，不會
+ * 像 auto 模式隨內容長高，可用的內容高度遠小於 auto，且三種固定比例彼此差異
+ * 很大（見 ASPECT_SHRINK 說明）。因此非 auto 比例依各自可用高度套上不同的
+ * 縮小係數（作用在 base 上，不動下面既有的 floor 鎖定值），讓固定比例模式
+ * 傾向縮字級而不是把內容撐出畫布。
  */
 function fitFontSize(base: number, raw: string, aspect: CardSettings['aspect']): number {
-  const effectiveBase = aspect === 'auto' ? base : base * 0.82
+  const effectiveBase = base * ASPECT_SHRINK[aspect]
   const cjk = (raw.match(/[一-鿿぀-ヿ가-힯]/g) ?? []).length
   const weighted = raw.length + cjk
   if (weighted <= 140) return effectiveBase
@@ -115,9 +138,9 @@ function fitFontSize(base: number, raw: string, aspect: CardSettings['aspect']):
   return Math.max(11, effectiveBase * 0.58)
 }
 
-/** 固定比例模式可用高度遠小於 auto，同一份文字要更早被截斷。 */
+/** 固定比例模式可用高度遠小於 auto，同一份文字要更早被截斷；16:9 又比 4:5 緊得多。 */
 function maxCharsFor(aspect: CardSettings['aspect']): number {
-  return aspect === 'auto' ? 900 : 450
+  return ASPECT_MAX_CHARS[aspect]
 }
 
 export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSettings }) {
@@ -127,20 +150,62 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
   const fontSize = fitFontSize(s.fontSize, tweet.rawText, s.aspect)
   const truncated = tweet.rawText.length > maxCharsFor(s.aspect)
 
+  const canvasRef = useRef<HTMLDivElement>(null)
+  const ratio = ASPECT_VALUE[s.aspect]
+  const [fixedHeight, setFixedHeight] = useState<number | undefined>(undefined)
+
+  // CSS 的 aspect-ratio 在真瀏覽器下實測會輸給內容：畫布是 flex 容器、面板是
+  // 內容驅動高度的 flex item，兩者對「auto 高度該怎麼算」互相打架時，
+  // aspect-ratio 不保證贏（16:9 撐高達 14%）。改成量測目前寬度、直接算出一個
+  // 定值 px 高度指定給 height——一個具體的長度不會再參與那場輸贏未定的
+  // 自動定size演算法，比例由建構方式保證成立。只在非 auto 時量測；量到 0
+  // （例如測試環境沒有真正的排版引擎、或元素還沒被插入 DOM）就會得到
+  // height:0，這是量測值本身的極限，不是這段邏輯的 bug。
+  useLayoutEffect(() => {
+    const el = canvasRef.current
+    if (!el || ratio === undefined) {
+      setFixedHeight(undefined)
+      return
+    }
+    const measure = () => setFixedHeight(el.getBoundingClientRect().width / ratio)
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [ratio])
+
   return (
     <div
+      ref={canvasRef}
       data-part="canvas"
       style={{
         position: 'relative',
+        boxSizing: 'border-box',
+        // 定值 height 是對 border-box 算的（見上面量測邏輯：getBoundingClientRect
+        // 量到的就是 border-box 寬度）。沒有 box-sizing:border-box 的話，height
+        // 只會指定 content-box，padding 會疊加在外面把實際框撐得比目標比例更高。
         padding: s.padding,
         background: generate(s.background.kind, s.background.palette, s.background.seed),
-        aspectRatio: ASPECT_RATIO[s.aspect],
+        // 不再同時設定 CSS 的 aspect-ratio。實測過：把它跟下面這個量測出來的定值
+        // height 同時留著，兩者會互相打架——height 定案後，aspect-ratio 因為
+        // width 仍是 auto，會反過來用「新 height × ratio」去改 width，改動後的
+        // width 又觸發下面 ResizeObserver 重新量測、重新算 height……在 4:5 上
+        // 實測會一路收斂到明顯偏小的框（576×720 而不是正確的 720×900）。
+        // aspect-ratio 在這裡本來就是多餘的：useLayoutEffect 保證在瀏覽器真正
+        // 畫出東西之前就把 height 定案，CSS 版本從來沒有機會被使用者看到。
+        height: fixedHeight !== undefined ? `${fixedHeight}px` : undefined,
         // aspect-ratio 盒子在 Chrome 的預設 min-height:auto 下會被內容撐高、
-        // 蓋過比例限制；固定 minHeight:0 並隱藏溢出，讓比例本身說了算。
+        // 蓋過比例限制；固定 minHeight:0 並隱藏溢出，讓上面的定值 height（或
+        // auto 模式下單純的內容高度）說了算。
         minHeight: 0,
         overflow: 'hidden',
         display: 'flex',
-        alignItems: 'center',
+        // 內容撐爆固定比例畫布時，靠頂對齊只會截掉底部（跟本檔案原本就有的
+        // 內文截斷淡出同一個方向），置中對齊則會上下各截一半、連一定會有的
+        // 頭像／作者名都可能被切掉一半，體驗差很多。auto 模式因為畫布高度本
+        // 來就等於內容高度，永遠沒有多餘空間可置中，改這個值視覺上沒有差別。
+        alignItems: 'flex-start',
         justifyContent: 'center',
         fontFamily: s.fontFamily,
       }}

@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { render } from 'preact'
 import { Card, DEFAULT_SETTINGS } from '../../src/render/Card'
-import { ASPECT_RATIO } from '../../src/render/card.css'
 import { parseTweet } from '../../src/parse/microdata'
 import { readFileSync } from 'node:fs'
 
@@ -151,16 +150,18 @@ describe('DEFAULT_SETTINGS', () => {
 // 量到的永遠是 0/0，不會因為 aspect 設定不同而變化，斷言會恆真或恆假，量不出
 // 真的有沒有守住比例。改為對「我們設定了什麼樣式」做斷言——這是 fix 實際落地
 // 的地方，也是唯一在這個環境裡可觀察、且會在 revert 後失敗的東西。無法涵蓋的
-// 是：aspect-ratio + minHeight:0 + overflow:hidden 三者疊加後，瀏覽器實際渲染
-// 出來的框是否真的沒有被撐開——這需要真瀏覽器或視覺回歸測試，不在本檔案範圍。
+// 是：這些樣式疊加後，瀏覽器實際渲染出來的框是否真的沒有被撐開——這需要真瀏覽
+// 器或視覺回歸測試；本次已在 dev preview 手動驗證過（見
+// final-fixwave-report.md 的「Aspect ratio second pass」一節），不在本檔案
+// 自動化測試的涵蓋範圍內。
 describe('固定比例模式的版面收斂（Fix 1）', () => {
   it.each(['auto', '1:1', '4:5', '16:9'] as const)(
-    'canvas 節點套用 aspect=%s 對應的 aspect-ratio 樣式',
+    'canvas 節點不再設定 CSS 的 aspect-ratio（改用下面量測出來的定值 height，見 Fix 1 第二輪）',
     (aspect) => {
       const s = { ...DEFAULT_SETTINGS, aspect }
       const el = mount(undefined, s)
       const canvas = el.querySelector('[data-part="canvas"]') as HTMLElement
-      expect(canvas.style.aspectRatio || '').toBe(ASPECT_RATIO[aspect] ?? '')
+      expect(canvas.style.aspectRatio).toBe('')
     },
   )
 
@@ -194,5 +195,50 @@ describe('固定比例模式的版面收斂（Fix 1）', () => {
 
     expect(bodyOf('auto').style.overflow).not.toBe('hidden')
     expect(bodyOf('16:9').style.overflow).toBe('hidden')
+  })
+})
+
+// 第二輪修正：真瀏覽器實測（1280×800 viewport，dev preview，見
+// final-fixwave-report.md 的「Aspect ratio second pass」）發現 aspect-ratio
+// 本身在「畫布是 flex 容器、面板是內容驅動高度的 flex item」這個組合下不保證
+// 贏過內容的 min-content 貢獻——16:9 量到撐高 14%，即使 minHeight:0 與
+// overflow:hidden 都已經套用在 canvas 節點上。改成量測目前寬度、直接算出定值
+// px 高度指定給 height，讓比例由「這是一個具體長度」保證成立，不再參與那場
+// CSS 規格對 flex + aspect-ratio 互動語意仍不完全明確的自動定size演算法。
+//
+// 這條路徑同樣受 happy-dom 沒有排版引擎所限：量到的寬度恆為 0，算出的 height
+// 恆為 '0px'。下面的斷言證明的是「非 auto aspect 真的觸發了量測並把結果寫進
+// height」這條程式路徑本身有跑到、且 auto 模式完全不會走這條路徑——不是「量到
+// 的數字對不對」，那需要真瀏覽器，已經在 dev preview 手動驗證過。
+describe('固定比例模式改用量測寬度算出的定值 height（Fix 1 第二輪）', () => {
+  // useLayoutEffect 裡的 setFixedHeight 觸發的是「下一輪」render，Preact 預設
+  // 用 Promise.resolve().then() 排程（stock preact 沒有 debounceRendering，
+  // 見 node_modules/preact/src/component.js），不是跟初次 render 同步寫進
+  // DOM。mount() 本身是同步函式，呼叫完的當下這個第二輪 render 通常還沒被
+  // flush，所以這裡要多等一輪微工作佇列（microtask）才看得到 height 被寫入。
+  const flush = () => Promise.resolve()
+
+  it.each(['1:1', '4:5', '16:9'] as const)(
+    'aspect=%s 時，canvas 節點的 height 由 useLayoutEffect 寫入（happy-dom 下量到的寬度為 0，故為 0px）',
+    async (aspect) => {
+      const s = { ...DEFAULT_SETTINGS, aspect }
+      const el = mount(undefined, s)
+      await flush()
+      const canvas = el.querySelector('[data-part="canvas"]') as HTMLElement
+      expect(canvas.style.height).toBe('0px')
+    },
+  )
+
+  it('auto 模式下 canvas 節點不會被設定 height（維持內容驅動的高度）', async () => {
+    const el = mount()
+    await flush()
+    const canvas = el.querySelector('[data-part="canvas"]') as HTMLElement
+    expect(canvas.style.height).toBe('')
+  })
+
+  it('canvas 節點設定 box-sizing:border-box，讓定值 height 與量測到的 border-box 寬度是同一套座標系', () => {
+    const el = mount(undefined, { ...DEFAULT_SETTINGS, aspect: '16:9' })
+    const canvas = el.querySelector('[data-part="canvas"]') as HTMLElement
+    expect(canvas.style.boxSizing).toBe('border-box')
   })
 })
