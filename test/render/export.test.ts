@@ -19,4 +19,8 @@ describe('buildFilename', () => {
     const t = { ...tweet, author: { ...tweet.author, handle: 'a/b:c' } }
     expect(buildFilename(t)).not.toMatch(/[\/\\:*?"<>|]/)
   })
+  it('id 含特殊字元時仍安全', () => {
+    const t = { ...tweet, id: '123/456:789' }
+    expect(buildFilename(t)).not.toMatch(/[\/\\:*?"<>|]/)
+  })
 })

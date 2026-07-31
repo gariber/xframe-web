@@ -15,9 +15,15 @@ export async function exportPng(node: HTMLElement, settings: CardSettings): Prom
   return blob
 }
 
+/** 將字串中的非法檔名字元替換為底線 */
+function sanitizeFilenameComponent(s: string): string {
+  return s.replace(/[^\w-]/g, '_')
+}
+
 export function buildFilename(tweet: TweetData): string {
-  const safe = tweet.author.handle.replace(/[^\w-]/g, '_')
-  return `x-${safe}-${tweet.id}.png`
+  const safeHandle = sanitizeFilenameComponent(tweet.author.handle)
+  const safeId = sanitizeFilenameComponent(tweet.id)
+  return `x-${safeHandle}-${safeId}.png`
 }
 
 export function downloadBlob(blob: Blob, filename: string): void {
@@ -25,6 +31,10 @@ export function downloadBlob(blob: Blob, filename: string): void {
   const a = document.createElement('a')
   a.href = url
   a.download = filename
+  document.body.appendChild(a)
   a.click()
-  URL.revokeObjectURL(url)
+  document.body.removeChild(a)
+  // 延遲撤銷 URL 以確保瀏覽器完成下載讀取。
+  // 立即撤銷可能導致下載被截斷或取消，因為某些瀏覽器尚未讀取完整 blob。
+  setTimeout(() => URL.revokeObjectURL(url), 5000)
 }
