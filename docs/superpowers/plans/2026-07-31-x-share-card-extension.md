@@ -1834,9 +1834,11 @@ export async function exportPng(node: HTMLElement, settings: CardSettings): Prom
   return blob
 }
 
+/** 兩個欄位都來自頁面內容，都必須清理 —— id 讀自 <meta itemprop="identifier">，非受信任來源 */
+const safePart = (s: string) => s.replace(/[^\w-]/g, '_')
+
 export function buildFilename(tweet: TweetData): string {
-  const safe = tweet.author.handle.replace(/[^\w-]/g, '_')
-  return `x-${safe}-${tweet.id}.png`
+  return `x-${safePart(tweet.author.handle)}-${safePart(tweet.id)}.png`
 }
 
 export function downloadBlob(blob: Blob, filename: string): void {
@@ -1844,8 +1846,11 @@ export function downloadBlob(blob: Blob, filename: string): void {
   const a = document.createElement('a')
   a.href = url
   a.download = filename
+  document.body.appendChild(a)
   a.click()
-  URL.revokeObjectURL(url)
+  a.remove()
+  // 不可同步撤銷：部分瀏覽器尚未讀完 blob，下載會被截斷或取消
+  setTimeout(() => URL.revokeObjectURL(url), 5000)
 }
 ```
 
