@@ -83,26 +83,6 @@ export function parseArticle(article: Element): Omit<TweetData, 'quoted' | 'medi
   }
 }
 
-/**
- * 移除 `<script>` 與 `<link>` 標籤後再交給 DOMParser。
- *
- * X 的真實頁面內嵌了會操作 `document.currentScript` 的 inline script，以及
- * 會觸發字型/樣式表下載的 `<link rel="preload"|"stylesheet">`。規格上
- * DOMParser 產生的文件應該是 inert（script 不執行），但 happy-dom（測試
- * 環境）並未如此實作，執行到 `document.currentScript.remove()` 時會因
- * `currentScript` 為 null 而拋錯；`<link rel="stylesheet">` 則會觸發實際
- * 網路請求，在這台機器的假 DNS 環境下非同步失敗，污染測試輸出。
- *
- * 這兩種標籤都不承載任何 microdata（itemprop 只出現在 `<meta>` 與
- * `<div>`），移除它們對解析結果沒有影響，卻讓本模組在真實瀏覽器與
- * happy-dom 下行為一致、且是純字串操作，不引入任何環境依賴。
- */
-function sanitize(html: string): string {
-  return html
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
-    .replace(/<link\b[^>]*>/gi, '')
-}
-
 export function parseTweet(html: string, tweetId: string): TweetData | null {
   if (!html) return null
   // tweetId 一律是 extractTweetId 用 \d+ 擷取出的純數字字串，放進雙引號屬性選擇器
@@ -111,7 +91,7 @@ export function parseTweet(html: string, tweetId: string): TweetData | null {
   // 引號屬性值裡解析錯誤，選擇器完全比對不到（0 筆），所以改用純數字守衛 + 原樣
   // 內插，這比未經檢查的內插更安全，也避開了這個 happy-dom 限制。
   if (!/^\d+$/.test(tweetId)) return null
-  const doc = new DOMParser().parseFromString(sanitize(html), 'text/html')
+  const doc = new DOMParser().parseFromString(html, 'text/html')
   const article = doc.querySelector(
     `article[data-tweet-id="${tweetId}"][itemtype="https://schema.org/SocialMediaPosting"]`,
   )

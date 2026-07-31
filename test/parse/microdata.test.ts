@@ -50,6 +50,41 @@ describe('parseTweet 互動數', () => {
   })
 })
 
+describe('parseTweet 巢狀引用推文隔離', () => {
+  // quoted.html: 外層推文 2082883636177916306 內嵌了引用推文（citation）
+  // 2082878156483219672。兩者的 interactionStatistic 數字必須完全不同，
+  // 若 parseStats 不小心用了非直接子層的 querySelectorAll，會把 citation
+  // 的統計也掃進來，依 DOM 順序覆蓋掉外層自己的值。
+  //
+  // 以下期望值皆直接從 test/fixtures/quoted.html 的原始 markup 讀出，
+  // 不是憑空捏造：
+  //   外層 article（data-tweet-id="2082883636177916306"）自己的
+  //   interactionStatistic 區塊：Likes=8015 Retweets=367 Quotes=195
+  //   Replies=1003 Views=1096657
+  //   巢狀 citation article（data-tweet-id="2082878156483219672"）自己的
+  //   interactionStatistic 區塊：Replies=982 Retweets=1600 Quotes=1594
+  //   Likes=16299 Views=5928637
+  const t = parseTweet(fx('quoted'), '2082883636177916306')!
+
+  it('外層推文統計取自外層自己的區塊，而非巢狀引用推文', () => {
+    expect(t).not.toBeNull()
+    expect(t.stats).toEqual({
+      replies: 1003,
+      reposts: 367,
+      quotes: 195,
+      likes: 8015,
+      views: 1096657,
+    })
+  })
+
+  it('外層推文統計不等於巢狀引用推文的統計（防止未加範圍限制的迴歸）', () => {
+    const citationStats = { replies: 982, reposts: 1600, quotes: 1594, likes: 16299, views: 5928637 }
+    for (const k of ['replies', 'reposts', 'quotes', 'likes', 'views'] as const) {
+      expect(t.stats[k]).not.toBe(citationStats[k])
+    }
+  })
+})
+
 describe('parseTweet 失敗路徑', () => {
   it('找不到指定 ID 時回傳 null', () => {
     expect(parseTweet(fx('plain'), '9999999999999999999')).toBeNull()
