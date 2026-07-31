@@ -34,4 +34,8 @@ describe('upgradeMediaUrl', () => {
     expect(upgradeMediaUrl('https://pbs.twimg.com/media/ABC?format=webp&name=medium'))
       .toContain('format=webp')
   })
+  it('name=orig 是比 large 更高階的畫質，不應被降級', () => {
+    expect(upgradeMediaUrl('https://pbs.twimg.com/media/ABC?format=webp&name=orig'))
+      .toBe('https://pbs.twimg.com/media/ABC?format=webp&name=orig')
+  })
 })

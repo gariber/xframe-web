@@ -16,6 +16,7 @@ const ERROR_TEXT: Record<string, string> = {
   'rate-limited': 'X 暫時限制了請求，請稍後再試',
   network: '網路錯誤，請重試',
   parse: '無法讀取這則推文',
+  export: '產生圖片失敗，請重試',
 }
 
 async function loadTweet(permalink: string): Promise<TweetData> {
@@ -33,9 +34,14 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
   const [status, setStatus] = useState<Status>({ phase: 'loading' })
   const [settings, setSettings] = useState<CardSettings>(DEFAULT_SETTINGS)
   const [busy, setBusy] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
   const cardRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => { loadSettings().then(setSettings) }, [])
+  useEffect(() => {
+    // 讀取失敗（例如 chrome.storage 出錯）就退回預設值，而不是留下一個永遠
+    // 不會 resolve 的 promise 靜默吞掉錯誤 —— 面板至少要能用預設設定運作。
+    loadSettings().then(setSettings).catch(() => setSettings(DEFAULT_SETTINGS))
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -58,8 +64,14 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
     const node = cardRef.current?.firstElementChild as HTMLElement | null
     if (!node || status.phase !== 'ready') return
     setBusy(true)
+    setExportError(null)
     try {
       downloadBlob(await exportPng(node, settings), buildFilename(status.tweet))
+    } catch {
+      // doExport 是裸 onClick、沒有任何東西 await 它 —— 若不在這裡自己接住，
+      // 光柵化失敗時按鈕只會默默從「產生中…」變回「下載 PNG」，使用者不會
+      // 知道下載其實沒發生。
+      setExportError(ERROR_TEXT.export)
     } finally {
       setBusy(false)
     }
@@ -81,7 +93,16 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
       <button class="xf-export" type="button" disabled={status.phase !== 'ready' || busy} onClick={doExport}>
         {busy ? '產生中…' : '下載 PNG'}
       </button>
+      {exportError && <div class="xf-export-error">{exportError}</div>}
 
+      {/*
+        exportPng 是直接對 cardRef 底下這個活生生的 DOM 節點做光柵化，光柵化
+        期間若任何設定控制項還能操作，就會在 domToBlob 還在走訪同一個節點時
+        即時 live-patch 它 —— 產生的圖可能是新舊設定混雜的畫面。用一個
+        fieldset 包住所有設定控制項，busy 時整批 disabled，是最簡單、不需要
+        自己刻鎖的做法。
+      */}
+      <fieldset class="xf-fieldset" disabled={busy}>
       <section class="xf-group">
         <h3>畫布與排版</h3>
         <label>留白 <b>{settings.padding}</b>
@@ -146,6 +167,7 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
           </label>
         ))}
       </section>
+      </fieldset>
     </div>
   )
 }

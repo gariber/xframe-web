@@ -40,14 +40,25 @@ export function startDetector(onClick: (permalink: string) => void): () => void 
   inject(document, onClick)
 
   let queued = false
+  let rafHandle: number | null = null
   const observer = new MutationObserver(() => {
     if (queued) return
     queued = true
-    requestAnimationFrame(() => {
+    rafHandle = requestAnimationFrame(() => {
       queued = false
+      rafHandle = null
       inject(document, onClick)
     })
   })
   observer.observe(document.body, { childList: true, subtree: true })
-  return () => observer.disconnect()
+  return () => {
+    observer.disconnect()
+    // observer.disconnect() 只阻止「未來」的排程；一個已經排入佇列的
+    // requestAnimationFrame 仍會在下一幀觸發，跑出呼叫端以為已經停止之後的
+    // 一次 inject()。必須主動 cancelAnimationFrame 才能讓 stop 真正停止。
+    if (rafHandle !== null) {
+      cancelAnimationFrame(rafHandle)
+      rafHandle = null
+    }
+  }
 }

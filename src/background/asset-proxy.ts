@@ -7,6 +7,8 @@ export function upgradeAvatarUrl(url: string): string {
 
 export function upgradeMediaUrl(url: string): string {
   if (!url) return url
+  // name=orig 是比 large 更高一階的畫質；不可把它「升級」成 large，那其實是降級
+  if (/[?&]name=orig(&|$)/.test(url)) return url
   if (/[?&]name=/.test(url)) return url.replace(/([?&]name=)\w+/, '$1large')
   return url + (url.includes('?') ? '&' : '?') + 'name=large'
 }

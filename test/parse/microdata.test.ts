@@ -160,4 +160,26 @@ describe('parseTweet 文字分段', () => {
     expect(t.text.length).toBeGreaterThan(0)
     expect(t.text.map((s) => ('value' in s ? s.value : '')).join('')).toBe(t.rawText)
   })
+
+  // 上面那則測試用 plain.html 的主推文，內文完全沒有 hashtag/mention/連結，
+  // tokenize() 對它只會產生單一 text 段落，斷言退化成「一個段落等於原字串」，
+  // 對 parseTweet 是否真的有做分段這件事沒有任何驗證力。
+  //
+  // media.html 裡 id=2083061426923475451 的推文（也就是「parseTweet 圖片」
+  // 測試取圖片的同一則）內文是 "@thsottiaux bruv, I was counting on you"，
+  // 真的含有一個 mention，會被切成 [mention, text] 兩段，藉此在 parseTweet
+  // 的整合層級真正驗證分段行為，而不是只驗證 tokenize() 本身（那已經在
+  // test/parse/tokenize.test.ts 涵蓋了）。
+  it('內文含 mention 時，parseTweet 回傳的 text 真的被切成多段（而非單一 text 段落假裝分段）', () => {
+    const t = parseTweet(fx('media'), '2083061426923475451')!
+    expect(t.rawText).toBe('@thsottiaux bruv, I was counting on you')
+
+    // 真正證明有分段：段落數 > 1，且至少有一段不是 'text'
+    expect(t.text.length).toBeGreaterThan(1)
+    expect(t.text.some((s) => s.type !== 'text')).toBe(true)
+    expect(t.text.some((s) => s.type === 'mention' && s.value === '@thsottiaux')).toBe(true)
+
+    // round-trip 仍要成立，證明分段沒有遺漏或重複任何字元
+    expect(t.text.map((s) => ('value' in s ? s.value : '')).join('')).toBe(t.rawText)
+  })
 })

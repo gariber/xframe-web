@@ -14,6 +14,8 @@
   background: #16130f; color: #fff; font-size: 15px; font-weight: 600; cursor: pointer;
 }
 .xf-export:disabled { opacity: .45; cursor: default; }
+.xf-export-error { margin: -8px 0 12px; font-size: 13px; text-align: center; color: #b3261e; }
+.xf-fieldset { border: none; margin: 0; padding: 0; min-width: 0; }
 .xf-group { border: 1px solid #e2ddd4; border-radius: 12px; padding: 12px; margin-bottom: 12px; background: #fff; }
 .xf-group h3 { margin: 0 0 10px; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: #7a736a; }
 .xf-group label { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 13px; }
