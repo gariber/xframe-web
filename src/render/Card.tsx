@@ -115,22 +115,14 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
   const panelBg = s.panelColor + Math.round(s.panelOpacity * 255).toString(16).padStart(2, '0')
   const fontSize = fitFontSize(s.fontSize, tweet.rawText)
   const truncated = tweet.rawText.length > MAX_CHARS
-  const background = generate(s.background.kind, s.background.palette, s.background.seed)
 
   return (
     <div
       data-part="canvas"
-      // data-bg 鏡射同一組運算結果，僅供測試讀取：happy-dom 的
-      // CSSStyleDeclaration 對多層 background（逗號分隔的漸層堆疊）shorthand
-      // 會整筆丟棄寫入（style.background 讀回空字串、cssText 也不含它），
-      // 但同一個 style 物件裡的其他屬性（padding、display…）不受影響——
-      // 因為 Preact 是逐一 key 呼叫 dom.style[key] = value，只有 background
-      // 這個 key 被 happy-dom 的 parser 拒收。真實瀏覽器不受影響。
-      data-bg={background}
       style={{
         position: 'relative',
         padding: s.padding,
-        background,
+        background: generate(s.background.kind, s.background.palette, s.background.seed),
         aspectRatio: ASPECT_RATIO[s.aspect],
         display: 'flex',
         alignItems: 'center',
