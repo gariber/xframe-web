@@ -1,0 +1,24 @@
+:host { all: initial; }
+.xf-panel {
+  position: fixed; top: 0; right: 0; bottom: 0; width: 420px; overflow-y: auto;
+  z-index: 2147483647; background: #faf7f2; color: #16130f; padding: 16px;
+  font: 14px/1.5 -apple-system, "PingFang TC", "Noto Sans TC", system-ui, sans-serif;
+  box-shadow: -8px 0 32px rgba(0,0,0,.18);
+}
+.xf-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.xf-head button { border: none; background: none; cursor: pointer; font-size: 16px; }
+.xf-preview { border: 1px solid #e2ddd4; border-radius: 12px; overflow: hidden; margin-bottom: 12px; }
+.xf-msg { padding: 48px 16px; text-align: center; color: #7a736a; }
+.xf-export {
+  width: 100%; padding: 12px; margin-bottom: 16px; border: none; border-radius: 10px;
+  background: #16130f; color: #fff; font-size: 15px; font-weight: 600; cursor: pointer;
+}
+.xf-export:disabled { opacity: .45; cursor: default; }
+.xf-group { border: 1px solid #e2ddd4; border-radius: 12px; padding: 12px; margin-bottom: 12px; background: #fff; }
+.xf-group h3 { margin: 0 0 10px; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: #7a736a; }
+.xf-group label { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 13px; }
+.xf-group label b { margin-left: auto; font-variant-numeric: tabular-nums; }
+.xf-group input[type="range"] { flex: 1 1 120px; }
+.xf-swatches { display: grid; grid-template-columns: repeat(8, 1fr); gap: 5px; margin-top: 10px; }
+.xf-sw { aspect-ratio: 3/4; border-radius: 6px; border: 1px solid #d9d3c9; cursor: pointer; padding: 0; }
+.xf-sw[aria-pressed="true"] { outline: 2px solid #16130f; outline-offset: 1px; }
