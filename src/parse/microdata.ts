@@ -1,4 +1,5 @@
 import type { TweetData, Stats, Author, Media } from '../types'
+import { tokenize } from './tokenize'
 
 const INTERACTION: Record<string, keyof Stats> = {
   'https://schema.org/ReplyAction': 'replies',
@@ -121,13 +122,13 @@ export function parseTweet(html: string, tweetId: string): TweetData | null {
   if (citeEl) {
     const cbase = parseArticle(citeEl)
     if (cbase) {
-      quoted = { ...cbase, text: [], media: parseMedia(citeEl) }
+      quoted = { ...cbase, text: tokenize(cbase.rawText), media: parseMedia(citeEl) }
     }
   }
 
   return {
     ...base,
-    text: [],
+    text: tokenize(base.rawText),
     media: parseMedia(article),
     ...(quoted ? { quoted } : {}),
   }

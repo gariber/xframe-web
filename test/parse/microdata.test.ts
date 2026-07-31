@@ -153,3 +153,11 @@ describe('parseTweet 引用推文', () => {
     expect(p.quoted).toBeUndefined()
   })
 })
+
+describe('parseTweet 文字分段', () => {
+  it('text 已分段且非空', () => {
+    const t = parseTweet(fx('plain'), '2083053369351090254')!
+    expect(t.text.length).toBeGreaterThan(0)
+    expect(t.text.map((s) => ('value' in s ? s.value : '')).join('')).toBe(t.rawText)
+  })
+})
