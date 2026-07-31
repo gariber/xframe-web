@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>XFrame 開發預覽</title>
+    <style>
+      body { margin: 0; font: 14px/1.5 -apple-system, "PingFang TC", system-ui, sans-serif; background: #f3efe8; }
+      #app { display: grid; grid-template-columns: 1fr 420px; min-height: 100vh; }
+      .stage { padding: 32px; overflow: auto; }
+      .stage > * { max-width: 720px; margin: 0 auto; box-shadow: 0 12px 40px rgba(0,0,0,.15); }
+      .picker { display: flex; gap: 8px; max-width: 720px; margin: 0 auto 16px; }
+      .picker button { padding: 6px 12px; border-radius: 8px; border: 1px solid #d9d3c9; background: #fff; cursor: pointer; }
+      .picker button[aria-pressed="true"] { background: #16130f; color: #fff; }
+      .xf-panel { background: #faf7f2; border-left: 1px solid #e2ddd4; }
+      .xf-panel label { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; font-size: 13px; }
+      .xf-panel label input[type="range"] { flex: 1 1 auto; min-width: 0; }
+      .xf-panel select { flex: 0 0 auto; padding: 4px 6px; }
+      .xf-panel > button { padding: 8px 14px; border-radius: 8px; border: 1px solid #d9d3c9; background: #fff; cursor: pointer; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

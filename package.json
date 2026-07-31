@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:preview": "vite --config vite.preview.config.ts",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
     "test:watch": "vitest"
@@ -15,6 +16,7 @@
   },
   "devDependencies": {
     "@crxjs/vite-plugin": "^2.0.0-beta.28",
+    "@preact/preset-vite": "^2.10.6",
     "@types/chrome": "^0.0.278",
     "@types/node": "^26.1.2",
     "happy-dom": "^15.7.4",
