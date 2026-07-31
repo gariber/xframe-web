@@ -1,4 +1,4 @@
-import { fetchTweetHtml, TweetFetchError } from './fetch-tweet'
+import { fetchTweetHtml, TweetFetchError, type FetchErrorKind } from './fetch-tweet'
 import { hydrateAssets } from './asset-proxy'
 import type { TweetData } from '../types'
 
@@ -9,7 +9,7 @@ export type Request =
 export type Response =
   | { ok: true; html: string }
   | { ok: true; tweet: TweetData }
-  | { ok: false; kind: string; message: string }
+  | { ok: false; kind: FetchErrorKind | 'unknown-request'; message: string }
 
 chrome.runtime.onMessage.addListener((req: Request, _sender, sendResponse) => {
   ;(async () => {
@@ -18,6 +18,12 @@ chrome.runtime.onMessage.addListener((req: Request, _sender, sendResponse) => {
         sendResponse({ ok: true, html: await fetchTweetHtml(req.url) })
       } else if (req.type === 'hydrate-assets') {
         sendResponse({ ok: true, tweet: await hydrateAssets(req.tweet) })
+      } else {
+        sendResponse({
+          ok: false,
+          kind: 'unknown-request',
+          message: `unknown request type: ${(req as { type?: string }).type}`,
+        })
       }
     } catch (e) {
       const kind = e instanceof TweetFetchError ? e.kind : 'network'
