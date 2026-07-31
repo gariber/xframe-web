@@ -1318,6 +1318,14 @@ chrome.runtime.onMessage.addListener((req: Request, _sender, sendResponse) => {
         sendResponse({ ok: true, html: await fetchTweetHtml(req.url) })
       } else if (req.type === 'hydrate-assets') {
         sendResponse({ ok: true, tweet: await hydrateAssets(req.tweet) })
+      } else {
+        // 每條路徑都必須回應。回傳 true 等於宣告「我會非同步回應」，
+        // 若某條路徑沒呼叫 sendResponse，呼叫端會永遠掛住且無錯誤可查。
+        sendResponse({
+          ok: false,
+          kind: 'unknown-request',
+          message: `unknown request type: ${(req as { type?: string }).type}`,
+        })
       }
     } catch (e) {
       const kind = e instanceof TweetFetchError ? e.kind : 'network'
