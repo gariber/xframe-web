@@ -143,6 +143,14 @@ function maxCharsFor(aspect: CardSettings['aspect']): number {
   return ASPECT_MAX_CHARS[aspect]
 }
 
+/**
+ * 固定比例模式下畫布高度被鎖死，內容仍可能比可用高度高（例如 16:9 配上
+ * quoted fixture）。此時 canvas 的 overflow:hidden 會把超出的部分整個硬切掉
+ * ——面板的邊框、陰影、文字全部在同一條線上被截斷，觀感生硬。加漸層淡出
+ * 跟本檔案 MAX_CHARS 內文截斷用的是同一套視覺語言，值也直接照抄。
+ */
+const OVERFLOW_FADE_MASK = 'linear-gradient(180deg, #000 0%, #000 88%, transparent 100%)'
+
 export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSettings }) {
   const s = settings
   const accent = accentFrom(s.textColor)
@@ -151,8 +159,10 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
   const truncated = tweet.rawText.length > maxCharsFor(s.aspect)
 
   const canvasRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
   const ratio = ASPECT_VALUE[s.aspect]
   const [fixedHeight, setFixedHeight] = useState<number | undefined>(undefined)
+  const [overflowing, setOverflowing] = useState(false)
 
   // CSS 的 aspect-ratio 在真瀏覽器下實測會輸給內容：畫布是 flex 容器、面板是
   // 內容驅動高度的 flex item，兩者對「auto 高度該怎麼算」互相打架時，
@@ -161,19 +171,36 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
   // 自動定size演算法，比例由建構方式保證成立。只在非 auto 時量測；量到 0
   // （例如測試環境沒有真正的排版引擎、或元素還沒被插入 DOM）就會得到
   // height:0，這是量測值本身的極限，不是這段邏輯的 bug。
+  //
+  // 同一輪量測順便判斷內容是否溢出可用高度：用 panel 的 scrollHeight（元素
+  // 本身沒有設定 overflow/maxHeight，不會被自己的裁切影響，scrollHeight 就是
+  // 未被任何祖先裁切前的真實內容高度）跟量到的可用高度比較。溢出時把漸層
+  // mask 套在 canvas 本身（而非 panel）——這樣淡出的是整張卡片在裁切線上的
+  // 樣子（含面板邊框、陰影），不是只有文字，才真的解決「面板邊緣被硬切」
+  // 的問題；而且 mask 直接套在會被 overflow:hidden 裁切的同一個元素上，
+  // 兩者的座標系保證一致，不需要另外換算 panel 自己的 padding/border 去對齊
+  // 裁切線。mask-image 是純繪製效果，不影響 layout，所以套上/移除它本身
+  // 不會反過來干擾下一輪對 scrollHeight 的量測——不會有「量到的高度被自己
+  // 加的裁切影響」這種自我循環的問題。
   useLayoutEffect(() => {
     const el = canvasRef.current
     if (!el || ratio === undefined) {
       setFixedHeight(undefined)
+      setOverflowing(false)
       return
     }
-    const measure = () => setFixedHeight(el.getBoundingClientRect().width / ratio)
+    const measure = () => {
+      const height = el.getBoundingClientRect().width / ratio
+      setFixedHeight(height)
+      const available = height - s.padding * 2
+      setOverflowing((panelRef.current?.scrollHeight ?? 0) > available)
+    }
     measure()
     if (typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver(measure)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [ratio])
+  }, [ratio, settings, tweet])
 
   return (
     <div
@@ -208,6 +235,10 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
         alignItems: 'flex-start',
         justifyContent: 'center',
         fontFamily: s.fontFamily,
+        // 只在實際溢出時才淡出。內容剛好塞得下卻還套上 mask，會平白把卡片
+        // 底部調暗，那是憑空製造的視覺缺陷。
+        maskImage: overflowing ? OVERFLOW_FADE_MASK : undefined,
+        WebkitMaskImage: overflowing ? OVERFLOW_FADE_MASK : undefined,
       }}
     >
       <div
@@ -222,6 +253,7 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
         }}
       />
       <div
+        ref={panelRef}
         data-part="panel"
         style={{
           position: 'relative',
