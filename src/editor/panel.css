@@ -9,6 +9,10 @@
 .xf-head button { border: none; background: none; cursor: pointer; font-size: 16px; }
 .xf-preview { border: 1px solid #e2ddd4; border-radius: 12px; overflow: hidden; margin-bottom: 12px; }
 .xf-msg { padding: 48px 16px; text-align: center; color: #7a736a; }
+.xf-retry {
+  margin-top: 12px; padding: 8px 20px; border: 1px solid #d9d3c9; border-radius: 8px;
+  background: #fff; color: #16130f; font-size: 13px; font-weight: 600; cursor: pointer;
+}
 .xf-export {
   width: 100%; padding: 12px; margin-bottom: 16px; border: none; border-radius: 10px;
   background: #16130f; color: #fff; font-size: 15px; font-weight: 600; cursor: pointer;

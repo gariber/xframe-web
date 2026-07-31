@@ -39,9 +39,9 @@ function stubChrome() {
   vi.stubGlobal('chrome', {
     runtime: {
       sendMessage: vi.fn(async (msg: { type: string }) => {
-        if (msg.type === 'fetch-tweet-html') return { ok: true, html: fx }
-        if (msg.type === 'hydrate-assets') return { ok: false }
-        return { ok: false }
+        if (msg.type === 'fetch-tweet-html') return { ok: true, type: 'fetch-tweet-html', html: fx }
+        if (msg.type === 'hydrate-assets') return { ok: false, kind: 'network', message: 'stubbed' }
+        return { ok: false, kind: 'unknown-request', message: 'stubbed' }
       }),
     },
     storage: {
@@ -122,6 +122,48 @@ describe('Panel 初始設定載入失敗處理（Fix A）', () => {
     // 面板應正常渲染並使用預設設定，而不是卡住或拋出未處理的 rejection
     expect(host.querySelector('.xf-panel')).not.toBeNull()
     expect(Number(fontSizeInput?.value || DEFAULT_SETTINGS.padding)).toBeGreaterThan(0)
+  })
+})
+
+describe('Panel 抓推文失敗時的重試按鈕（Fix 4）', () => {
+  it('錯誤畫面顯示可點擊的重試按鈕，點擊後重新發出 fetch-tweet-html 請求', async () => {
+    const sendMessage = vi.fn(async (msg: { type: string }) => {
+      if (msg.type === 'fetch-tweet-html') return { ok: false, kind: 'network', message: 'boom' }
+      return { ok: false, kind: 'unknown-request', message: 'stubbed' }
+    })
+    vi.stubGlobal('chrome', {
+      runtime: { sendMessage },
+      storage: { local: { get: vi.fn(async () => ({})), set: vi.fn(async () => {}) } },
+    })
+    vi.mocked(storeMod.loadSettings).mockResolvedValue(DEFAULT_SETTINGS)
+    render(<Panel permalink={PERMALINK} onClose={() => {}} />, host)
+
+    await waitFor(() => host.querySelector('.xf-retry') !== null)
+    const callsBeforeRetry = sendMessage.mock.calls.length
+
+    const retryBtn = host.querySelector('.xf-retry') as HTMLButtonElement
+    expect(retryBtn.tagName).toBe('BUTTON')
+    retryBtn.click()
+
+    await waitFor(() => sendMessage.mock.calls.length > callsBeforeRetry)
+    expect(sendMessage.mock.calls.at(-1)?.[0]).toMatchObject({ type: 'fetch-tweet-html' })
+  })
+})
+
+describe('Panel 未知協定回應時的錯誤文案（Fix 5）', () => {
+  it('kind 為 unknown-request 時顯示專屬文案，不會被籠統歸類成網路錯誤', async () => {
+    vi.stubGlobal('chrome', {
+      runtime: {
+        sendMessage: vi.fn(async () => ({ ok: false, kind: 'unknown-request', message: 'boom' })),
+      },
+      storage: { local: { get: vi.fn(async () => ({})), set: vi.fn(async () => {}) } },
+    })
+    vi.mocked(storeMod.loadSettings).mockResolvedValue(DEFAULT_SETTINGS)
+    render(<Panel permalink={PERMALINK} onClose={() => {}} />, host)
+
+    await waitFor(() => host.querySelector('.xf-retry') !== null)
+    expect(host.textContent).not.toContain('網路錯誤，請重試')
+    expect(host.textContent).toContain('版本不相符')
   })
 })
 

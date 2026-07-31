@@ -6,7 +6,7 @@
 
 ```bash
 npm install
-npm test          # 跑測試（115 個）
+npm test          # 跑測試（138 個）
 npm run build     # 產出 dist/
 npm run dev:preview   # 開發預覽頁 → http://localhost:5199
 ```
@@ -17,7 +17,7 @@ npm run dev:preview   # 開發預覽頁 → http://localhost:5199
 
 擷取推文不靠抓取 React DOM，而是以**未驗證請求**（`credentials: 'omit'`）取得 X 的伺服器渲染頁面，
 解析其中的 schema.org microdata。X 對未登入請求回傳的頁面帶有完整結構化資料：作者、內文、時間、
-六種互動數、巢狀引用推文。
+五種互動數（回覆／轉推／引用／讚／瀏覽）、巢狀引用推文。
 
 這比抓取混淆過的 class name 穩健得多，且測試 fixture 與正式環境請求同一份資源，無落差。
 

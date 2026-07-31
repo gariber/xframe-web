@@ -83,7 +83,7 @@ function parseMedia(article: Element): Media[] {
 }
 
 /** 解析單一 article 節點。不含引用推文與圖片，由 Task 4 補上。 */
-export function parseArticle(article: Element): Omit<TweetData, 'quoted' | 'media' | 'text'> | null {
+function parseArticle(article: Element): Omit<TweetData, 'quoted' | 'media' | 'text'> | null {
   const author = parseAuthor(article)
   const rawText = metaOf(article, 'text')
   const id = metaOf(article, 'identifier') ?? article.getAttribute('data-tweet-id')

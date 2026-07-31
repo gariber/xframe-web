@@ -6,10 +6,14 @@ import type { CardSettings, TweetData } from '../types'
  * 預覽即輸出 —— 不存在第二套渲染路徑，因此不可能出現「下載的圖跟預覽不一樣」。
  */
 export async function exportPng(node: HTMLElement, settings: CardSettings): Promise<Blob> {
-  // 資產已由 asset-proxy 全部轉為 data URL，光柵化過程不應再發出任何網路請求
+  // 資產已由 asset-proxy 全部轉為 data URL，光柵化過程不應再發出任何網路請求。
+  // modern-screenshot 的 `font` 選項預設開啟，會走訪 document.styleSheets 找
+  // @import 的字型並抓取——卡片只用系統字型堆疊，不會有東西比對到，但仍要
+  // 明確關閉，讓上面這句註解為真，也省下這趟無意義的走訪。
   const blob = await domToBlob(node, {
     scale: settings.scale,
     type: 'image/png',
+    font: false,
   })
   if (!blob) throw new Error('光柵化失敗')
   return blob

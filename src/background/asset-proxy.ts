@@ -24,7 +24,7 @@ function bytesToBase64(bytes: Uint8Array): string {
 }
 
 /** 抓圖並轉成 data URL。存在的唯一理由是繞開 canvas 跨域污染。 */
-export async function toDataUrl(url: string): Promise<string> {
+async function toDataUrl(url: string): Promise<string> {
   const res = await fetch(url, { credentials: 'omit' })
   if (!res.ok) throw new Error(`asset fetch failed: ${res.status}`)
   const buf = new Uint8Array(await res.arrayBuffer())

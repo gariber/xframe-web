@@ -23,7 +23,9 @@ function fmt(n: number | null): string {
 
 function relTime(iso: string): string {
   if (!iso) return ''
-  const diff = Date.now() - new Date(iso).getTime()
+  const created = new Date(iso).getTime()
+  if (!Number.isFinite(created)) return ''
+  const diff = Date.now() - created
   const h = Math.floor(diff / 3_600_000)
   if (h < 1) return `${Math.max(1, Math.floor(diff / 60_000))}m`
   if (h < 24) return `${h}h`
@@ -97,24 +99,33 @@ function MediaGrid({ media }: { media: Media[] }) {
 /**
  * 推文過長時自動縮字級。
  * 以字元數估算：中日韓文字寬度約為拉丁字母兩倍，故加權計算。
+ *
+ * `aspect` 也是輸入之一：固定比例模式下畫布高度被 aspect-ratio 鎖死、不會像
+ * auto 模式隨內容長高，可用的內容高度遠小於 auto。因此非 auto 比例額外套一層
+ * 適度的縮小係數（作用在 base 上，不動下面既有的 floor 鎖定值），讓固定比例
+ * 模式傾向縮字級而不是把畫布撐出比例。
  */
-function fitFontSize(base: number, raw: string): number {
+function fitFontSize(base: number, raw: string, aspect: CardSettings['aspect']): number {
+  const effectiveBase = aspect === 'auto' ? base : base * 0.82
   const cjk = (raw.match(/[一-鿿぀-ヿ가-힯]/g) ?? []).length
   const weighted = raw.length + cjk
-  if (weighted <= 140) return base
-  if (weighted <= 240) return Math.max(13, base * 0.85)
-  if (weighted <= 380) return Math.max(12, base * 0.7)
-  return Math.max(11, base * 0.58)
+  if (weighted <= 140) return effectiveBase
+  if (weighted <= 240) return Math.max(13, effectiveBase * 0.85)
+  if (weighted <= 380) return Math.max(12, effectiveBase * 0.7)
+  return Math.max(11, effectiveBase * 0.58)
 }
 
-const MAX_CHARS = 900
+/** 固定比例模式可用高度遠小於 auto，同一份文字要更早被截斷。 */
+function maxCharsFor(aspect: CardSettings['aspect']): number {
+  return aspect === 'auto' ? 900 : 450
+}
 
 export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSettings }) {
   const s = settings
   const accent = accentFrom(s.textColor)
   const panelBg = s.panelColor + Math.round(s.panelOpacity * 255).toString(16).padStart(2, '0')
-  const fontSize = fitFontSize(s.fontSize, tweet.rawText)
-  const truncated = tweet.rawText.length > MAX_CHARS
+  const fontSize = fitFontSize(s.fontSize, tweet.rawText, s.aspect)
+  const truncated = tweet.rawText.length > maxCharsFor(s.aspect)
 
   return (
     <div
@@ -124,6 +135,10 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
         padding: s.padding,
         background: generate(s.background.kind, s.background.palette, s.background.seed),
         aspectRatio: ASPECT_RATIO[s.aspect],
+        // aspect-ratio 盒子在 Chrome 的預設 min-height:auto 下會被內容撐高、
+        // 蓋過比例限制；固定 minHeight:0 並隱藏溢出，讓比例本身說了算。
+        minHeight: 0,
+        overflow: 'hidden',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',

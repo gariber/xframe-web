@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { render } from 'preact'
 import { Card, DEFAULT_SETTINGS } from '../../src/render/Card'
+import { ASPECT_RATIO } from '../../src/render/card.css'
 import { parseTweet } from '../../src/parse/microdata'
 import { readFileSync } from 'node:fs'
 
@@ -85,6 +86,23 @@ describe('Card', () => {
     expect(el.querySelector('[data-part="monogram"]')).not.toBeNull()
     expect(el.querySelector('img')).toBeNull()
   })
+
+  it('null 統計顯示為 —，0 統計正常顯示數字（spec §5：null 與 0 意義不同）', () => {
+    const t = parseTweet(fx('plain'), '2083053369351090254')!
+    t.stats = { ...t.stats, replies: null, reposts: 0 }
+    const stats = mount(t).querySelector('[data-part="stats"]') as HTMLElement
+    expect(stats.textContent).toContain('— 回覆')
+    expect(stats.textContent).toContain('0 轉推')
+  })
+})
+
+describe('createdAt 無法解析時的降級（Fix 5）', () => {
+  it('無法解析的 createdAt 不顯示 NaN，改為空字串', () => {
+    const t = parseTweet(fx('plain'), '2083053369351090254')!
+    t.createdAt = 'not-a-real-date'
+    const el = mount(t)
+    expect(el.textContent).not.toContain('NaN')
+  })
 })
 
 describe('長文自動縮字級', () => {
@@ -124,5 +142,57 @@ describe('DEFAULT_SETTINGS', () => {
   it('倍率預設 2', () => expect(DEFAULT_SETTINGS.scale).toBe(2))
   it('四個顯示項預設開啟', () => {
     expect(Object.values(DEFAULT_SETTINGS.show).every(Boolean)).toBe(true)
+  })
+})
+
+// happy-dom 沒有真正的排版引擎——document.createElement('div').getBoundingClientRect()
+// 在任何情況下都回傳全 0（已用一個獨立的最小重現案例確認過，見本次修正紀錄），
+// 所以「用固定寬度掛載卡片並量測實際渲染出的框高寬比」在這個測試環境裡做不到：
+// 量到的永遠是 0/0，不會因為 aspect 設定不同而變化，斷言會恆真或恆假，量不出
+// 真的有沒有守住比例。改為對「我們設定了什麼樣式」做斷言——這是 fix 實際落地
+// 的地方，也是唯一在這個環境裡可觀察、且會在 revert 後失敗的東西。無法涵蓋的
+// 是：aspect-ratio + minHeight:0 + overflow:hidden 三者疊加後，瀏覽器實際渲染
+// 出來的框是否真的沒有被撐開——這需要真瀏覽器或視覺回歸測試，不在本檔案範圍。
+describe('固定比例模式的版面收斂（Fix 1）', () => {
+  it.each(['auto', '1:1', '4:5', '16:9'] as const)(
+    'canvas 節點套用 aspect=%s 對應的 aspect-ratio 樣式',
+    (aspect) => {
+      const s = { ...DEFAULT_SETTINGS, aspect }
+      const el = mount(undefined, s)
+      const canvas = el.querySelector('[data-part="canvas"]') as HTMLElement
+      expect(canvas.style.aspectRatio || '').toBe(ASPECT_RATIO[aspect] ?? '')
+    },
+  )
+
+  it('canvas 節點設定 minHeight:0 與 overflow:hidden，避免 Chrome 的 min-height:auto 把比例撐開', () => {
+    const el = mount()
+    const canvas = el.querySelector('[data-part="canvas"]') as HTMLElement
+    expect(canvas.style.minHeight).toBe('0px')
+    expect(canvas.style.overflow).toBe('hidden')
+  })
+
+  it('固定比例模式下，同一段文字的字級比 auto 模式更小（可用高度被鎖死，須提早縮字）', () => {
+    const base = parseTweet(fx('plain'), '2083053369351090254')!
+    const raw = '中'.repeat(60)
+    const t = { ...base, rawText: raw, text: [{ type: 'text' as const, value: raw }] }
+    const fontSizeOf = (aspect: (typeof DEFAULT_SETTINGS)['aspect']) => {
+      const el = mount(t, { ...DEFAULT_SETTINGS, aspect })
+      return parseFloat((el.querySelector('[data-part="body"]') as HTMLElement).style.fontSize)
+    }
+    const autoSize = fontSizeOf('auto')
+    for (const aspect of ['1:1', '4:5', '16:9'] as const) {
+      expect(fontSizeOf(aspect)).toBeLessThan(autoSize)
+    }
+  })
+
+  it('固定比例模式下，同一段文字比 auto 模式更早被截斷', () => {
+    const base = parseTweet(fx('plain'), '2083053369351090254')!
+    const raw = 'a'.repeat(600)
+    const t = { ...base, rawText: raw, text: [{ type: 'text' as const, value: raw }] }
+    const bodyOf = (aspect: (typeof DEFAULT_SETTINGS)['aspect']) =>
+      mount(t, { ...DEFAULT_SETTINGS, aspect }).querySelector('[data-part="body"]') as HTMLElement
+
+    expect(bodyOf('auto').style.overflow).not.toBe('hidden')
+    expect(bodyOf('16:9').style.overflow).toBe('hidden')
   })
 })

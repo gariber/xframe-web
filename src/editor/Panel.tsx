@@ -5,6 +5,10 @@ import { PRESETS, generate, randomPreset } from '../render/backgrounds'
 import { exportPng, buildFilename, downloadBlob } from '../render/export'
 import { loadSettings, saveSettings } from './store'
 import { parseTweet, extractTweetId } from '../parse/microdata'
+// type-only：只要背景模組的型別，不能把 `addListener` 的側作用拉進內容腳本的
+// bundle。混進值匯入的話，vite 會把整個 background/index.ts（包含它 import
+// 的 fetch-tweet、asset-proxy）一起打進 content script。
+import type { Request, Response } from '../background/index'
 
 type Status =
   | { phase: 'loading' }
@@ -17,17 +21,19 @@ const ERROR_TEXT: Record<string, string> = {
   network: '網路錯誤，請重試',
   parse: '無法讀取這則推文',
   export: '產生圖片失敗，請重試',
+  'unknown-request': '擴充功能版本不相符，請重新載入頁面',
 }
 
 async function loadTweet(permalink: string): Promise<TweetData> {
   const id = extractTweetId(permalink)
   if (!id) throw new Error('parse')
-  const res = await chrome.runtime.sendMessage({ type: 'fetch-tweet-html', url: permalink })
-  if (!res?.ok) throw new Error(res?.kind ?? 'network')
+  const res = await chrome.runtime.sendMessage<Request, Response>({ type: 'fetch-tweet-html', url: permalink })
+  if (!res.ok) throw new Error(res.kind)
+  if (res.type !== 'fetch-tweet-html') throw new Error('unknown-request')
   const tweet = parseTweet(res.html, id)
   if (!tweet) throw new Error('parse')
-  const hydrated = await chrome.runtime.sendMessage({ type: 'hydrate-assets', tweet })
-  return hydrated?.ok ? hydrated.tweet : tweet
+  const hydrated = await chrome.runtime.sendMessage<Request, Response>({ type: 'hydrate-assets', tweet })
+  return hydrated.ok && hydrated.type === 'hydrate-assets' ? hydrated.tweet : tweet
 }
 
 export function Panel({ permalink, onClose }: { permalink: string; onClose: () => void }) {
@@ -35,6 +41,9 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
   const [settings, setSettings] = useState<CardSettings>(DEFAULT_SETTINGS)
   const [busy, setBusy] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
+  // 重試不改變 permalink，所以不能只靠 permalink 當 effect 依賴——需要一個
+  // 每次點「重試」就變動的值，讓下面抓推文的 effect 重新跑一次。
+  const [retryCount, setRetryCount] = useState(0)
   const cardRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -52,7 +61,7 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
         if (!cancelled) setStatus({ phase: 'error', message: ERROR_TEXT[e.message] ?? ERROR_TEXT.network })
       })
     return () => { cancelled = true }
-  }, [permalink])
+  }, [permalink, retryCount])
 
   const patch = (p: Partial<CardSettings>) => {
     const next = { ...settings, ...p }
@@ -86,7 +95,14 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
 
       <div class="xf-preview" ref={cardRef}>
         {status.phase === 'loading' && <div class="xf-msg">讀取推文中…</div>}
-        {status.phase === 'error' && <div class="xf-msg">{status.message}</div>}
+        {status.phase === 'error' && (
+          <div class="xf-msg">
+            <div>{status.message}</div>
+            <button type="button" class="xf-retry" onClick={() => setRetryCount((n) => n + 1)}>
+              重試
+            </button>
+          </div>
+        )}
         {status.phase === 'ready' && <Card tweet={status.tweet} settings={settings} />}
       </div>
 
