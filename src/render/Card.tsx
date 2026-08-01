@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'preact/hooks'
 import type { TweetData, CardSettings, Segment, Media } from '../types'
 import { generate, GRAIN_DATA_URI } from './backgrounds'
-import { ASPECT_VALUE, accentFrom } from './card.css'
+import { ASPECT_VALUE, MIN_HEIGHT_ASPECTS, accentFrom } from './card.css'
 
 export const DEFAULT_SETTINGS: CardSettings = {
   background: { kind: 'mesh', palette: 'sunset', seed: 1 },
@@ -189,6 +189,8 @@ const ASPECT_SHRINK: Record<CardSettings['aspect'], number> = {
   '1:1': 0.85,
   '4:5': 0.92,
   '16:9': 0.6,
+  // 不鎖死高度，內容長就讓畫布變高，沒有塞不下的問題
+  '9:16': 1,
 }
 
 const ASPECT_MAX_CHARS: Record<CardSettings['aspect'], number> = {
@@ -196,6 +198,7 @@ const ASPECT_MAX_CHARS: Record<CardSettings['aspect'], number> = {
   '1:1': 640,
   '4:5': 760,
   '16:9': 300,
+  '9:16': 900,
 }
 
 /**
@@ -246,6 +249,7 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
   const canvasRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const ratio = ASPECT_VALUE[s.aspect]
+  const isMinHeight = MIN_HEIGHT_ASPECTS.has(s.aspect)
   const [fixedHeight, setFixedHeight] = useState<number | undefined>(undefined)
   const [overflowing, setOverflowing] = useState(false)
 
@@ -306,11 +310,9 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
         // 實測會一路收斂到明顯偏小的框（576×720 而不是正確的 720×900）。
         // aspect-ratio 在這裡本來就是多餘的：useLayoutEffect 保證在瀏覽器真正
         // 畫出東西之前就把 height 定案，CSS 版本從來沒有機會被使用者看到。
-        height: fixedHeight !== undefined ? `${fixedHeight}px` : undefined,
-        // aspect-ratio 盒子在 Chrome 的預設 min-height:auto 下會被內容撐高、
-        // 蓋過比例限制；固定 minHeight:0 並隱藏溢出，讓上面的定值 height（或
-        // auto 模式下單純的內容高度）說了算。
-        minHeight: 0,
+        // 最小高度模式不鎖死 height，只給下限，內容更長時畫布自然變高
+        height: !isMinHeight && fixedHeight !== undefined ? `${fixedHeight}px` : undefined,
+        minHeight: isMinHeight && fixedHeight !== undefined ? `${fixedHeight}px` : 0,
         overflow: 'hidden',
         display: 'flex',
         // 內容撐爆固定比例畫布時，靠頂對齊只會截掉底部（跟本檔案原本就有的

@@ -19,7 +19,15 @@ export const ASPECT_VALUE: Record<string, number | undefined> = {
   '1:1': 1,
   '4:5': 4 / 5,
   '16:9': 16 / 9,
+  '9:16': 9 / 16,
 }
+
+/**
+ * 這些比例只保證「最小高度」，不鎖死高度 —— 內容更長時畫布繼續變高，不裁切。
+ * 與其餘固定比例的差別在此：那些是「就是這麼高，多的切掉」，這個是
+ * 「至少這麼高，不夠再長」。短推文也能填滿直式畫面（限時動態），長推文不被切。
+ */
+export const MIN_HEIGHT_ASPECTS: ReadonlySet<string> = new Set(['9:16'])
 
 /** 由文字色推導強調色：同色相、提高彩度。避免使用者要調四個顏色。 */
 export function accentFrom(textColor: string): string {

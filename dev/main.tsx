@@ -57,6 +57,7 @@ function App() {
             <option value="1:1">1:1</option>
             <option value="4:5">4:5</option>
             <option value="16:9">16:9</option>
+            <option value="9:16">9:16</option>
           </select>
         </label>
         <label>時間格式

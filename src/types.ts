@@ -75,6 +75,6 @@ export type CardSettings = {
    * `absolute` 是 `YYYY-MM-DD HH:mm`，圖片本身就帶完整資訊，適合存檔或引用。
    */
   timeFormat: 'relative' | 'absolute'
-  aspect: 'auto' | '1:1' | '4:5' | '16:9'
+  aspect: 'auto' | '1:1' | '4:5' | '16:9' | '9:16'
   scale: 2 | 3
 }

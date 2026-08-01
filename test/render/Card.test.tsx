@@ -3,6 +3,7 @@ import { render } from 'preact'
 import { Card, DEFAULT_SETTINGS } from '../../src/render/Card'
 import { parseTweet } from '../../src/parse/microdata'
 import { readFileSync } from 'node:fs'
+import type { CardSettings } from '../../src/types'
 
 const fx = (n: string) => readFileSync(`test/fixtures/${n}.html`, 'utf8')
 
@@ -400,5 +401,49 @@ describe('發文時間格式', () => {
     const t = { ...parseTweet(fx('plain'), '2083053369351090254')!, createdAt: '2026-07-31T21:54:11.000Z' }
     const el = mount(t, { ...DEFAULT_SETTINGS, timeFormat: 'absolute' })
     expect((el.querySelector('[data-part="time"]') as HTMLElement).style.whiteSpace).toBe('nowrap')
+  })
+})
+
+describe('9:16 最小高度模式', () => {
+  const at = (aspect: CardSettings['aspect']) =>
+    (mount(undefined, { ...DEFAULT_SETTINGS, aspect }).querySelector('[data-part="canvas"]') as HTMLElement).style
+
+  it('9:16 設定 minHeight 而非 height（內容更長時可繼續變高）', () => {
+    const s = at('9:16')
+    expect(s.height).toBe('')
+    expect(s.minHeight).not.toBe('0px')
+    expect(s.minHeight).toMatch(/px$/)
+  })
+
+  it('固定比例仍鎖死 height 且 minHeight 為 0', () => {
+    const s = at('16:9')
+    expect(s.height).toMatch(/px$/)
+    expect(s.minHeight).toBe('0px')
+  })
+
+  it('auto 既不設 height 也不設最小高度', () => {
+    const s = at('auto')
+    expect(s.height).toBe('')
+    expect(s.minHeight).toBe('0px')
+  })
+
+  it('9:16 不套用縮字係數（不鎖高度就沒有塞不下的問題）', () => {
+    const raw = '中'.repeat(60)
+    const withText = (aspect: CardSettings['aspect']) => {
+      const base = parseTweet(fx('plain'), '2083053369351090254')!
+      const t = { ...base, rawText: raw, text: [{ type: 'text' as const, value: raw }] }
+      const el = mount(t, { ...DEFAULT_SETTINGS, aspect })
+      return parseFloat((el.querySelector('[data-part="body"]') as HTMLElement).style.fontSize)
+    }
+    expect(withText('9:16')).toBe(withText('auto'))
+    expect(withText('16:9')).toBeLessThan(withText('auto'))
+  })
+
+  it('9:16 不截斷內文（不裁切就不需要漸層淡出）', () => {
+    const base = parseTweet(fx('plain'), '2083053369351090254')!
+    const raw = 'a'.repeat(700)
+    const t = { ...base, rawText: raw, text: [{ type: 'text' as const, value: raw }] }
+    const body = mount(t, { ...DEFAULT_SETTINGS, aspect: '9:16' }).querySelector('[data-part="body"]') as HTMLElement
+    expect(body.style.overflow).not.toBe('hidden')
   })
 })
