@@ -456,6 +456,8 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
             style={{
               display: 'flex',
               alignItems: 'center',
+              flexWrap: 'wrap',
+              rowGap: '0.35em',
               gap: '0.6em',
               marginTop: 14,
               paddingTop: 12,

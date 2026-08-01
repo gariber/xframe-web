@@ -9,8 +9,9 @@ import { Sheet } from './Sheet'
 
 const STORAGE_KEY = 'xframe.web.settings'
 
-/** 網頁版預設直式，適合限時動態；不鎖死高度，長推文會繼續變高。 */
-const WEB_DEFAULTS: CardSettings = { ...DEFAULT_SETTINGS, aspect: '9:16' }
+/** 網頁版預設直式，適合限時動態；不鎖死高度，長推文會繼續變高。
+ *  留白改小：72 是桌面尺寸，在 390px 手機上會把內容寬度壓到剩約 166px。 */
+const WEB_DEFAULTS: CardSettings = { ...DEFAULT_SETTINGS, aspect: '9:16', padding: 28 }
 
 const ERROR_TEXT: Record<string, string> = {
   'not-found': '這則推文已不存在',
@@ -65,6 +66,20 @@ export function App() {
   const [pngBlob, setPngBlob] = useState<Blob | null>(null)
   const [exportErr, setExportErr] = useState<string | null>(null)
   const cardRef = useRef<HTMLDivElement>(null)
+  // 用 ref 而非讀 state 來撤銷 —— state 在非同步 callback 裡可能是舊的閉包值，
+  // ref 永遠是「目前真正存活的那個 URL」，撤銷才不會漏掉或撤錯。
+  const pngUrlRef = useRef<string | null>(null)
+
+  // createObjectURL 產生的 URL 不會自動回收，整個分頁生命週期都會佔住記憶體，
+  // 除非明確 revokeObjectURL —— 每次換圖前先撤銷舊的，卸載時再撤銷最後一個。
+  const releasePng = () => {
+    if (pngUrlRef.current) URL.revokeObjectURL(pngUrlRef.current)
+    pngUrlRef.current = null
+    setPngUrl(null)
+    setPngBlob(null)
+  }
+
+  useEffect(() => () => { if (pngUrlRef.current) URL.revokeObjectURL(pngUrlRef.current) }, [])
 
   // 支援 ?u= 帶入，讓捷徑或書籤可以直接開啟並自動抓取
   useEffect(() => {
@@ -80,8 +95,7 @@ export function App() {
 
   async function go(target = url) {
     setStatus({ phase: 'loading' })
-    setPngUrl(null)
-    setPngBlob(null)
+    releasePng()
     try {
       setStatus({ phase: 'ready', tweet: await loadTweet(target.trim()) })
     } catch (e) {
@@ -106,8 +120,11 @@ export function App() {
     setExportErr(null)
     try {
       const blob = await exportPng(node, settings)
+      if (pngUrlRef.current) URL.revokeObjectURL(pngUrlRef.current)
+      const url = URL.createObjectURL(blob)
+      pngUrlRef.current = url
       setPngBlob(blob)
-      setPngUrl(URL.createObjectURL(blob))
+      setPngUrl(url)
     } catch {
       setExportErr(ERROR_TEXT.export)
     } finally {
@@ -127,9 +144,9 @@ export function App() {
           onInput={(e) => setUrl(e.currentTarget.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') void go() }}
         />
-        <button type="button" onClick={paste}>貼上</button>
+        <button type="button" disabled={busy} onClick={paste}>貼上</button>
       </div>
-      <button class="primary export-btn" type="button" disabled={!url.trim() || status.phase === 'loading'} onClick={() => void go()}>
+      <button class="primary export-btn" type="button" disabled={!url.trim() || status.phase === 'loading' || busy} onClick={() => void go()}>
         {status.phase === 'loading' ? '讀取中…' : '產生卡片'}
       </button>
 
