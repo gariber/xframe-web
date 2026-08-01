@@ -229,7 +229,11 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
             <option value="16:9">16:9 橫式</option>
           </select>
         </label>
-        <label>時間
+        {/*
+          「顯示項目」裡也有一個叫「時間」的核取方塊（控制顯不顯示）。兩個
+          控制項同名會讓人找不到，所以這裡明確叫「時間格式」。
+        */}
+        <label>時間格式
           <select value={settings.timeFormat}
             onChange={(e) => patch({ timeFormat: e.currentTarget.value as CardSettings['timeFormat'] })}>
             <option value="relative">相對（6h）</option>
