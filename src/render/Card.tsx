@@ -33,6 +33,36 @@ function relTime(iso: string): string {
   return `${Math.floor(h / 24)}d`
 }
 
+/**
+ * 互動數的圖示。用 inline SVG 而非 emoji：emoji 在不同系統上字形差異極大，
+ * 而且光柵化時得靠系統 emoji 字型，很容易變豆腐字或尺寸跑掉。SVG path 是
+ * 純向量、跟著 currentColor 走，匯出結果在任何機器上都一致。
+ */
+const ICON = {
+  views: 'M12 5c-5 0-9 4.5-9 7s4 7 9 7 9-4.5 9-7-4-7-9-7Zm0 11.5a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9Zm0-7a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5Z',
+  replies: 'M12 3c-5 0-9 3.3-9 7.4 0 2.3 1.3 4.4 3.3 5.7L5.6 20a.4.4 0 0 0 .6.45l4-2.3c.6.1 1.2.15 1.8.15 5 0 9-3.3 9-7.4S17 3 12 3Z',
+  reposts: 'M7 7h9.2l-2.1-2.1 1.4-1.4L19.5 8l-4 4-1.4-1.4L16.2 9H5V7h2Zm10 10H7.8l2.1 2.1-1.4 1.4L4.5 16l4-4 1.4 1.4L7.8 15H19v2h-2Z',
+  likes: 'M12 20.7 10.5 19.3C5.4 14.7 2 11.7 2 8.1 2 5.4 4.2 3.2 6.9 3.2c1.5 0 3 .7 4 1.9l1.1 1.3 1.1-1.3c1-1.2 2.5-1.9 4-1.9 2.7 0 4.9 2.2 4.9 4.9 0 3.6-3.4 6.6-8.5 11.2L12 20.7Z',
+} as const
+
+function Stat({ icon, value, label }: { icon: string; value: number | null; label: string }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4em' }}>
+      {/* 圖示尺寸綁 1em，跟著統計列的字級走，使用者拉「文字尺寸」時不會脫節 */}
+      <svg viewBox="0 0 24 24" width="1.15em" height="1.15em" role="img" aria-label={label}
+           style={{ fill: 'currentColor', flex: '0 0 auto' }}>
+        <path d={icon} />
+      </svg>
+      <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmt(value)}</span>
+    </span>
+  )
+}
+
+/** 圖 2 的視覺語言：數字之間用中點分隔，比純空白更緊湊也更有節奏 */
+function Sep() {
+  return <span aria-hidden="true" style={{ opacity: 0.45 }}>·</span>
+}
+
 function Text({ segments, accent }: { segments: Segment[]; accent: string }) {
   return (
     <>
@@ -332,7 +362,8 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
             data-part="stats"
             style={{
               display: 'flex',
-              gap: 14,
+              alignItems: 'center',
+              gap: '0.6em',
               marginTop: 14,
               paddingTop: 12,
               borderTop: '1px solid rgba(255,255,255,.1)',
@@ -340,10 +371,13 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
               fontSize: s.fontSize * 0.72,
             }}
           >
-            <span>{fmt(tweet.stats.replies)} 回覆</span>
-            <span>{fmt(tweet.stats.reposts)} 轉推</span>
-            <span>{fmt(tweet.stats.likes)} 讚</span>
-            <span>{fmt(tweet.stats.views)} 瀏覽</span>
+            <Stat icon={ICON.views} value={tweet.stats.views} label="瀏覽" />
+            <Sep />
+            <Stat icon={ICON.replies} value={tweet.stats.replies} label="回覆" />
+            <Sep />
+            <Stat icon={ICON.reposts} value={tweet.stats.reposts} label="轉推" />
+            <Sep />
+            <Stat icon={ICON.likes} value={tweet.stats.likes} label="讚" />
           </div>
         )}
       </div>

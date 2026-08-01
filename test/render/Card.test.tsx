@@ -90,8 +90,26 @@ describe('Card', () => {
     const t = parseTweet(fx('plain'), '2083053369351090254')!
     t.stats = { ...t.stats, replies: null, reposts: 0 }
     const stats = mount(t).querySelector('[data-part="stats"]') as HTMLElement
-    expect(stats.textContent).toContain('— 回覆')
-    expect(stats.textContent).toContain('0 轉推')
+    // 改用圖示的 aria-label 定位。那是圖示真正的無障礙名稱（螢幕閱讀器唯一
+    // 讀得到的東西），不是為了測試才加的鉤子 —— 換掉顯示文字不該讓這個
+    // 契約的測試失效。
+    const valueOf = (label: string) =>
+      stats.querySelector(`svg[aria-label="${label}"]`)!.parentElement!.textContent
+    expect(valueOf('回覆')).toBe('—')
+    expect(valueOf('轉推')).toBe('0')
+  })
+
+  it('四項統計皆以圖示呈現，且圖示有無障礙名稱', () => {
+    const stats = mount().querySelector('[data-part="stats"]') as HTMLElement
+    const labels = [...stats.querySelectorAll('svg[aria-label]')].map((s) => s.getAttribute('aria-label'))
+    expect(labels).toEqual(['瀏覽', '回覆', '轉推', '讚'])
+  })
+
+  it('統計列不再出現中文標籤文字', () => {
+    const stats = mount().querySelector('[data-part="stats"]') as HTMLElement
+    for (const word of ['回覆', '轉推', '讚', '瀏覽']) {
+      expect(stats.textContent).not.toContain(word)
+    }
   })
 })
 
