@@ -8,7 +8,8 @@
     "dev:preview": "vite --config vite.preview.config.ts",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "package": "npm run build && cd dist && zip -qr ../xframe-store-upload.zip . && cd .. && echo '→ xframe-store-upload.zip 已產生（manifest 在根目錄）'"
   },
   "dependencies": {
     "modern-screenshot": "^4.5.0",
