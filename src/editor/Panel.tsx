@@ -25,6 +25,7 @@ const ERROR_TEXT: Record<string, string> = {
   'not-found': '這則推文已不存在',
   'rate-limited': 'X 暫時限制了請求，請稍後再試',
   network: '網路錯誤，請重試',
+  cors: '瀏覽器擋下了這個請求',
   parse: '無法讀取這則推文',
   export: '產生圖片失敗，請重試',
   'unknown-request': '擴充功能版本不相符，請重新載入頁面',

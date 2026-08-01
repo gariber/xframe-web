@@ -1,4 +1,4 @@
-export type FetchErrorKind = 'not-found' | 'rate-limited' | 'network'
+export type FetchErrorKind = 'not-found' | 'rate-limited' | 'network' | 'cors'
 
 export class TweetFetchError extends Error {
   constructor(public kind: FetchErrorKind, message: string) {
