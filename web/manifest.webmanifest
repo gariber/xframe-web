@@ -1,0 +1,17 @@
+{
+  "name": "XFrame — 把 X 推文變成分享圖",
+  "short_name": "XFrame",
+  "description": "貼上推文網址，產生帶漸層背景的分享圖。不蒐集任何資料。",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f3efe8",
+  "theme_color": "#f3efe8",
+  "lang": "zh-Hant",
+  "icons": [
+    { "src": "./icons/icon128.png", "sizes": "128x128", "type": "image/png" },
+    { "src": "./icons/icon180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "./icons/icon512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
