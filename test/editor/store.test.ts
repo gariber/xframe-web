@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import type { CardSettings } from '../../src/types'
 import { loadSettings, saveSettings, mergeSettings } from '../../src/editor/store'
 import { DEFAULT_SETTINGS } from '../../src/render/Card'
 
@@ -51,5 +52,30 @@ describe('持久化', () => {
   it('存檔後可讀回', async () => {
     await saveSettings({ ...DEFAULT_SETTINGS, fontSize: 26 })
     expect((await loadSettings()).fontSize).toBe(26)
+  })
+})
+
+describe('timeFormat 的持久化往返', () => {
+  it('切成 absolute 後存得進去、讀得回來', async () => {
+    await saveSettings({ ...DEFAULT_SETTINGS, timeFormat: 'absolute' })
+    expect((await loadSettings()).timeFormat).toBe('absolute')
+  })
+
+  it('舊版存的設定沒有 timeFormat 時退回預設，不會變成 undefined', () => {
+    const old = { fontSize: 26, padding: 40 } as Partial<CardSettings>
+    const merged = mergeSettings(old)
+    expect(merged.timeFormat).toBe('relative')
+    expect(merged.fontSize).toBe(26)
+  })
+
+  it('mergeSettings 不會丟掉 timeFormat', () => {
+    expect(mergeSettings({ timeFormat: 'absolute' }).timeFormat).toBe('absolute')
+  })
+
+  it('切換 timeFormat 不影響其他設定', async () => {
+    await saveSettings({ ...DEFAULT_SETTINGS, fontSize: 31, timeFormat: 'absolute' })
+    const back = await loadSettings()
+    expect(back.fontSize).toBe(31)
+    expect(back.timeFormat).toBe('absolute')
   })
 })
