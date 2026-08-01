@@ -29,6 +29,28 @@ export const ASPECT_VALUE: Record<string, number | undefined> = {
  */
 export const MIN_HEIGHT_ASPECTS: ReadonlySet<string> = new Set(['9:16'])
 
+/**
+ * 決定畫布要用固定高度還是最小高度。
+ *
+ * 抽成純函式而非留在 JSX 的三元運算式裡，是為了讓這個決策本身可測。
+ * 渲染後的樣式在 happy-dom 讀不到（沒有版面引擎，且 useLayoutEffect 裡的
+ * setState 在測試同步讀取樣式時尚未 flush），但「給定模式與量測值，應該
+ * 產生什麼樣式」是純邏輯，與環境無關。
+ *
+ * 這個區別很重要：測不到有兩種，一種是環境真的做不到（實際幾何），一種是
+ * 程式碼的形狀讓它測不到（決策埋在 JSX 裡）。後者不是限制，是設計問題。
+ */
+export function canvasSizeStyle(
+  isMinHeight: boolean,
+  fixedHeight: number | undefined,
+): { height: string | undefined; minHeight: string | number } {
+  const px = fixedHeight !== undefined ? `${fixedHeight}px` : undefined
+  return {
+    height: !isMinHeight ? px : undefined,
+    minHeight: isMinHeight && px !== undefined ? px : 0,
+  }
+}
+
 /** 由文字色推導強調色：同色相、提高彩度。避免使用者要調四個顏色。 */
 export function accentFrom(textColor: string): string {
   return textColor === '#ffffff' ? '#7cc4ff' : '#1d6fd0'

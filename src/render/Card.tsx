@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'preact/hooks'
 import type { TweetData, CardSettings, Segment, Media } from '../types'
 import { generate, GRAIN_DATA_URI } from './backgrounds'
-import { ASPECT_VALUE, MIN_HEIGHT_ASPECTS, accentFrom } from './card.css'
+import { ASPECT_VALUE, MIN_HEIGHT_ASPECTS, canvasSizeStyle, accentFrom } from './card.css'
 
 export const DEFAULT_SETTINGS: CardSettings = {
   background: { kind: 'mesh', palette: 'sunset', seed: 1 },
@@ -310,9 +310,10 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
         // 實測會一路收斂到明顯偏小的框（576×720 而不是正確的 720×900）。
         // aspect-ratio 在這裡本來就是多餘的：useLayoutEffect 保證在瀏覽器真正
         // 畫出東西之前就把 height 定案，CSS 版本從來沒有機會被使用者看到。
-        // 最小高度模式不鎖死 height，只給下限，內容更長時畫布自然變高
-        height: !isMinHeight && fixedHeight !== undefined ? `${fixedHeight}px` : undefined,
-        minHeight: isMinHeight && fixedHeight !== undefined ? `${fixedHeight}px` : 0,
+        // 最小高度模式不鎖死 height，只給下限，內容更長時畫布自然變高。
+        // 決策抽在 card.css.ts 的 canvasSizeStyle 裡，因為留在這裡就測不到 ——
+        // 展開的位置必須維持在原本兩行的位置，往後挪會被後面的屬性蓋掉。
+        ...canvasSizeStyle(isMinHeight, fixedHeight),
         overflow: 'hidden',
         display: 'flex',
         // 內容撐爆固定比例畫布時，靠頂對齊只會截掉底部（跟本檔案原本就有的
