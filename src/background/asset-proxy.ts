@@ -1,8 +1,17 @@
 import type { TweetData } from '../types'
 
+/**
+ * X 的頭像網址有多種尺寸後綴，不只 `_normal`。實測登入版頁面的 DOM 拿到的是
+ * `_x96`（96px），若只認 `_normal` 就會原樣放行，拿 96px 小圖做 2x 匯出會糊掉。
+ *
+ * 已知變體：_normal(48) / _bigger(73) / _mini(24) / _x96(96) / _WxH。
+ * 一律換成 _400x400，本身就是 400x400 時取代結果相同，重複套用安全。
+ */
+const AVATAR_SIZE_SUFFIX = /_(normal|bigger|mini|x\d+|\d+x\d+)\.(jpg|jpeg|png|webp)(\?|$)/i
+
 export function upgradeAvatarUrl(url: string): string {
   if (!url) return url
-  return url.replace(/_normal\.(jpg|jpeg|png|webp)(\?|$)/i, '_400x400.$1$2')
+  return url.replace(AVATAR_SIZE_SUFFIX, '_400x400.$2$3')
 }
 
 export function upgradeMediaUrl(url: string): string {

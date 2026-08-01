@@ -93,6 +93,9 @@ function parseArticle(article: Element): Omit<TweetData, 'quoted' | 'media' | 't
     id,
     url: metaOf(article, 'url') ?? `https://x.com/${author.handle}/status/${id}`,
     author,
+    // 這個模組只解析公開頁面的 schema.org 資料，來源永遠是 microdata。
+    // DOM 降級路徑由 content/dom-fallback 負責，不會經過這裡。
+    source: 'microdata',
     rawText,
     createdAt: metaOf(article, 'dateCreated') ?? metaOf(article, 'datePublished') ?? '',
     stats: parseStats(article),

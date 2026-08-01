@@ -39,3 +39,27 @@ describe('upgradeMediaUrl', () => {
       .toBe('https://pbs.twimg.com/media/ABC?format=webp&name=orig')
   })
 })
+
+describe('upgradeAvatarUrl 的其他尺寸後綴（實測登入版 DOM 回傳 _x96）', () => {
+  const real = 'https://pbs.twimg.com/profile_images/1797436415435018240/78IKI5Gj_x96.jpg'
+
+  it('_x96 升級為 _400x400（真實網址）', () => {
+    expect(upgradeAvatarUrl(real)).toBe(
+      'https://pbs.twimg.com/profile_images/1797436415435018240/78IKI5Gj_400x400.jpg',
+    )
+  })
+
+  it.each(['_normal', '_bigger', '_mini', '_x96', '_200x200'])('%s 皆升級', (suffix) => {
+    expect(upgradeAvatarUrl(`https://p/a${suffix}.jpg`)).toBe('https://p/a_400x400.jpg')
+  })
+
+  it('已是 _400x400 時結果不變（重複套用安全）', () => {
+    const u = 'https://p/a_400x400.jpg'
+    expect(upgradeAvatarUrl(upgradeAvatarUrl(u))).toBe(u)
+  })
+
+  it('不含尺寸後綴的網址原樣返回', () => {
+    const u = 'https://p/plain.jpg'
+    expect(upgradeAvatarUrl(u)).toBe(u)
+  })
+})

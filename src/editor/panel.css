@@ -44,3 +44,13 @@
   background: #fff; color: #16130f; font: inherit; cursor: pointer;
 }
 .xf-manual-actions button[type="submit"] { background: #16130f; color: #fff; border-color: #16130f; }
+
+/* 鎖推內容提醒 */
+.xf-protected {
+  border: 1px solid #e0c088; background: #fdf6e7; color: #5c4a24;
+  border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; font-size: 13px; line-height: 1.6;
+}
+.xf-protected strong { color: #4a3a18; }
+.xf-protected p { margin: 6px 0 0; }
+.xf-protected-caveat { color: #7a6738; }
+.xf-hint { margin: 4px 0 0; font-size: 12px; line-height: 1.55; color: #9a938a; }

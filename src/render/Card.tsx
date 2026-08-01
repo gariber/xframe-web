@@ -12,6 +12,9 @@ export const DEFAULT_SETTINGS: CardSettings = {
   fontFamily: '-apple-system, "PingFang TC", "Noto Sans TC", system-ui, sans-serif',
   textColor: '#ffffff',
   show: { avatar: true, stats: true, timestamp: true, media: true },
+  // 一般推文預設不遮。鎖推來源的推文由 Panel 在載入完成時改為預設開啟 ——
+  // 那是安全的預設，但仍然是使用者可以關掉的選擇。
+  maskIdentity: false,
   aspect: 'auto',
   scale: 2,
 }
@@ -77,6 +80,25 @@ function Text({ segments, accent }: { segments: Segment[]; accent: string }) {
       )}
     </>
   )
+}
+
+export const MASKED_NAME = '匿名'
+export const MASKED_HANDLE = '•••••'
+
+/**
+ * 遮蔽後的作者資料。
+ *
+ * 三項一起處理是刻意的：顯示名稱、帳號、頭像任何一項單獨留著都足以認出人，
+ * 只遮其中一兩項等於給使用者錯誤的安全感。
+ *
+ * 首字母色塊也要一併處理 —— Avatar 在沒有頭像時會拿名稱首字當字母，若不換掉
+ * 名稱，遮蔽後的色塊仍會洩漏姓氏。改用 MASKED_NAME 後首字自然變成「匿」。
+ */
+const MASKED_AUTHOR: TweetData['author'] = {
+  name: MASKED_NAME,
+  handle: MASKED_HANDLE,
+  avatarUrl: '',
+  avatarDataUrl: undefined,
 }
 
 function Avatar({ author, size }: { author: TweetData['author']; size: number }) {
@@ -185,6 +207,11 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
   const s = settings
   const accent = accentFrom(s.textColor)
   const panelBg = s.panelColor + Math.round(s.panelOpacity * 255).toString(16).padStart(2, '0')
+  // 外層與引用推文的作者一起遮。遮蔽時卡片上不該出現任何帳號資訊 ——
+  // 留著引用推文的帳號雖然那通常是另一個人，仍會提供辨識線索。
+  const author = s.maskIdentity ? MASKED_AUTHOR : tweet.author
+  const quotedAuthor =
+    tweet.quoted && (s.maskIdentity ? MASKED_AUTHOR : tweet.quoted.author)
   const fontSize = fitFontSize(s.fontSize, tweet.rawText, s.aspect)
   const truncated = tweet.rawText.length > maxCharsFor(s.aspect)
 
@@ -299,10 +326,10 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-          {s.show.avatar && <Avatar author={tweet.author} size={44} />}
+          {s.show.avatar && <Avatar author={author} size={44} />}
           <div style={{ lineHeight: 1.2, minWidth: 0 }}>
-            <div style={{ fontWeight: 700, fontSize: s.fontSize * 0.9 }}>{tweet.author.name}</div>
-            <div style={{ opacity: 0.55, fontSize: s.fontSize * 0.8 }}>@{tweet.author.handle}</div>
+            <div style={{ fontWeight: 700, fontSize: s.fontSize * 0.9 }}>{author.name}</div>
+            <div style={{ opacity: 0.55, fontSize: s.fontSize * 0.8 }}>@{author.handle}</div>
           </div>
           {s.show.timestamp && (
             <div style={{ marginLeft: 'auto', opacity: 0.45, fontSize: s.fontSize * 0.75 }}>
@@ -346,9 +373,9 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 6 }}>
-              <Avatar author={tweet.quoted.author} size={22} />
-              <span style={{ fontWeight: 600 }}>{tweet.quoted.author.name}</span>
-              <span style={{ opacity: 0.5 }}>@{tweet.quoted.author.handle}</span>
+              <Avatar author={quotedAuthor!} size={22} />
+              <span style={{ fontWeight: 600 }}>{quotedAuthor!.name}</span>
+              <span style={{ opacity: 0.5 }}>@{quotedAuthor!.handle}</span>
             </div>
             <div style={{ lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
               <Text segments={tweet.quoted.text} accent={accent} />

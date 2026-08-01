@@ -6,6 +6,7 @@ import { exportPng, buildFilename, downloadBlob } from '../render/export'
 import { loadSettings, saveSettings } from './store'
 import { parseTweet, extractTweetId } from '../parse/microdata'
 import { buildManualTweet, type ManualInput } from './manual'
+import { extractFromDom } from '../content/dom-fallback'
 // type-only：只要背景模組的型別，不能把 `addListener` 的側作用拉進內容腳本的
 // bundle。混進值匯入的話，vite 會把整個 background/index.ts（包含它 import
 // 的 fetch-tweet、asset-proxy）一起打進 content script。
@@ -35,7 +36,12 @@ async function loadTweet(permalink: string): Promise<TweetData> {
   const res = await chrome.runtime.sendMessage<Request, Response>({ type: 'fetch-tweet-html', url: permalink })
   if (!res.ok) throw new Error(res.kind)
   if (res.type !== 'fetch-tweet-html') throw new Error('unknown-request')
-  const tweet = parseTweet(res.html, id)
+  let tweet = parseTweet(res.html, id)
+  if (!tweet) {
+    // 公開抓取拿不到內容，最常見的原因是鎖推帳號 —— 其貼文對未登入請求本來
+    // 就不可見。使用者的瀏覽器看得到（登入且獲核准），所以改從眼前的 DOM 讀。
+    tweet = extractFromDom(permalink)
+  }
   if (!tweet) throw new Error('parse')
   const hydrated = await chrome.runtime.sendMessage<Request, Response>({ type: 'hydrate-assets', tweet })
   return hydrated.ok && hydrated.type === 'hydrate-assets' ? hydrated.tweet : tweet
@@ -62,7 +68,16 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
     let cancelled = false
     setStatus({ phase: 'loading' })
     loadTweet(permalink)
-      .then((tweet) => { if (!cancelled) setStatus({ phase: 'ready', tweet }) })
+      .then((tweet) => {
+        if (cancelled) return
+        setStatus({ phase: 'ready', tweet })
+        // 鎖推來源預設開啟身分遮蔽：安全的選擇當預設，但仍可由使用者關掉。
+        // 刻意不寫進 chrome.storage —— 這是針對「這一則」的保護性預設，
+        // 若持久化，下一則公開推文會莫名其妙也被遮起來。
+        if (tweet.source === 'dom-fallback') {
+          setSettings((prev) => (prev.maskIdentity ? prev : { ...prev, maskIdentity: true }))
+        }
+      })
       .catch((e) => {
         if (!cancelled) setStatus({ phase: 'error', message: ERROR_TEXT[e.message] ?? ERROR_TEXT.network })
       })
@@ -157,6 +172,19 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
         {status.phase === 'ready' && <Card tweet={status.tweet} settings={settings} />}
       </div>
 
+      {status.phase === 'ready' && status.tweet.source === 'dom-fallback' && (
+        <div class="xf-protected" role="note">
+          <strong>這是鎖推帳號的內容</strong>
+          <p>
+            對方限制了誰能看到這則貼文。要分享出去前，請想一下傳播範圍是不是超出對方的預期。
+          </p>
+          <p class="xf-protected-caveat">
+            身分遮蔽已預設開啟，會一併蓋掉名稱、帳號與頭像。但它只處理作者資訊 ——
+            <strong>內文本身若提到人名、地點或其他線索，仍然可能被認出來</strong>，那部分要你自己判斷。
+          </p>
+        </div>
+      )}
+
       <button class="xf-export" type="button" disabled={status.phase !== 'ready' || busy} onClick={doExport}>
         {busy ? '產生中…' : '下載 PNG'}
       </button>
@@ -233,6 +261,19 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
             {{ avatar: '頭像', stats: '互動統計', timestamp: '時間', media: '推文圖片' }[k]}
           </label>
         ))}
+      </section>
+
+      <section class="xf-group">
+        <h3>隱私</h3>
+        <label>
+          <input type="checkbox" checked={settings.maskIdentity}
+            onChange={(e) => patch({ maskIdentity: e.currentTarget.checked })} />
+          遮蔽作者身分
+        </label>
+        <p class="xf-hint">
+          名稱、帳號、頭像會一起蓋掉 —— 只遮其中一項等於沒遮，剩下任何一項都能認出人。
+          內文若含可識別線索則不在處理範圍。
+        </p>
       </section>
       </fieldset>
     </div>

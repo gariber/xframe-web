@@ -260,3 +260,50 @@ describe('固定比例模式改用量測寬度算出的定值 height（Fix 1 第
     expect(canvas.style.boxSizing).toBe('border-box')
   })
 })
+
+describe('身分遮蔽（隱私）', () => {
+  const masked = { ...DEFAULT_SETTINGS, maskIdentity: true }
+
+  it('遮蔽時卡片上不出現真實名稱與帳號', () => {
+    const el = mount(undefined, masked)
+    expect(el.textContent).not.toContain('Tibo')
+    expect(el.textContent).not.toContain('thsottiaux')
+  })
+
+  it('遮蔽時不渲染任何頭像圖片，改用色塊', () => {
+    const t = parseTweet(fx('plain'), '2083053369351090254')!
+    t.author.avatarDataUrl = 'data:image/png;base64,iVBORw0KGgo='
+    const el = mount(t, masked)
+    expect(el.querySelector('img')).toBeNull()
+    expect(el.querySelector('[data-part="monogram"]')).not.toBeNull()
+  })
+
+  it('首字母色塊不洩漏姓名首字', () => {
+    const t = parseTweet(fx('plain'), '2083053369351090254')!
+    t.author.avatarDataUrl = undefined
+    const el = mount(t, masked)
+    expect(el.querySelector('[data-part="monogram"]')?.textContent).not.toBe('T')
+  })
+
+  it('引用推文的作者一併遮蔽', () => {
+    const t = parseTweet(fx('quoted'), '2082883636177916306')!
+    const el = mount(t, masked)
+    expect(el.textContent).not.toContain(t.quoted!.author.handle)
+    expect(el.textContent).not.toContain(t.quoted!.author.name)
+  })
+
+  it('關閉遮蔽時正常顯示真實身分', () => {
+    const el = mount(undefined, { ...DEFAULT_SETTINGS, maskIdentity: false })
+    expect(el.textContent).toContain('Tibo')
+    expect(el.textContent).toContain('thsottiaux')
+  })
+
+  it('遮蔽不影響內文', () => {
+    const el = mount(undefined, masked)
+    expect(el.textContent).toContain('There will be signs')
+  })
+
+  it('預設不遮蔽', () => {
+    expect(DEFAULT_SETTINGS.maskIdentity).toBe(false)
+  })
+})
