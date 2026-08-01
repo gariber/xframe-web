@@ -69,6 +69,40 @@ const tweet = (over: Partial<TweetData> = {}): TweetData => ({
   media: [], ...over,
 })
 
+describe('來源允許清單', () => {
+  it.each([
+    'https://x.com/a/status/1',
+    'https://twitter.com/a/status/1',
+    'https://mobile.twitter.com/a/status/1',
+  ])('允許 %s', async (u) => {
+    stubFetch(async () => new Response('ok', { status: 200 }))
+    await expect(fetchTweetHtml(u)).resolves.toBe('ok')
+  })
+
+  it.each([
+    'https://evil.example/x/status/1',
+    'https://x.com.evil.example/a/status/1',
+    'https://notx.com/a/status/1',
+  ])('拒絕 %s 且完全不發出請求', async (u) => {
+    const spy = vi.fn(async () => new Response('ok', { status: 200 }))
+    vi.stubGlobal('fetch', spy)
+    await expect(fetchTweetHtml(u)).rejects.toMatchObject({ kind: 'badurl' })
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('資產只允許 twimg，其餘不發請求且降級為無圖', async () => {
+    const spy = vi.fn(async () => new Response(new Uint8Array([1]), {
+      status: 200, headers: { 'content-type': 'image/png' },
+    }))
+    vi.stubGlobal('fetch', spy)
+    const t = await hydrateAssets(tweet({
+      author: { name: 'A', handle: 'a', avatarUrl: 'https://evil.example/a.png' },
+    }))
+    expect(t.author.avatarDataUrl).toBeUndefined()
+    expect(spy).not.toHaveBeenCalled()
+  })
+})
+
 describe('hydrateAssets', () => {
   it('頭像升級尺寸後轉為 data URL', async () => {
     stubFetch(async () => new Response(new Uint8Array([1, 2, 3]), {
@@ -90,7 +124,7 @@ describe('hydrateAssets', () => {
     stubFetch(async () => new Response(new Uint8Array([1]), {
       status: 200, headers: { 'content-type': 'image/png' },
     }))
-    const q = { ...tweet(), author: { name: 'B', handle: 'b', avatarUrl: 'https://p/b_normal.png' } }
+    const q = { ...tweet(), author: { name: 'B', handle: 'b', avatarUrl: 'https://pbs.twimg.com/profile_images/2/b_normal.png' } }
     const t = await hydrateAssets(tweet({ quoted: q }))
     expect(t.quoted!.author.avatarDataUrl).toMatch(/^data:image\/png;base64,/)
   })
