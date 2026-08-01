@@ -10,10 +10,19 @@ export async function exportPng(node: HTMLElement, settings: CardSettings): Prom
   // modern-screenshot 的 `font` 選項預設開啟，會走訪 document.styleSheets 找
   // @import 的字型並抓取——卡片只用系統字型堆疊，不會有東西比對到，但仍要
   // 明確關閉，讓上面這句註解為真，也省下這趟無意義的走訪。
+  // 明確傳入 offsetWidth/offsetHeight 而不讓它自己量。modern-screenshot 的
+  // resolveBoundingBox 只在沒收到尺寸時才呼叫 getBoundingClientRect()，而那個
+  // 會被祖先的 transform 影響。行動網頁版把卡片包在一層 scale() 裡讓整張塞進
+  // 預覽框，若不明確給值，匯出的圖會跟著縮成預覽大小（實測 0.23 倍）——
+  // 而且不會報錯，只會默默產出一張又小又糊的圖。
+  // offsetWidth/offsetHeight 是版面尺寸，不受 transform 影響；擴充功能沒有
+  // 縮放祖先，傳這兩個值對它而言等同原本行為。
   const blob = await domToBlob(node, {
     scale: settings.scale,
     type: 'image/png',
     font: false,
+    width: node.offsetWidth,
+    height: node.offsetHeight,
   })
   if (!blob) throw new Error('光柵化失敗')
   return blob

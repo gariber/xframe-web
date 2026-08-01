@@ -15,7 +15,25 @@ body {
 }
 .wrap { max-width: 44rem; margin: 0 auto; padding: 1rem 1rem 3rem; }
 h1 { font-size: 1.1rem; margin: 0 0 1rem; }
-.preview { border-radius: 14px; overflow: hidden; margin-bottom: 1rem; background: var(--card); }
+/* 預覽釘在畫面上方，設定往下捲時仍看得到 —— 調滑桿要能即時看到效果，
+   而不是捲上去看一眼再捲下來調。
+   高度上限有兩個作用：留空間給下方的設定，以及避免拉「文字尺寸」或「留白」
+   時卡片長高把整頁推得重排、滑桿在手指底下移動。
+   卡片本身尺寸不變，匯出結果不受影響 —— 這裡限制的是「看到多少」，
+   不是「是多大」。 */
+.preview {
+  position: sticky;
+  /* 貼齊安全區，瀏海機型不會被切到 */
+  top: env(safe-area-inset-top, 0px);
+  z-index: 5;
+  border-radius: 14px; margin-bottom: 1rem; background: var(--ground);
+  max-height: 52vh; overflow: hidden auto; overscroll-behavior: contain;
+  /* 下緣做一點陰影，讓捲動的設定內容從它底下經過時看得出層次 */
+  box-shadow: 0 8px 16px -12px rgba(0,0,0,.5);
+}
+/* 縮放包裝層：整張卡片縮到預覽框裡，而不是把下半部裁掉。
+   transform-origin 靠上置中，縮放時卡片不會往上飄離視野。 */
+.preview-fit { transform-origin: top center; }
 .msg { padding: 3rem 1rem; text-align: center; color: var(--ink-soft); }
 .msg button { margin-top: .75rem; }
 .urlbar { display: flex; gap: .5rem; margin-bottom: .75rem; }
@@ -42,7 +60,11 @@ button:disabled { opacity: .45; }
 .sheet-body label { display: flex; align-items: center; gap: .6rem; margin-bottom: .7rem; font-size: .9rem; }
 .sheet-body input[type="range"] { flex: 1; min-width: 0; }
 /* 40 張色票在手機上改橫向捲動，否則佔滿整個畫面 */
-.swatches { display: flex; gap: .4rem; overflow-x: auto; padding-bottom: .4rem; -webkit-overflow-scrolling: touch; }
+/* fieldset 的 min-width 預設是 min-content —— 40 張色票的最小寬度會把它撐開，
+   再把整個頁面推寬，讓 .swatches 的 overflow-x 完全沒機會生效。這是 fieldset
+   特有的怪癖，一般 div 不會這樣。 */
+fieldset { min-width: 0; }
+.swatches { display: flex; gap: .4rem; max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; padding-bottom: .4rem; -webkit-overflow-scrolling: touch; }
 .swatches button { flex: 0 0 auto; width: 44px; height: 58px; border-radius: 8px; padding: 0; }
 .swatches button[aria-pressed="true"] { outline: 2px solid var(--ink); outline-offset: 1px; }
 .err { color: #b3341c; font-size: .9rem; }

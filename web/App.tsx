@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import type { CardSettings, TweetData } from '../src/types'
 import { Card, DEFAULT_SETTINGS } from '../src/render/Card'
 import { PRESETS, generate, randomPreset } from '../src/render/backgrounds'
@@ -66,6 +66,10 @@ export function App() {
   const [pngBlob, setPngBlob] = useState<Blob | null>(null)
   const [exportErr, setExportErr] = useState<string | null>(null)
   const cardRef = useRef<HTMLDivElement>(null)
+  const fitRef = useRef<HTMLDivElement>(null)
+  // 卡片縮到預覽框內的比例。整張看得到才叫「即時看到效果」——
+  // 只露出上半部的話，調留白或比例的差異剛好都在看不到的地方。
+  const [fit, setFit] = useState(1)
   // 用 ref 而非讀 state 來撤銷 —— state 在非同步 callback 裡可能是舊的閉包值，
   // ref 永遠是「目前真正存活的那個 URL」，撤銷才不會漏掉或撤錯。
   const pngUrlRef = useRef<string | null>(null)
@@ -113,8 +117,31 @@ export function App() {
     }
   }
 
+  // 量測卡片實際高度，算出塞進預覽框所需的縮放比例。
+  // 用 offsetHeight 而非 getBoundingClientRect：前者是版面尺寸，不受自己
+  // 套上的 transform 影響，否則會量到縮放後的值再縮一次，一路收斂到極小。
+  useLayoutEffect(() => {
+    const host = cardRef.current
+    const inner = fitRef.current
+    if (!host || !inner) return
+    const measure = () => {
+      const card = inner.firstElementChild as HTMLElement | null
+      if (!card || !card.offsetHeight) { setFit(1); return }
+      const avail = host.clientHeight
+      setFit(avail > 0 ? Math.min(1, avail / card.offsetHeight) : 1)
+    }
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(measure)
+    ro.observe(host)
+    if (inner.firstElementChild) ro.observe(inner.firstElementChild)
+    return () => ro.disconnect()
+  }, [status, settings])
+
   async function doExport() {
-    const node = cardRef.current?.firstElementChild as HTMLElement | null
+    // 直接查 canvas，不用 firstElementChild —— 中間多包一層縮放容器之後，
+    // firstElementChild 就不再是卡片了，而那種錯誤不會報錯只會匯出錯的東西。
+    const node = cardRef.current?.querySelector('[data-part="canvas"]') as HTMLElement | null
     if (!node || status.phase !== 'ready') return
     setBusy(true)
     setExportErr(null)
@@ -151,6 +178,7 @@ export function App() {
       </button>
 
       <div class="preview" ref={cardRef}>
+        <div class="preview-fit" ref={fitRef} style={{ transform: `scale(${fit})` }}>
         {status.phase === 'idle' && <div class="msg">貼上一則推文的網址，就會出現卡片。</div>}
         {status.phase === 'loading' && <div class="msg">讀取推文中…</div>}
         {status.phase === 'error' && (
@@ -160,6 +188,7 @@ export function App() {
           </div>
         )}
         {status.phase === 'ready' && <Card tweet={status.tweet} settings={settings} />}
+        </div>
       </div>
 
       {status.phase === 'ready' && (
