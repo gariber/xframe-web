@@ -365,8 +365,35 @@ describe('發文時間格式', () => {
     expect(DEFAULT_SETTINGS.timeFormat).toBe('relative')
   })
 
-  it('absolute 遇到無法解析的時間回傳空字串，不顯示 NaN', () => {
-    expect(at('not-a-date', 'absolute')).toBe('')
+  it('absolute 遇到無法解析的時間時整個節點不渲染，不留空白列也不顯示 NaN', () => {
+    const t = { ...parseTweet(fx('plain'), '2083053369351090254')!, createdAt: 'not-a-date' }
+    const el = mount(t, { ...DEFAULT_SETTINGS, timeFormat: 'absolute' })
+    expect(el.querySelector('[data-part="time"]')).toBeNull()
+    expect(el.textContent).not.toContain('NaN')
+  })
+
+  it('absolute 時，時間移出標頭改放內文下方（與統計列同一資訊層）', () => {
+    const t = { ...parseTweet(fx('plain'), '2083053369351090254')!, createdAt: '2026-07-31T21:54:11.000Z' }
+    const el = mount(t, { ...DEFAULT_SETTINGS, timeFormat: 'absolute' })
+    const time = el.querySelector('[data-part="time"]')!
+    const stats = el.querySelector('[data-part="stats"]')!
+    // 時間節點在統計列之前，且不在標頭（頭像所在的那一列）裡
+    expect(time.compareDocumentPosition(stats) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // 標頭是頭像所在的那一列；時間不該在裡面
+    const header = el.querySelector('[data-part="monogram"], img')!.parentElement!
+    expect(header.contains(time)).toBe(false)
+  })
+
+  it('relative 時，時間仍在標頭右上角', () => {
+    const el = mount(undefined, { ...DEFAULT_SETTINGS, timeFormat: 'relative' })
+    const time = el.querySelector('[data-part="time"]') as HTMLElement
+    expect(time.style.marginLeft).toBe('auto')
+  })
+
+  it('關閉「時間」顯示項時，absolute 也不渲染', () => {
+    const t = { ...parseTweet(fx('plain'), '2083053369351090254')!, createdAt: '2026-07-31T21:54:11.000Z' }
+    const s = { ...DEFAULT_SETTINGS, timeFormat: 'absolute' as const, show: { ...DEFAULT_SETTINGS.show, timestamp: false } }
+    expect(mount(t, s).querySelector('[data-part="time"]')).toBeNull()
   })
 
   it('時間節點設 nowrap，絕對時間不會斷行擠壓作者名', () => {

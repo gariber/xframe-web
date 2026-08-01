@@ -360,20 +360,23 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
             <div style={{ opacity: 0.55, fontSize: s.fontSize * 0.8 }}>@{author.handle}</div>
           </div>
           {s.show.timestamp && (
-            <div
-              data-part="time"
-              style={{
-                marginLeft: 'auto',
-                opacity: 0.45,
-                fontSize: s.fontSize * 0.75,
-                // 絕對時間比「6h」長得多，不讓它擠壓作者名稱或自己斷行
-                whiteSpace: 'nowrap',
-                flex: '0 0 auto',
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {s.timeFormat === 'absolute' ? absTime(tweet.createdAt) : relTime(tweet.createdAt)}
-            </div>
+            // 只有相對時間放標頭右上角。絕對時間長 8 倍（'1h' vs
+            // '2026-08-01 10:21'），擺在這裡會跟作者名爭視覺重量、把標頭撐得
+            // 左右失衡，改放內文下方獨立一行 —— 這也是 X 單篇詳情頁的做法。
+            s.timeFormat === 'relative' && (
+              <div
+                data-part="time"
+                style={{
+                  marginLeft: 'auto',
+                  opacity: 0.45,
+                  fontSize: s.fontSize * 0.75,
+                  whiteSpace: 'nowrap',
+                  flex: '0 0 auto',
+                }}
+              >
+                {relTime(tweet.createdAt)}
+              </div>
+            )
           )}
         </div>
 
@@ -420,6 +423,27 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
               <Text segments={tweet.quoted.text} accent={accent} />
             </div>
             {s.show.media && <MediaGrid media={tweet.quoted.media} />}
+          </div>
+        )}
+
+        {/*
+          絕對時間的落點：內文（與圖片、引用推文）之後、統計列之前，獨立成行。
+          與統計列共用同一組低對比樣式，讓「時間 + 數據」讀起來是同一個資訊層，
+          而不是兩個互相競爭的元素。
+        */}
+        {s.show.timestamp && s.timeFormat === 'absolute' && absTime(tweet.createdAt) && (
+          <div
+            data-part="time"
+            style={{
+              marginTop: 14,
+              opacity: 0.45,
+              fontSize: s.fontSize * 0.72,
+              whiteSpace: 'nowrap',
+              fontVariantNumeric: 'tabular-nums',
+              letterSpacing: '0.01em',
+            }}
+          >
+            {absTime(tweet.createdAt)}
           </div>
         )}
 

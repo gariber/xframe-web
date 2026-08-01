@@ -59,6 +59,18 @@ function App() {
             <option value="16:9">16:9</option>
           </select>
         </label>
+        <label>時間格式
+          <select value={settings.timeFormat}
+            onChange={(e) => patch({ timeFormat: e.currentTarget.value as CardSettings['timeFormat'] })}>
+            <option value="relative">相對</option>
+            <option value="absolute">絕對</option>
+          </select>
+        </label>
+        <label>
+          <input type="checkbox" checked={settings.maskIdentity}
+            onChange={(e) => patch({ maskIdentity: e.currentTarget.checked })} />
+          遮蔽作者身分
+        </label>
         <button type="button" onClick={() => patch({ background: randomPreset() })}>隨機生成</button>
         <div style="display:grid;grid-template-columns:repeat(8,1fr);gap:5px;margin-top:10px">
           {PRESETS.map((p) => (
