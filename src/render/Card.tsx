@@ -15,14 +15,41 @@ export const DEFAULT_SETTINGS: CardSettings = {
   // 一般推文預設不遮。鎖推來源的推文由 Panel 在載入完成時改為預設開啟 ——
   // 那是安全的預設，但仍然是使用者可以關掉的選擇。
   maskIdentity: false,
+  timeFormat: 'relative',
   aspect: 'auto',
   scale: 2,
 }
 
+/**
+ * 互動數的縮寫。用 K/M 而非「萬」：卡片上其餘元素都沒有語言相依的字串，
+ * 中文單位在英文推文上突兀，而且「18.4 萬」在窄卡片上會從數字和單位之間
+ * 斷行（實測 16:9 時就會）。K/M 是單一 token，不會被拆開。
+ */
 function fmt(n: number | null): string {
   if (n === null) return '—'
-  if (n >= 10_000) return (n / 10_000).toFixed(1).replace(/\.0$/, '') + '萬'
+  if (n >= 1_000_000) return trimZero(n / 1_000_000) + 'M'
+  if (n >= 1_000) return trimZero(n / 1_000) + 'K'
   return String(n)
+}
+
+function trimZero(v: number): string {
+  return v.toFixed(1).replace(/\.0$/, '')
+}
+
+/**
+ * 絕對發文時間。刻意用語言中性的 `YYYY-MM-DD HH:mm`：卡片會被分享到各種
+ * 語境，中文的「年月日」在英文推文上不搭，而 Intl 的在地化格式會隨觀看者
+ * 的系統語言變動，同一張圖在不同機器上匯出結果會不一樣。
+ *
+ * 用推文的當地時區呈現沒有意義（我們拿不到作者時區），所以以觀看者的本地
+ * 時區呈現，與 X 網頁本身的行為一致。
+ */
+function absTime(iso: string): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (!Number.isFinite(d.getTime())) return ''
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
 function relTime(iso: string): string {
@@ -50,7 +77,8 @@ const ICON = {
 
 function Stat({ icon, value, label }: { icon: string; value: number | null; label: string }) {
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4em' }}>
+    // nowrap：數字與圖示是一個語意單位，窄卡片上不該被拆到兩行
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4em', whiteSpace: 'nowrap' }}>
       {/* 圖示尺寸綁 1em，跟著統計列的字級走，使用者拉「文字尺寸」時不會脫節 */}
       <svg viewBox="0 0 24 24" width="1.15em" height="1.15em" role="img" aria-label={label}
            style={{ fill: 'currentColor', flex: '0 0 auto' }}>
@@ -332,8 +360,19 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
             <div style={{ opacity: 0.55, fontSize: s.fontSize * 0.8 }}>@{author.handle}</div>
           </div>
           {s.show.timestamp && (
-            <div style={{ marginLeft: 'auto', opacity: 0.45, fontSize: s.fontSize * 0.75 }}>
-              {relTime(tweet.createdAt)}
+            <div
+              data-part="time"
+              style={{
+                marginLeft: 'auto',
+                opacity: 0.45,
+                fontSize: s.fontSize * 0.75,
+                // 絕對時間比「6h」長得多，不讓它擠壓作者名稱或自己斷行
+                whiteSpace: 'nowrap',
+                flex: '0 0 auto',
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {s.timeFormat === 'absolute' ? absTime(tweet.createdAt) : relTime(tweet.createdAt)}
             </div>
           )}
         </div>

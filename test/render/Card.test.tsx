@@ -307,3 +307,71 @@ describe('身分遮蔽（隱私）', () => {
     expect(DEFAULT_SETTINGS.maskIdentity).toBe(false)
   })
 })
+
+describe('互動數格式（國際單位，不用中文）', () => {
+  const withStats = (views: number) => {
+    const t = parseTweet(fx('plain'), '2083053369351090254')!
+    return { ...t, stats: { ...t.stats, views } }
+  }
+  const statsText = (views: number) =>
+    (mount(withStats(views)).querySelector('[data-part="stats"]') as HTMLElement).textContent!
+
+  it('184000 顯示為 184K，不用「萬」', () => {
+    expect(statsText(184_000)).toContain('184K')
+  })
+
+  it('1500000 顯示為 1.5M', () => {
+    expect(statsText(1_500_000)).toContain('1.5M')
+  })
+
+  it('整數不留多餘小數位', () => {
+    expect(statsText(2_000)).toContain('2K')
+    expect(statsText(2_000)).not.toContain('2.0K')
+  })
+
+  it('千位以下維持原樣', () => {
+    expect(statsText(999)).toContain('999')
+  })
+
+  it('統計列完全不含中文字元', () => {
+    expect(statsText(184_000)).not.toMatch(/[一-鿿]/)
+  })
+
+  it('每組數字設 nowrap，窄卡片上不會從數字與單位之間斷行', () => {
+    const stats = mount().querySelector('[data-part="stats"]') as HTMLElement
+    const groups = [...stats.querySelectorAll('span')].filter((s) => s.querySelector('svg'))
+    expect(groups.length).toBe(4)
+    for (const g of groups) expect((g as HTMLElement).style.whiteSpace).toBe('nowrap')
+  })
+})
+
+describe('發文時間格式', () => {
+  const at = (iso: string, timeFormat: 'relative' | 'absolute') => {
+    const t = { ...parseTweet(fx('plain'), '2083053369351090254')!, createdAt: iso }
+    return (mount(t, { ...DEFAULT_SETTINGS, timeFormat }).querySelector('[data-part="time"]') as HTMLElement)
+      .textContent
+  }
+
+  it('absolute 顯示完整年月日與時分', () => {
+    // 以本地時區呈現，故只斷言格式而非固定字串
+    expect(at('2026-07-31T21:54:11.000Z', 'absolute')).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/)
+  })
+
+  it('relative 仍是短格式', () => {
+    expect(at(new Date(Date.now() - 3 * 3600_000).toISOString(), 'relative')).toBe('3h')
+  })
+
+  it('預設為 relative', () => {
+    expect(DEFAULT_SETTINGS.timeFormat).toBe('relative')
+  })
+
+  it('absolute 遇到無法解析的時間回傳空字串，不顯示 NaN', () => {
+    expect(at('not-a-date', 'absolute')).toBe('')
+  })
+
+  it('時間節點設 nowrap，絕對時間不會斷行擠壓作者名', () => {
+    const t = { ...parseTweet(fx('plain'), '2083053369351090254')!, createdAt: '2026-07-31T21:54:11.000Z' }
+    const el = mount(t, { ...DEFAULT_SETTINGS, timeFormat: 'absolute' })
+    expect((el.querySelector('[data-part="time"]') as HTMLElement).style.whiteSpace).toBe('nowrap')
+  })
+})

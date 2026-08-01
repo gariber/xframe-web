@@ -69,6 +69,12 @@ export type CardSettings = {
    * 由使用者切換。
    */
   maskIdentity: boolean
+  /**
+   * 時間呈現方式。`relative` 是「6h」這種相對時間，跟 X 網頁一致但會隨匯出
+   * 當下的時間漂移 —— 同一則推文今天匯出是「6h」，明天再匯出變「1d」。
+   * `absolute` 是 `YYYY-MM-DD HH:mm`，圖片本身就帶完整資訊，適合存檔或引用。
+   */
+  timeFormat: 'relative' | 'absolute'
   aspect: 'auto' | '1:1' | '4:5' | '16:9'
   scale: 2 | 3
 }

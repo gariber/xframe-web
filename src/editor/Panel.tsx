@@ -229,6 +229,13 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
             <option value="16:9">16:9 橫式</option>
           </select>
         </label>
+        <label>時間
+          <select value={settings.timeFormat}
+            onChange={(e) => patch({ timeFormat: e.currentTarget.value as CardSettings['timeFormat'] })}>
+            <option value="relative">相對（6h）</option>
+            <option value="absolute">絕對（2026-08-01 05:54）</option>
+          </select>
+        </label>
         <label>倍率
           <select value={String(settings.scale)}
             onChange={(e) => patch({ scale: +e.currentTarget.value as 2 | 3 })}>
