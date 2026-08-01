@@ -17,11 +17,11 @@ describe('fetchTweetHtml', () => {
     expect(await fetchTweetHtml(URL_)).toBe('<html>ok</html>')
   })
 
-  it('不得帶 cookie —— 未驗證請求是整個架構的前提', async () => {
+  it('明寫 credentials: omit —— 未驗證請求是整個架構的前提，不靠部署拓撲', async () => {
     let seen: RequestInit | undefined
     stubFetch(async (_i, init) => { seen = init; return new Response('x', { status: 200 }) })
     await fetchTweetHtml(URL_)
-    expect(seen?.credentials).not.toBe('include')
+    expect(seen?.credentials).toBe('omit')
   })
 
   it.each([
@@ -41,6 +41,18 @@ describe('fetchTweetHtml', () => {
   it('非 TypeError 的例外歸類為 network', async () => {
     stubFetch(async () => { throw new Error('boom') })
     await expect(fetchTweetHtml(URL_)).rejects.toMatchObject({ kind: 'network' })
+  })
+
+  it('離線時歸類為 network，不誤報成跨來源被擋', async () => {
+    vi.stubGlobal('navigator', { onLine: false })
+    stubFetch(async () => { throw new TypeError('Failed to fetch') })
+    await expect(fetchTweetHtml(URL_)).rejects.toMatchObject({ kind: 'network' })
+  })
+
+  it('連線正常時的 TypeError 才歸類為 cors', async () => {
+    vi.stubGlobal('navigator', { onLine: true })
+    stubFetch(async () => { throw new TypeError('Failed to fetch') })
+    await expect(fetchTweetHtml(URL_)).rejects.toMatchObject({ kind: 'cors' })
   })
 
   it('拋出的是 TweetFetchError', async () => {
