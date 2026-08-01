@@ -3,6 +3,8 @@ import { render } from 'preact'
 import { Card, DEFAULT_SETTINGS } from '../../src/render/Card'
 import { parseTweet } from '../../src/parse/microdata'
 import { readFileSync } from 'node:fs'
+import { MIN_HEIGHT_ASPECTS } from '../../src/render/card.css'
+import type { CardSettings } from '../../src/types'
 
 const fx = (n: string) => readFileSync(`test/fixtures/${n}.html`, 'utf8')
 
@@ -403,6 +405,39 @@ describe('發文時間格式', () => {
   })
 })
 
-// 9:16 模式的單元測試被排除：happy-dom 的 getBoundingClientRect().width 恆為 0，
-// 導致 fixedHeight 對所有模式都是 undefined，無法在此環境中區分各模式。
-// 9:16 特有行為（最小高度、不縮字、不截斷）必須在真瀏覽器驗證。
+// 幾何無法在此驗證：happy-dom 沒有版面引擎，且 useLayoutEffect 裡的
+// setState 在測試同步讀取樣式時尚未 flush，所以 height 與 minHeight
+// 對所有模式都是相同的空值，彼此無法區分。真正的幾何行為已在真瀏覽器
+// 驗證（720 寬：9:16 短文 1280 高、長文長到 1820 且與 auto 一致、不裁切）。
+// 這裡守的是「哪個模式走哪條分支」這個決策本身。
+describe('9:16 最小高度模式', () => {
+  it('9:16 被歸類為最小高度模式', () => {
+    expect(MIN_HEIGHT_ASPECTS.has('9:16')).toBe(true)
+  })
+
+  it('固定比例不是最小高度模式', () => {
+    for (const a of ['1:1', '4:5', '16:9']) {
+      expect(MIN_HEIGHT_ASPECTS.has(a)).toBe(false)
+    }
+  })
+
+  it('9:16 不套用縮字係數（不鎖高度就沒有塞不下的問題）', () => {
+    const raw = '中'.repeat(60)
+    const withText = (aspect: CardSettings['aspect']) => {
+      const base = parseTweet(fx('plain'), '2083053369351090254')!
+      const t = { ...base, rawText: raw, text: [{ type: 'text' as const, value: raw }] }
+      const el = mount(t, { ...DEFAULT_SETTINGS, aspect })
+      return parseFloat((el.querySelector('[data-part="body"]') as HTMLElement).style.fontSize)
+    }
+    expect(withText('9:16')).toBe(withText('auto'))
+    expect(withText('16:9')).toBeLessThan(withText('auto'))
+  })
+
+  it('9:16 不截斷內文（不裁切就不需要漸層淡出）', () => {
+    const base = parseTweet(fx('plain'), '2083053369351090254')!
+    const raw = 'a'.repeat(700)
+    const t = { ...base, rawText: raw, text: [{ type: 'text' as const, value: raw }] }
+    const body = mount(t, { ...DEFAULT_SETTINGS, aspect: '9:16' }).querySelector('[data-part="body"]') as HTMLElement
+    expect(body.style.overflow).not.toBe('hidden')
+  })
+})
