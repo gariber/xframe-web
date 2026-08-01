@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { canvasSizeStyle, MIN_HEIGHT_ASPECTS, ASPECT_VALUE } from '../../src/render/card.css'
+import { canvasSizeStyle, isOverflowing, MIN_HEIGHT_ASPECTS, ASPECT_VALUE } from '../../src/render/card.css'
 
 describe('canvasSizeStyle', () => {
   it('固定比例：鎖死 height，minHeight 為 0', () => {
@@ -22,6 +22,25 @@ describe('canvasSizeStyle', () => {
     expect(min.height).toBeUndefined()
     expect(fixed.minHeight).toBe(0)
     expect(min.minHeight).toBe('800px')
+  })
+})
+
+describe('isOverflowing', () => {
+  it('最小高度模式永遠不溢出 —— 畫布會跟著內容長高', () => {
+    expect(isOverflowing(true, 1676, 1136)).toBe(false)
+    expect(isOverflowing(true, 99999, 1)).toBe(false)
+  })
+
+  it('固定比例模式：內容超過可用高度即溢出', () => {
+    expect(isOverflowing(false, 1676, 1136)).toBe(true)
+  })
+
+  it('固定比例模式：內容塞得下就不溢出', () => {
+    expect(isOverflowing(false, 500, 1136)).toBe(false)
+  })
+
+  it('剛好等於可用高度不算溢出', () => {
+    expect(isOverflowing(false, 1136, 1136)).toBe(false)
   })
 })
 

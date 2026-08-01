@@ -51,6 +51,23 @@ export function canvasSizeStyle(
   }
 }
 
+/**
+ * 內容是否溢出畫布，決定要不要套漸層淡出。
+ *
+ * 最小高度模式永遠回傳 false：那些模式不鎖死高度，畫布會跟著內容變高，
+ * 本來就不會有超出的部分。若照一般模式計算，available 會是用「最小」高度
+ * 算出來的，任何比最小值長的推文都會被誤判為溢出，然後在自己完整顯示的
+ * 內容上蓋一層淡出 —— 那正是這個模式要避免的事。
+ */
+export function isOverflowing(
+  isMinHeight: boolean,
+  contentHeight: number,
+  availableHeight: number,
+): boolean {
+  if (isMinHeight) return false
+  return contentHeight > availableHeight
+}
+
 /** 由文字色推導強調色：同色相、提高彩度。避免使用者要調四個顏色。 */
 export function accentFrom(textColor: string): string {
   return textColor === '#ffffff' ? '#7cc4ff' : '#1d6fd0'

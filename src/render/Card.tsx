@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'preact/hooks'
 import type { TweetData, CardSettings, Segment, Media } from '../types'
 import { generate, GRAIN_DATA_URI } from './backgrounds'
-import { ASPECT_VALUE, MIN_HEIGHT_ASPECTS, canvasSizeStyle, accentFrom } from './card.css'
+import { ASPECT_VALUE, MIN_HEIGHT_ASPECTS, canvasSizeStyle, isOverflowing, accentFrom } from './card.css'
 
 export const DEFAULT_SETTINGS: CardSettings = {
   background: { kind: 'mesh', palette: 'sunset', seed: 1 },
@@ -282,14 +282,14 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
       const height = el.getBoundingClientRect().width / ratio
       setFixedHeight(height)
       const available = height - s.padding * 2
-      setOverflowing((panelRef.current?.scrollHeight ?? 0) > available)
+      setOverflowing(isOverflowing(isMinHeight, panelRef.current?.scrollHeight ?? 0, available))
     }
     measure()
     if (typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver(measure)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [ratio, settings, tweet])
+  }, [ratio, isMinHeight, settings, tweet])
 
   return (
     <div
