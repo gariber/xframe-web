@@ -13,7 +13,10 @@ from PIL import Image, ImageDraw, ImageFilter
 import pathlib
 
 OUT = pathlib.Path(__file__).resolve().parent.parent / "public" / "icons"
-SIZES = [16, 32, 48, 128, 180, 512]
+# 擴充功能的 manifest.config.ts 只宣告 16/32/48/128；180/512 是 PWA 用的
+# apple-touch-icon 與大尺寸圖示，寫進 dist/icons 只是白佔上傳包空間。
+EXT_SIZES = [16, 32, 48, 128]
+WEB_SIZES = [16, 32, 48, 128, 180, 512]
 
 # backgrounds.ts 的 sunset 調色盤
 C1, C2, C3, BASE = (0xFF, 0x7A, 0x45), (0xFF, 0x3D, 0x71), (0xFF, 0xB3, 0x47), (0x2B, 0x0F, 0x14)
@@ -75,14 +78,14 @@ def build(size):
 
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
-    for s in SIZES:
+    for s in EXT_SIZES:
         p = OUT / f"icon{s}.png"
         build(s).save(p, "PNG", optimize=True)
         print(f"{p.name:14} {p.stat().st_size:>6} bytes")
 
     web = pathlib.Path(__file__).resolve().parent.parent / "web" / "public" / "icons"
     web.mkdir(parents=True, exist_ok=True)
-    for s in SIZES:
+    for s in WEB_SIZES:
         build(s).save(web / f"icon{s}.png", "PNG", optimize=True)
     print(f"→ 同步至 {web}")
 
