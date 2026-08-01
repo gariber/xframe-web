@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "dev:preview": "vite --config vite.preview.config.ts",
+    "dev:web": "vite --config vite.web.config.ts",
     "build": "tsc --noEmit && vite build",
+    "build:web": "tsc --noEmit && vite build --config vite.web.config.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "package": "npm run build && cd dist && zip -qr ../xframe-store-upload.zip . && cd .. && echo '→ xframe-store-upload.zip 已產生（manifest 在根目錄）'"
