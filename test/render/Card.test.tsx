@@ -158,7 +158,6 @@ describe('長文自動縮字級', () => {
 
 describe('DEFAULT_SETTINGS', () => {
   it('比例預設 auto', () => expect(DEFAULT_SETTINGS.aspect).toBe('auto'))
-  it('倍率預設 2', () => expect(DEFAULT_SETTINGS.scale).toBe(2))
   it('四個顯示項預設開啟', () => {
     expect(Object.values(DEFAULT_SETTINGS.show).every(Boolean)).toBe(true)
   })
@@ -175,7 +174,7 @@ describe('DEFAULT_SETTINGS', () => {
 // final-fixwave-report.md 的「Aspect ratio second pass」一節），不在本檔案
 // 自動化測試的涵蓋範圍內。
 describe('固定比例模式的版面收斂（Fix 1）', () => {
-  it.each(['auto', '1:1', '4:5', '16:9'] as const)(
+  it.each(['auto', '1:1', '4:5', '9:16'] as const)(
     'canvas 節點不再設定 CSS 的 aspect-ratio（改用下面量測出來的定值 height，見 Fix 1 第二輪）',
     (aspect) => {
       const s = { ...DEFAULT_SETTINGS, aspect }
@@ -201,20 +200,21 @@ describe('固定比例模式的版面收斂（Fix 1）', () => {
       return parseFloat((el.querySelector('[data-part="body"]') as HTMLElement).style.fontSize)
     }
     const autoSize = fontSizeOf('auto')
-    for (const aspect of ['1:1', '4:5', '16:9'] as const) {
+    for (const aspect of ['1:1', '4:5'] as const) {
       expect(fontSizeOf(aspect)).toBeLessThan(autoSize)
     }
   })
 
   it('固定比例模式下，同一段文字比 auto 模式更早被截斷', () => {
     const base = parseTweet(fx('plain'), '2083053369351090254')!
-    const raw = 'a'.repeat(600)
+    // 700 刻意落在 auto 的 900 與 1:1 的 640 之間，才問得出「固定比例更早截斷」
+    const raw = 'a'.repeat(700)
     const t = { ...base, rawText: raw, text: [{ type: 'text' as const, value: raw }] }
     const bodyOf = (aspect: (typeof DEFAULT_SETTINGS)['aspect']) =>
       mount(t, { ...DEFAULT_SETTINGS, aspect }).querySelector('[data-part="body"]') as HTMLElement
 
     expect(bodyOf('auto').style.overflow).not.toBe('hidden')
-    expect(bodyOf('16:9').style.overflow).toBe('hidden')
+    expect(bodyOf('1:1').style.overflow).toBe('hidden')
   })
 })
 
@@ -238,7 +238,7 @@ describe('固定比例模式改用量測寬度算出的定值 height（Fix 1 第
   // flush，所以這裡要多等一輪微工作佇列（microtask）才看得到 height 被寫入。
   const flush = () => Promise.resolve()
 
-  it.each(['1:1', '4:5', '16:9'] as const)(
+  it.each(['1:1', '4:5'] as const)(
     'aspect=%s 時，canvas 節點的 height 由 useLayoutEffect 寫入（happy-dom 下量到的寬度為 0，故為 0px）',
     async (aspect) => {
       const s = { ...DEFAULT_SETTINGS, aspect }
@@ -257,7 +257,7 @@ describe('固定比例模式改用量測寬度算出的定值 height（Fix 1 第
   })
 
   it('canvas 節點設定 box-sizing:border-box，讓定值 height 與量測到的 border-box 寬度是同一套座標系', () => {
-    const el = mount(undefined, { ...DEFAULT_SETTINGS, aspect: '16:9' })
+    const el = mount(undefined, { ...DEFAULT_SETTINGS, aspect: '1:1' })
     const canvas = el.querySelector('[data-part="canvas"]') as HTMLElement
     expect(canvas.style.boxSizing).toBe('border-box')
   })
@@ -416,7 +416,7 @@ describe('9:16 最小高度模式', () => {
   })
 
   it('固定比例不是最小高度模式', () => {
-    for (const a of ['1:1', '4:5', '16:9']) {
+    for (const a of ['1:1', '4:5']) {
       expect(MIN_HEIGHT_ASPECTS.has(a)).toBe(false)
     }
   })
@@ -430,7 +430,7 @@ describe('9:16 最小高度模式', () => {
       return parseFloat((el.querySelector('[data-part="body"]') as HTMLElement).style.fontSize)
     }
     expect(withText('9:16')).toBe(withText('auto'))
-    expect(withText('16:9')).toBeLessThan(withText('auto'))
+    expect(withText('1:1')).toBeLessThan(withText('auto'))
   })
 
   it('9:16 不截斷內文（不裁切就不需要漸層淡出）', () => {

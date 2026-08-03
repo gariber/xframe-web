@@ -68,3 +68,7 @@ fieldset { min-width: 0; }
 .swatches button { flex: 0 0 auto; width: 44px; height: 58px; border-radius: 8px; padding: 0; }
 .swatches button[aria-pressed="true"] { outline: 2px solid var(--ink); outline-offset: 1px; }
 .err { color: #b3341c; font-size: .9rem; }
+
+.hint-inline { margin-left: auto; font-size: .8rem; color: var(--ink-faint);
+  font-variant-numeric: tabular-nums; white-space: nowrap; }
+.hint { margin: -.2rem 0 .8rem; font-size: .78rem; line-height: 1.5; color: var(--ink-faint); }

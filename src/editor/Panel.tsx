@@ -98,7 +98,7 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
     setBusy(true)
     setExportError(null)
     try {
-      downloadBlob(await exportPng(node, settings), buildFilename(status.tweet))
+      downloadBlob(await exportPng(node), buildFilename(status.tweet))
     } catch {
       // doExport 是裸 onClick、沒有任何東西 await 它 —— 若不在這裡自己接住，
       // 光柵化失敗時按鈕只會默默從「產生中…」變回「下載 PNG」，使用者不會
@@ -228,7 +228,6 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
             <option value="auto">自動高度</option>
             <option value="1:1">1:1 方形</option>
             <option value="4:5">4:5 直式</option>
-            <option value="16:9">16:9 橫式</option>
           </select>
         </label>
         {/*
@@ -240,13 +239,6 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
             onChange={(e) => patch({ timeFormat: e.currentTarget.value as CardSettings['timeFormat'] })}>
             <option value="relative">相對（6h）</option>
             <option value="absolute">絕對（2026-08-01 05:54）</option>
-          </select>
-        </label>
-        <label>倍率
-          <select value={String(settings.scale)}
-            onChange={(e) => patch({ scale: +e.currentTarget.value as 2 | 3 })}>
-            <option value="2">2x</option>
-            <option value="3">3x</option>
           </select>
         </label>
       </section>

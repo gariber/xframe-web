@@ -2,7 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import type { CardSettings, TweetData } from '../src/types'
 import { Card, DEFAULT_SETTINGS } from '../src/render/Card'
 import { PRESETS, generate, randomPreset } from '../src/render/backgrounds'
-import { exportPng, buildFilename, downloadBlob } from '../src/render/export'
+import { exportPng, buildFilename, downloadBlob, EXPORT_WIDTH } from '../src/render/export'
+import { ASPECT_VALUE } from '../src/render/card.css'
 import { parseTweet, extractTweetId } from '../src/parse/microdata'
 import { fetchTweetHtml, hydrateAssets } from './fetch'
 import { Sheet } from './Sheet'
@@ -29,6 +30,15 @@ type Status =
   | { phase: 'ready'; tweet: TweetData }
   | { phase: 'error'; message: string }
 
+/**
+ * 已移除的比例（16:9）仍可能存在舊使用者的儲存資料裡。直接套用會得到一個不在
+ * ASPECT_VALUE 裡的值 —— 畫面上是「比例下拉選單沒有任何選項被選中」，而卡片
+ * 靜靜退化成自動高度。不是崩潰，但使用者看不懂發生什麼事，所以退回預設值。
+ */
+function validAspect(v: unknown): v is CardSettings['aspect'] {
+  return typeof v === 'string' && Object.prototype.hasOwnProperty.call(ASPECT_VALUE, v)
+}
+
 function loadSettings(): CardSettings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -38,6 +48,7 @@ function loadSettings(): CardSettings {
     for (const k of Object.keys(WEB_DEFAULTS) as (keyof CardSettings)[]) {
       const v = saved[k]
       if (v === undefined) continue
+      if (k === 'aspect' && !validAspect(v)) continue
       if (k === 'show' || k === 'background') Object.assign(out[k], v)
       else out[k] = v as never
     }
@@ -70,6 +81,10 @@ export function App() {
   // 卡片縮到預覽框內的比例。整張看得到才叫「即時看到效果」——
   // 只露出上半部的話，調留白或比例的差異剛好都在看不到的地方。
   const [fit, setFit] = useState(1)
+  // 卡片的版面尺寸，用來換算固定寬度下的輸出高度。
+  // 沒有這個，那個選項對使用者而言等於沒作用 —— 它只影響下載的檔案，
+  // 畫面上看不出任何差別。
+  const [cardSize, setCardSize] = useState<[number, number] | null>(null)
   // 用 ref 而非讀 state 來撤銷 —— state 在非同步 callback 裡可能是舊的閉包值，
   // ref 永遠是「目前真正存活的那個 URL」，撤銷才不會漏掉或撤錯。
   const pngUrlRef = useRef<string | null>(null)
@@ -126,9 +141,10 @@ export function App() {
     if (!host || !inner) return
     const measure = () => {
       const card = inner.firstElementChild as HTMLElement | null
-      if (!card || !card.offsetHeight) { setFit(1); return }
+      if (!card || !card.offsetHeight) { setFit(1); setCardSize(null); return }
       const avail = host.clientHeight
       setFit(avail > 0 ? Math.min(1, avail / card.offsetHeight) : 1)
+      setCardSize([card.offsetWidth, card.offsetHeight])
     }
     measure()
     if (typeof ResizeObserver === 'undefined') return
@@ -146,7 +162,7 @@ export function App() {
     setBusy(true)
     setExportErr(null)
     try {
-      const blob = await exportPng(node, settings)
+      const blob = await exportPng(node)
       if (pngUrlRef.current) URL.revokeObjectURL(pngUrlRef.current)
       const url = URL.createObjectURL(blob)
       pngUrlRef.current = url
@@ -242,7 +258,6 @@ export function App() {
               <option value="auto">自動高度</option>
               <option value="1:1">1:1 方形</option>
               <option value="4:5">4:5 直式</option>
-              <option value="16:9">16:9 橫式</option>
             </select>
           </label>
           <label>時間格式
@@ -251,12 +266,12 @@ export function App() {
               <option value="absolute">絕對（2026-08-01 05:54）</option>
             </select>
           </label>
-          <label>倍率
-            <select value={String(settings.scale)} onChange={(e) => patch({ scale: +e.currentTarget.value as 2 | 3 })}>
-              <option value="2">2x</option>
-              <option value="3">3x</option>
-            </select>
-          </label>
+          {cardSize && (
+            <p class="hint">
+              下載尺寸固定 {EXPORT_WIDTH}×{Math.round(EXPORT_WIDTH * cardSize[1] / cardSize[0])} px，
+              不隨這台裝置的畫面寬度變動。預覽只是縮小顯示，不影響輸出。
+            </p>
+          )}
         </Sheet>
 
         <Sheet title="顯示項目">

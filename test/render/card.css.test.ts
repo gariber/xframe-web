@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { canvasSizeStyle, isOverflowing, MIN_HEIGHT_ASPECTS, ASPECT_VALUE } from '../../src/render/card.css'
+import { canvasSizeStyle, isOverflowing, panelFitScale, MIN_PANEL_SCALE, MIN_HEIGHT_ASPECTS, ASPECT_VALUE } from '../../src/render/card.css'
 
 describe('canvasSizeStyle', () => {
   it('固定比例：鎖死 height，minHeight 為 0', () => {
@@ -52,5 +52,32 @@ describe('比例表一致性', () => {
     for (const a of MIN_HEIGHT_ASPECTS) {
       expect(ASPECT_VALUE[a]).toBeTypeOf('number')
     }
+  })
+})
+
+describe('panelFitScale', () => {
+  it('塞得下就不縮', () => {
+    expect(panelFitScale(false, 400, 800)).toBe(1)
+  })
+
+  it('最小高度模式永遠不縮 —— 畫布會跟著內容長高', () => {
+    expect(panelFitScale(true, 9999, 100)).toBe(1)
+  })
+
+  it('裝不下時縮到剛好塞進去', () => {
+    expect(panelFitScale(false, 800, 400)).toBe(0.5)
+  })
+
+  it('連下限都塞不下時回傳 null，由呼叫端改用裁切', () => {
+    expect(panelFitScale(false, 1000, 100)).toBeNull()
+  })
+
+  it('剛好等於下限仍然縮，不退回裁切', () => {
+    expect(panelFitScale(false, 100 / MIN_PANEL_SCALE, 100)).toBeCloseTo(MIN_PANEL_SCALE, 5)
+  })
+
+  it('尺寸量不到時不縮，避免除以零', () => {
+    expect(panelFitScale(false, 0, 500)).toBe(1)
+    expect(panelFitScale(false, 500, 0)).toBe(1)
   })
 })

@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'preact/hooks'
 import type { TweetData, CardSettings, Segment, Media } from '../types'
 import { generate, GRAIN_DATA_URI } from './backgrounds'
-import { ASPECT_VALUE, MIN_HEIGHT_ASPECTS, canvasSizeStyle, isOverflowing, accentFrom } from './card.css'
+import { ASPECT_VALUE, MIN_HEIGHT_ASPECTS, canvasSizeStyle, isOverflowing, panelFitScale, accentFrom } from './card.css'
 
 export const DEFAULT_SETTINGS: CardSettings = {
   background: { kind: 'mesh', palette: 'sunset', seed: 1 },
@@ -17,13 +17,12 @@ export const DEFAULT_SETTINGS: CardSettings = {
   maskIdentity: false,
   timeFormat: 'relative',
   aspect: 'auto',
-  scale: 2,
 }
 
 /**
  * 互動數的縮寫。用 K/M 而非「萬」：卡片上其餘元素都沒有語言相依的字串，
  * 中文單位在英文推文上突兀，而且「18.4 萬」在窄卡片上會從數字和單位之間
- * 斷行（實測 16:9 時就會）。K/M 是單一 token，不會被拆開。
+ * 斷行（實測窄卡片上就會）。K/M 是單一 token，不會被拆開。
  */
 function fmt(n: number | null): string {
   if (n === null) return '—'
@@ -179,16 +178,16 @@ function MediaGrid({ media }: { media: Media[] }) {
 
 /**
  * 固定比例模式下，同一份寬度能分到的高度差異很大：4:5 是三種固定比例裡最高的
- * （height = width × 1.25），1:1 居中（height = width），16:9 最矮
- * （height = width × 0.5625，只有 4:5 的約 45%）。用同一個縮小係數對待三者，
- * 16:9 會嚴重不夠、4:5 又可能縮過頭，所以按比例分開調。這些是手動調校的經驗
+ * （height = width × 1.25），1:1 較矮（height = width，只有 4:5 的 80%）。
+ * 用同一個縮小係數對待兩者，1:1 會不夠、4:5 又可能縮過頭，所以分開調。
+ * 真正裝不下時由 panelFitScale 整體縮放接手，這裡只負責讓常見情況不必縮放。
+ * 這些是手動調校的經驗
  * 值，不是量測後反覆逼近——量測寬度只用於 Card 元件下面的定值 height 計算。
  */
 const ASPECT_SHRINK: Record<CardSettings['aspect'], number> = {
   auto: 1,
   '1:1': 0.85,
   '4:5': 0.92,
-  '16:9': 0.6,
   // 不鎖死高度，內容長就讓畫布變高，沒有塞不下的問題
   '9:16': 1,
 }
@@ -197,7 +196,6 @@ const ASPECT_MAX_CHARS: Record<CardSettings['aspect'], number> = {
   auto: 900,
   '1:1': 640,
   '4:5': 760,
-  '16:9': 300,
   '9:16': 900,
 }
 
@@ -221,13 +219,13 @@ function fitFontSize(base: number, raw: string, aspect: CardSettings['aspect']):
   return Math.max(11, effectiveBase * 0.58)
 }
 
-/** 固定比例模式可用高度遠小於 auto，同一份文字要更早被截斷；16:9 又比 4:5 緊得多。 */
+/** 固定比例模式可用高度遠小於 auto，同一份文字要更早被截斷；1:1 又比 4:5 緊。 */
 function maxCharsFor(aspect: CardSettings['aspect']): number {
   return ASPECT_MAX_CHARS[aspect]
 }
 
 /**
- * 固定比例模式下畫布高度被鎖死，內容仍可能比可用高度高（例如 16:9 配上
+ * 固定比例模式下畫布高度被鎖死，內容仍可能比可用高度高（例如 1:1 配上
  * quoted fixture）。此時 canvas 的 overflow:hidden 會把超出的部分整個硬切掉
  * ——面板的邊框、陰影、文字全部在同一條線上被截斷，觀感生硬。加漸層淡出
  * 跟本檔案 MAX_CHARS 內文截斷用的是同一套視覺語言，值也直接照抄。
@@ -252,10 +250,12 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
   const isMinHeight = MIN_HEIGHT_ASPECTS.has(s.aspect)
   const [fixedHeight, setFixedHeight] = useState<number | undefined>(undefined)
   const [overflowing, setOverflowing] = useState(false)
+  // 面板縮到裝得進畫布的比例。null 代表連下限都塞不下，退回裁切加淡出。
+  const [panelScale, setPanelScale] = useState(1)
 
   // CSS 的 aspect-ratio 在真瀏覽器下實測會輸給內容：畫布是 flex 容器、面板是
   // 內容驅動高度的 flex item，兩者對「auto 高度該怎麼算」互相打架時，
-  // aspect-ratio 不保證贏（16:9 撐高達 14%）。改成量測目前寬度、直接算出一個
+  // aspect-ratio 不保證贏（實測撐高達 14%）。改成量測目前寬度、直接算出一個
   // 定值 px 高度指定給 height——一個具體的長度不會再參與那場輸贏未定的
   // 自動定size演算法，比例由建構方式保證成立。只在非 auto 時量測；量到 0
   // （例如測試環境沒有真正的排版引擎、或元素還沒被插入 DOM）就會得到
@@ -279,10 +279,21 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
       return
     }
     const measure = () => {
-      const height = el.getBoundingClientRect().width / ratio
+      // offsetWidth 而非 getBoundingClientRect().width：後者會被祖先的 transform
+      // 縮放。行動網頁版把卡片包在 .preview-fit 的 scale() 裡塞進預覽框，量到的
+      // 是縮放後的寬度，算出的高度就跟著縮 —— 而畫布變矮又讓 fit 變大、寬度再
+      // 變……1:1 實測收斂到 358×198（比例 1.808 而非 1.0）。offsetWidth 是版面
+      // 寬度，同樣是 border-box，不受任何 transform 影響。
+      const height = el.offsetWidth / ratio
       setFixedHeight(height)
       const available = height - s.padding * 2
-      setOverflowing(isOverflowing(isMinHeight, panelRef.current?.scrollHeight ?? 0, available))
+      // 用 offsetHeight 而非 scrollHeight：offsetHeight 是版面高度，不受面板
+      // 自己套上的 transform 影響，否則量到縮放後的值再縮一次會一路發散。
+      const panelH = panelRef.current?.offsetHeight ?? 0
+      const k = panelFitScale(isMinHeight, panelH, available)
+      setPanelScale(k ?? 1)
+      // 縮得進去就不裁切，也就不需要淡出；k 為 null 才退回原本的裁切行為
+      setOverflowing(k === null && isOverflowing(isMinHeight, panelH, available))
     }
     measure()
     if (typeof ResizeObserver === 'undefined') return
@@ -316,11 +327,15 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
         ...canvasSizeStyle(isMinHeight, fixedHeight),
         overflow: 'hidden',
         display: 'flex',
-        // 內容撐爆固定比例畫布時，靠頂對齊只會截掉底部（跟本檔案原本就有的
-        // 內文截斷淡出同一個方向），置中對齊則會上下各截一半、連一定會有的
-        // 頭像／作者名都可能被切掉一半，體驗差很多。auto 模式因為畫布高度本
-        // 來就等於內容高度，永遠沒有多餘空間可置中，改這個值視覺上沒有差別。
-        alignItems: 'flex-start',
+        // 只有「會被裁切」時才靠頂對齊 —— 那樣只截掉底部（跟內文截斷淡出同一個
+        // 方向），置中反而會上下各截一半，連頭像和作者名都可能被切掉一半。
+        //
+        // 塞得下的時候要置中。9:16 這種最小高度模式，短推文一定有多餘空間，
+        // 靠頂會讓卡片黏在上緣、下面留一大片空白。auto 模式的畫布高度等於內容
+        // 高度，沒有多餘空間，這個值對它沒有差別。
+        // 縮放後一定塞得下，所以預設居中。只有連下限都塞不下、真的要裁切時
+        // 才靠頂 —— 那樣只切掉底部，置中會上下各切一半連頭像都不保。
+        alignItems: overflowing ? 'flex-start' : 'center',
         justifyContent: 'center',
         fontFamily: s.fontFamily,
         // 只在實際溢出時才淡出。內容剛好塞得下卻還套上 mask，會平白把卡片
@@ -346,6 +361,12 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
         style={{
           position: 'relative',
           width: '100%',
+          // 固定比例裝不下時整體縮小而非裁切 —— 一張字小但完整的圖，比一張
+          // 下半截被切掉的有用。transform 不改變 offsetHeight，所以上面的
+          // 量測不會因此發散。origin 置中，縮放後仍留在畫布中央。
+          ...(panelScale < 1
+            ? { transform: `scale(${panelScale})`, transformOrigin: 'center center' }
+            : {}),
           background: panelBg,
           backdropFilter: 'blur(28px) saturate(1.3)',
           WebkitBackdropFilter: 'blur(28px) saturate(1.3)',

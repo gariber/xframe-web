@@ -23,7 +23,7 @@ function App() {
   const doExport = async () => {
     const node = document.querySelector('[data-part="canvas"]') as HTMLElement | null
     if (!node || !tweet) return
-    downloadBlob(await exportPng(node, settings), buildFilename(tweet))
+    downloadBlob(await exportPng(node), buildFilename(tweet))
   }
 
   return (

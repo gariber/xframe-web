@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { buildFilename } from '../../src/render/export'
-import { DEFAULT_SETTINGS } from '../../src/render/Card'
+import { buildFilename, exportScale, EXPORT_WIDTH, MAX_EXPORT_PIXELS } from '../../src/render/export'
 import { parseTweet } from '../../src/parse/microdata'
 import { readFileSync } from 'node:fs'
 
@@ -26,6 +25,48 @@ describe('buildFilename', () => {
   })
 })
 
+describe('exportScale：輸出寬度固定，不隨裝置畫面寬度變動', () => {
+  // 這是整個改動的重點 —— 以前是「版面寬度 × 使用者選的倍率」，手機 358px
+  // 只得到 716px 的圖，桌面同設定卻是 1440px。
+  it.each([
+    ['手機 9:16', 358, 636],
+    ['手機 4:5', 358, 448],
+    ['桌面擴充功能', 720, 900],
+    ['極窄畫面', 280, 498],
+  ])('%s 都輸出 %d 寬', (_label, w, h) => {
+    expect(Math.round(w * exportScale(w, h))).toBe(EXPORT_WIDTH)
+  })
+
+  it('高度依比例跟著算，比例不變', () => {
+    const [w, h] = [360, 450] // 正好 4:5
+    const k = exportScale(w, h)
+    expect(Math.round(w * k)).toBe(1080)
+    expect(Math.round(h * k)).toBe(1350) // Instagram 直式原生尺寸
+  })
+
+  it('比版面大時放大、比版面小時縮小，都由同一個公式決定', () => {
+    expect(exportScale(358, 636)).toBeGreaterThan(1)
+    expect(exportScale(2000, 2000)).toBeLessThan(1)
+  })
+
+  // iOS Safari 超過約 1600 萬像素會靜靜給出全白畫布，不丟例外。
+  it('極長的卡片壓在像素上限內，而不是無聲產出白圖', () => {
+    const [w, h] = [358, 40_000]
+    const k = exportScale(w, h)
+    expect(w * k * h * k).toBeLessThanOrEqual(MAX_EXPORT_PIXELS + 1)
+    expect(w * k).toBeLessThan(EXPORT_WIDTH) // 撞上限時寬度才會低於固定值
+  })
+
+  it('沒撞上限時不會被上限影響', () => {
+    expect(exportScale(358, 636)).toBeCloseTo(EXPORT_WIDTH / 358, 10)
+  })
+
+  it('量到 0 時退回 1 而不是 Infinity', () => {
+    expect(exportScale(0, 500)).toBe(1)
+    expect(exportScale(500, 0)).toBe(1)
+  })
+})
+
 // 行動網頁版把卡片包在 scale() 裡讓整張塞進預覽框。modern-screenshot 的
 // resolveBoundingBox 只在沒收到尺寸時才用 getBoundingClientRect()，而那個會
 // 被祖先 transform 影響 —— 不明確給值的話匯出圖會縮成預覽大小且不報錯。
@@ -46,7 +87,7 @@ describe('匯出尺寸不受祖先 transform 影響', () => {
     const node = document.createElement('div')
     Object.defineProperty(node, 'offsetWidth', { value: 720, configurable: true })
     Object.defineProperty(node, 'offsetHeight', { value: 1280, configurable: true })
-    await exportPng(node, DEFAULT_SETTINGS)
+    await exportPng(node)
     expect(calls[0].width).toBe(720)
     expect(calls[0].height).toBe(1280)
     vi.doUnmock('modern-screenshot')

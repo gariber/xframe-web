@@ -18,7 +18,6 @@ export const ASPECT_VALUE: Record<string, number | undefined> = {
   auto: undefined,
   '1:1': 1,
   '4:5': 4 / 5,
-  '16:9': 16 / 9,
   '9:16': 9 / 16,
 }
 
@@ -71,4 +70,36 @@ export function isOverflowing(
 /** 由文字色推導強調色：同色相、提高彩度。避免使用者要調四個顏色。 */
 export function accentFrom(textColor: string): string {
   return textColor === '#ffffff' ? '#7cc4ff' : '#1d6fd0'
+}
+
+/**
+ * 面板要縮多少才塞得進畫布。
+ *
+ * 固定比例模式下畫布高度是鎖死的，而在窄畫面（手機約 358px 寬）上，
+ * 1:1／4:5 能分到的高度遠小於一則推文所需——實測面板會超出 269～452px。
+ * 既有的縮字係數是照 720px 桌面畫布調的，補不了這個差距。
+ *
+ * 與其把超出的部分裁掉，不如整體縮小：一張字小但完整的圖，比一張下半截被切掉
+ * 的圖有用得多。縮放後面板一定塞得下，也才談得上居中——對一個裝不下的東西
+ * 置中只會上下各切一半，連頭像和作者名都被切掉。
+ *
+ * 設下限是因為縮過頭就沒有可讀性了；真的連下限都塞不下時回傳 null，
+ * 由呼叫端退回裁切加漸層淡出。
+ *
+ * 用版面高度（offsetHeight）計算，不用 getBoundingClientRect——後者會受
+ * 自己套上的 transform 影響，量到縮放後的值再縮一次，會一路收斂到極小。
+ */
+export const MIN_PANEL_SCALE = 0.45
+
+export function panelFitScale(
+  isMinHeight: boolean,
+  panelHeight: number,
+  availableHeight: number,
+): number | null {
+  // 最小高度模式的畫布會跟著內容長高，永遠不需要縮
+  if (isMinHeight) return 1
+  if (panelHeight <= 0 || availableHeight <= 0) return 1
+  if (panelHeight <= availableHeight) return 1
+  const k = availableHeight / panelHeight
+  return k >= MIN_PANEL_SCALE ? k : null
 }
