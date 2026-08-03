@@ -55,6 +55,16 @@ describe('Card', () => {
     expect(mount(t).querySelector('[data-part="quoted"]')).not.toBeNull()
   })
 
+  it('引用推文的帳號同樣用 handleDisplay，不由卡片加前綴', () => {
+    // 外層與引用推文是 Card 裡兩處各自寫死 @ 的地方，只改一處等於沒改完。
+    // 用全形＠當標記：卡片若仍自己補半形 @，會變成 '@＠引用自訂'。
+    const t = parseTweet(fx('quoted'), '2082883636177916306')!
+    t.quoted!.author.handleDisplay = '＠引用自訂'
+    const quoted = mount(t).querySelector('[data-part="quoted"]') as HTMLElement
+    expect(quoted.textContent).toContain('＠引用自訂')
+    expect(quoted.textContent).not.toContain('@＠引用自訂')
+  })
+
   it('無引用推文時不渲染巢狀區塊', () => {
     expect(mount().querySelector('[data-part="quoted"]')).toBeNull()
   })
