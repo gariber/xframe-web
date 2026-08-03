@@ -1,4 +1,4 @@
-import type { TweetData } from '../types'
+import type { Post } from '../types'
 
 /**
  * X 的頭像網址有多種尺寸後綴，不只 `_normal`。實測登入版頁面的 DOM 拿到的是
@@ -50,7 +50,7 @@ async function settle(url: string): Promise<string | undefined> {
   }
 }
 
-async function hydrateOne<T extends Omit<TweetData, 'quoted'>>(t: T): Promise<T> {
+async function hydrateOne<T extends Omit<Post, 'quoted'>>(t: T): Promise<T> {
   const avatarUrl = upgradeAvatarUrl(t.author.avatarUrl)
   const [avatarDataUrl, ...mediaData] = await Promise.all([
     avatarUrl ? settle(avatarUrl) : Promise.resolve(undefined),
@@ -67,7 +67,7 @@ async function hydrateOne<T extends Omit<TweetData, 'quoted'>>(t: T): Promise<T>
   }
 }
 
-export async function hydrateAssets(tweet: TweetData): Promise<TweetData> {
+export async function hydrateAssets(tweet: Post): Promise<Post> {
   const outer = await hydrateOne(tweet)
   if (!tweet.quoted) return outer
   return { ...outer, quoted: await hydrateOne(tweet.quoted) }

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { fetchTweetHtml, hydrateAssets } from '../../web/fetch'
 import { TweetFetchError } from '../../src/background/fetch-tweet'
-import type { TweetData } from '../../src/types'
+import type { Post } from '../../src/types'
 
 const URL_ = 'https://x.com/a/status/123'
 
@@ -61,8 +61,8 @@ describe('fetchTweetHtml', () => {
   })
 })
 
-const tweet = (over: Partial<TweetData> = {}): TweetData => ({
-  id: '1', url: URL_, source: 'microdata',
+const tweet = (over: Partial<Post> = {}): Post => ({
+  id: '1', url: URL_, platform: 'x', source: 'fetch',
   author: { name: 'A', handle: 'a', handleDisplay: '@a', avatarUrl: 'https://pbs.twimg.com/profile_images/1/x_normal.jpg' },
   rawText: 'hi', text: [{ type: 'text', value: 'hi' }], createdAt: '',
   metrics: [

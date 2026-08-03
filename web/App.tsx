@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
-import type { CardSettings, TweetData } from '../src/types'
+import type { CardSettings, Post } from '../src/types'
 import { Card, DEFAULT_SETTINGS } from '../src/render/Card'
 import { PRESETS, generate, randomPreset } from '../src/render/backgrounds'
 import { exportPng, buildFilename, downloadBlob, EXPORT_WIDTH } from '../src/render/export'
@@ -27,7 +27,7 @@ const ERROR_TEXT: Record<string, string> = {
 type Status =
   | { phase: 'idle' }
   | { phase: 'loading' }
-  | { phase: 'ready'; tweet: TweetData }
+  | { phase: 'ready'; tweet: Post }
   | { phase: 'error'; message: string }
 
 /**
@@ -58,7 +58,7 @@ function loadSettings(): CardSettings {
   }
 }
 
-async function loadTweet(url: string): Promise<TweetData> {
+async function loadTweet(url: string): Promise<Post> {
   const id = extractTweetId(url)
   if (!id) throw new Error('badurl')
   const html = await fetchTweetHtml(url)
@@ -203,7 +203,7 @@ export function App() {
             <button type="button" onClick={() => void go()}>重試</button>
           </div>
         )}
-        {status.phase === 'ready' && <Card tweet={status.tweet} settings={settings} />}
+        {status.phase === 'ready' && <Card post={status.tweet} settings={settings} />}
         </div>
       </div>
 

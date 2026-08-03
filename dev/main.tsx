@@ -1,6 +1,6 @@
 import { render } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
-import type { TweetData, CardSettings } from '../src/types'
+import type { Post, CardSettings } from '../src/types'
 import { Card, DEFAULT_SETTINGS } from '../src/render/Card'
 import { PRESETS, generate, randomPreset } from '../src/render/backgrounds'
 import { exportPng, buildFilename, downloadBlob } from '../src/render/export'
@@ -10,7 +10,7 @@ type Name = keyof typeof FIXTURES
 
 function App() {
   const [name, setName] = useState<Name>('plain')
-  const [tweet, setTweet] = useState<TweetData | null>(null)
+  const [tweet, setTweet] = useState<Post | null>(null)
   const [settings, setSettings] = useState<CardSettings>(DEFAULT_SETTINGS)
 
   useEffect(() => {
@@ -34,7 +34,7 @@ function App() {
             <button key={n} type="button" aria-pressed={n === name} onClick={() => setName(n)}>{n}</button>
           ))}
         </div>
-        {tweet ? <Card tweet={tweet} settings={settings} /> : <p style="text-align:center">載入中…</p>}
+        {tweet ? <Card post={tweet} settings={settings} /> : <p style="text-align:center">載入中…</p>}
       </div>
       <div class="xf-panel" style="padding:16px;background:#faf7f2;overflow:auto">
         <button type="button" onClick={doExport} style="width:100%;padding:12px;margin-bottom:16px">下載 PNG</button>

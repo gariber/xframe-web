@@ -1,5 +1,5 @@
 import { domToBlob } from 'modern-screenshot'
-import type { TweetData } from '../types'
+import type { Post } from '../types'
 
 /**
  * 輸出圖片的固定寬度。
@@ -93,10 +93,10 @@ function sanitizeFilenameComponent(s: string): string {
   return s.replace(/[^\w-]/g, '_')
 }
 
-export function buildFilename(tweet: TweetData): string {
-  const safeHandle = sanitizeFilenameComponent(tweet.author.handle)
-  const safeId = sanitizeFilenameComponent(tweet.id)
-  return `x-${safeHandle}-${safeId}.png`
+export function buildFilename(post: Post): string {
+  const safeHandle = sanitizeFilenameComponent(post.author.handle)
+  const safeId = sanitizeFilenameComponent(post.id)
+  return `${post.platform}-${safeHandle}-${safeId}.png`
 }
 
 export function downloadBlob(blob: Blob, filename: string): void {

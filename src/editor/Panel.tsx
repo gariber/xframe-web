@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
-import type { CardSettings, TweetData } from '../types'
+import type { CardSettings, Post } from '../types'
 import { Card, DEFAULT_SETTINGS } from '../render/Card'
 import { PRESETS, generate, randomPreset } from '../render/backgrounds'
 import { exportPng, buildFilename, downloadBlob, exportWidthBelowTarget, EXPORT_WIDTH } from '../render/export'
@@ -14,7 +14,7 @@ import type { Request, Response } from '../background/index'
 
 type Status =
   | { phase: 'loading' }
-  | { phase: 'ready'; tweet: TweetData }
+  | { phase: 'ready'; tweet: Post }
   | { phase: 'error'; message: string }
   // 手動輸入。spec §4.0 把它列為「X 停止對未登入請求提供 microdata」這個
   // 殘餘風險的唯一緩解手段：屆時每一則推文都會解析失敗，沒有這條路擴充功能
@@ -32,7 +32,7 @@ const ERROR_TEXT: Record<string, string> = {
   'unknown-request': '擴充功能版本不相符，請重新載入頁面',
 }
 
-async function loadTweet(permalink: string): Promise<TweetData> {
+async function loadTweet(permalink: string): Promise<Post> {
   const id = extractTweetId(permalink)
   if (!id) throw new Error('parse')
   const res = await chrome.runtime.sendMessage<Request, Response>({ type: 'fetch-tweet-html', url: permalink })
@@ -76,7 +76,7 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
         // 鎖推來源預設開啟身分遮蔽：安全的選擇當預設，但仍可由使用者關掉。
         // 刻意不寫進 chrome.storage —— 這是針對「這一則」的保護性預設，
         // 若持久化，下一則公開推文會莫名其妙也被遮起來。
-        if (tweet.source === 'dom-fallback') {
+        if (tweet.source === 'dom') {
           setSettings((prev) => (prev.maskIdentity ? prev : { ...prev, maskIdentity: true }))
         }
       })
@@ -196,10 +196,10 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
             </div>
           </form>
         )}
-        {status.phase === 'ready' && <Card tweet={status.tweet} settings={settings} />}
+        {status.phase === 'ready' && <Card post={status.tweet} settings={settings} />}
       </div>
 
-      {status.phase === 'ready' && status.tweet.source === 'dom-fallback' && (
+      {status.phase === 'ready' && status.tweet.source === 'dom' && (
         <div class="xf-protected" role="note">
           <strong>這是鎖推帳號的內容</strong>
           <p>

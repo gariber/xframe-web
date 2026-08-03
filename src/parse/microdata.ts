@@ -1,4 +1,4 @@
-import type { TweetData, Metric, MetricKind, Author, Media } from '../types'
+import type { Post, Metric, MetricKind, Author, Media } from '../types'
 import { tokenize } from './tokenize'
 
 const INTERACTION: Record<string, MetricKind> = {
@@ -190,7 +190,7 @@ function parseMedia(article: Element): Media[] {
  * 解析單一 article 節點。不含引用推文與圖片。也不含 textComplete —— 這一層
  * 拿不到 title（截斷判斷需要它），由兩個呼叫點各自依自己的情境補上。
  */
-function parseArticle(article: Element): Omit<TweetData, 'quoted' | 'media' | 'text' | 'textComplete'> | null {
+function parseArticle(article: Element): Omit<Post, 'quoted' | 'media' | 'text' | 'textComplete'> | null {
   const author = parseAuthor(article)
   const raw = metaOf(article, 'text')
   const rawText = raw === null ? null : decodeEntities(raw)
@@ -200,17 +200,19 @@ function parseArticle(article: Element): Omit<TweetData, 'quoted' | 'media' | 't
   return {
     id,
     url: metaOf(article, 'url') ?? `https://x.com/${author.handle}/status/${id}`,
+    platform: 'x',
     author,
-    // 這個模組只解析公開頁面的 schema.org 資料，來源永遠是 microdata。
-    // DOM 降級路徑由 content/dom-fallback 負責，不會經過這裡。
-    source: 'microdata',
+    // 這個模組只解析公開頁面的 schema.org microdata，資料來源永遠是 fetch
+    // （不帶 cookie 的公開抓取）。DOM 降級路徑由 content/dom-fallback 負責，
+    // 不會經過這裡。
+    source: 'fetch',
     rawText,
     createdAt: metaOf(article, 'dateCreated') ?? metaOf(article, 'datePublished') ?? '',
     metrics: parseMetrics(article),
   }
 }
 
-export function parseTweet(html: string, tweetId: string): TweetData | null {
+export function parseTweet(html: string, tweetId: string): Post | null {
   if (!html) return null
   // tweetId 一律是 extractTweetId 用 \d+ 擷取出的純數字字串，放進雙引號屬性選擇器
   // 本來就安全（不含引號或反斜線），不需要 CSS.escape。實測發現 happy-dom 對
@@ -238,7 +240,7 @@ export function parseTweet(html: string, tweetId: string): TweetData | null {
 
   // 引用推文不是直接子節點，須以後代選擇器尋找
   const citeEl = article.querySelector('article[itemprop="citation"]')
-  let quoted: Omit<TweetData, 'quoted'> | undefined
+  let quoted: Omit<Post, 'quoted'> | undefined
   if (citeEl) {
     const cbase = parseArticle(citeEl)
     if (cbase) {

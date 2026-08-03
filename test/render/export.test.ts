@@ -9,26 +9,42 @@ import {
 } from '../../src/render/export'
 import { parseTweet } from '../../src/parse/microdata'
 import { readFileSync } from 'node:fs'
+import type { Post } from '../../src/types'
 
-const tweet = parseTweet(readFileSync('test/fixtures/plain.html', 'utf8'), '2083053369351090254')!
+const post = parseTweet(readFileSync('test/fixtures/plain.html', 'utf8'), '2083053369351090254')!
 
 describe('buildFilename', () => {
   it('包含帳號與推文 ID', () => {
-    const name = buildFilename(tweet)
+    const name = buildFilename(post)
     expect(name).toContain('thsottiaux')
     expect(name).toContain('2083053369351090254')
   })
-  it('副檔名為 png', () => expect(buildFilename(tweet)).toMatch(/\.png$/))
+  it('副檔名為 png', () => expect(buildFilename(post)).toMatch(/\.png$/))
   it('不含檔名不合法字元', () => {
-    expect(buildFilename(tweet)).not.toMatch(/[\/\\:*?"<>|]/)
+    expect(buildFilename(post)).not.toMatch(/[\/\\:*?"<>|]/)
   })
   it('handle 含特殊字元時仍安全', () => {
-    const t = { ...tweet, author: { ...tweet.author, handle: 'a/b:c' } }
-    expect(buildFilename(t)).not.toMatch(/[\/\\:*?"<>|]/)
+    const p = { ...post, author: { ...post.author, handle: 'a/b:c' } }
+    expect(buildFilename(p)).not.toMatch(/[\/\\:*?"<>|]/)
   })
   it('id 含特殊字元時仍安全', () => {
-    const t = { ...tweet, id: '123/456:789' }
-    expect(buildFilename(t)).not.toMatch(/[\/\\:*?"<>|]/)
+    const p = { ...post, id: '123/456:789' }
+    expect(buildFilename(p)).not.toMatch(/[\/\\:*?"<>|]/)
+  })
+
+  it('前綴用 platform 而非寫死的 x', () => {
+    expect(buildFilename({ ...post, platform: 'x', author: { ...post.author, handle: 'jack' }, id: '20' }))
+      .toBe('x-jack-20.png')
+  })
+
+  // Platform 目前只有 'x' 一個真實成員，上面那個斷言因此無法區分「前綴確實讀自
+  // post.platform」與「前綴仍是寫死的 'x-'，恰好與 platform 的唯一值相同」。這裡
+  // 用型別斷言塞一個真實情境不存在的假值，只為了讓測試能觀察到兩者的差異，
+  // 不代表 Platform 真的有第二個成員。
+  it('前綴確實讀自 post.platform，不是恰好等於寫死值', () => {
+    const fakePlatform = 'zzz' as Post['platform']
+    expect(buildFilename({ ...post, platform: fakePlatform, author: { ...post.author, handle: 'jack' }, id: '20' }))
+      .toBe('zzz-jack-20.png')
   })
 })
 

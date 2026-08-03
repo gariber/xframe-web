@@ -10,7 +10,7 @@ const fx = (n: string) => readFileSync(`test/fixtures/${n}.html`, 'utf8')
 function mount(tweet = parseTweet(fx('plain'), '2083053369351090254')!, settings = DEFAULT_SETTINGS) {
   const host = document.createElement('div')
   document.body.appendChild(host)
-  render(<Card tweet={tweet} settings={settings} />, host)
+  render(<Card post={tweet} settings={settings} />, host)
   return host
 }
 

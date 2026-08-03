@@ -5,7 +5,7 @@ import { buildFilename } from '../../src/render/export'
 const ok = { name: 'Tibo', handle: 'thsottiaux', text: 'hello world' }
 
 describe('buildManualTweet 必填欄位', () => {
-  it('三欄齊全時產出 TweetData', () => {
+  it('三欄齊全時產出 Post', () => {
     expect(buildManualTweet(ok)).not.toBeNull()
   })
 

@@ -1,4 +1,4 @@
-import type { TweetData } from '../src/types'
+import type { Post } from '../src/types'
 import { parseTweet } from '../src/parse/microdata'
 import { upgradeAvatarUrl, upgradeMediaUrl } from '../src/background/asset-proxy'
 
@@ -19,7 +19,7 @@ async function toDataUrl(url: string): Promise<string | undefined> {
   }
 }
 
-async function hydrate<T extends Omit<TweetData, 'quoted'>>(t: T): Promise<T> {
+async function hydrate<T extends Omit<Post, 'quoted'>>(t: T): Promise<T> {
   const avatarUrl = upgradeAvatarUrl(t.author.avatarUrl)
   return {
     ...t,
@@ -55,7 +55,7 @@ function fixtureHtml(name: keyof typeof FIXTURES): string {
   return html
 }
 
-export async function loadFixture(name: keyof typeof FIXTURES): Promise<TweetData> {
+export async function loadFixture(name: keyof typeof FIXTURES): Promise<Post> {
   const html = fixtureHtml(name)
   const tweet = parseTweet(html, FIXTURES[name])
   if (!tweet) throw new Error(`fixture ${name} 解析失敗`)

@@ -1,4 +1,4 @@
-import type { TweetData } from '../types'
+import type { Post } from '../types'
 import { tokenize } from '../parse/tokenize'
 
 export type ManualInput = {
@@ -17,7 +17,7 @@ export type ManualInput = {
 export const MANUAL_ID = 'manual'
 
 /**
- * 把手動輸入的三個欄位組成 TweetData。
+ * 把手動輸入的三個欄位組成 Post。
  *
  * 這是 spec §4.0 所列殘餘風險的唯一緩解手段：若 X 停止對未登入請求提供
  * schema.org microdata，解析會全面失敗，屆時使用者仍可自行輸入內容出圖。
@@ -28,7 +28,7 @@ export const MANUAL_ID = 'manual'
  *
  * 必填欄位不齊時回傳 null，呼叫端不得產出殘缺圖。
  */
-export function buildManualTweet(input: ManualInput): TweetData | null {
+export function buildManualTweet(input: ManualInput): Post | null {
   const name = input.name.trim()
   // 使用者很可能連 @ 一起貼上；handle 在整個系統裡一律不含 @（microdata 的
   // alternateName 也是不含 @ 的），這裡統一掉，否則卡片會顯示成「@@foo」。
@@ -40,11 +40,12 @@ export function buildManualTweet(input: ManualInput): TweetData | null {
   return {
     id: MANUAL_ID,
     url: '',
+    platform: 'x',
     author: { name, handle, handleDisplay: '@' + handle, avatarUrl: '' },
-    // 使用者自己打的內容，不是從任何頁面讀來的。歸在 microdata 是因為它不該
+    // 使用者自己打的內容，不是從任何頁面讀來的。歸在 fetch 是因為它不該
     // 觸發鎖推提醒 —— 那個提醒的意義是「這內容原本不公開」，手動輸入沒有
     // 這個性質。
-    source: 'microdata',
+    source: 'fetch',
     rawText: text,
     text: tokenize(text),
     createdAt: '',

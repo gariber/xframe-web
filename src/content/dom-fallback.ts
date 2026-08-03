@@ -1,4 +1,4 @@
-import type { TweetData } from '../types'
+import type { Post } from '../types'
 import { tokenize } from '../parse/tokenize'
 import { findPermalink, findTweetRoots } from './permalink'
 
@@ -50,7 +50,7 @@ function findArticle(permalink: string): Element | null {
  * 讀取指定推文。拿不到必填欄位（名稱／帳號／內文）時回傳 null，由呼叫端
  * 決定如何降級 —— 絕不產出殘缺資料。
  */
-export function extractFromDom(permalink: string): TweetData | null {
+export function extractFromDom(permalink: string): Post | null {
   const article = findArticle(permalink)
   if (!article) return null
 
@@ -64,6 +64,7 @@ export function extractFromDom(permalink: string): TweetData | null {
   return {
     id,
     url: permalink,
+    platform: 'x',
     author: {
       name: who.name,
       handle: who.handle,
@@ -85,7 +86,7 @@ export function extractFromDom(permalink: string): TweetData | null {
     // 圖片同理不處理：時間軸的圖片節點與引用推文的難以可靠區分，而歸屬錯誤
     // 會把別人的圖畫進卡片。降級路徑寧可少給，不可給錯。
     media: [],
-    source: 'dom-fallback',
+    source: 'dom',
     // 從已登入頁面的 live DOM 讀到什麼就是什麼，沒有第二份來源會截斷它，
     // 定義上就是完整內文。
     textComplete: true,

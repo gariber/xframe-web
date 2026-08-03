@@ -1,6 +1,6 @@
 import { Fragment } from 'preact'
 import { useLayoutEffect, useRef, useState } from 'preact/hooks'
-import type { TweetData, CardSettings, Segment, Media, Metric } from '../types'
+import type { Post, CardSettings, Segment, Media, Metric } from '../types'
 import { generate, GRAIN_DATA_URI } from './backgrounds'
 import { ASPECT_VALUE, canvasSizeStyle, accentFrom } from './card.css'
 import { METRIC_META } from './metrics'
@@ -112,7 +112,7 @@ export const MASKED_HANDLE = '•••••'
  * 首字母色塊也要一併處理 —— Avatar 在沒有頭像時會拿名稱首字當字母，若不換掉
  * 名稱，遮蔽後的色塊仍會洩漏姓氏。改用 MASKED_NAME 後首字自然變成「匿」。
  */
-const MASKED_AUTHOR: TweetData['author'] = {
+const MASKED_AUTHOR: Post['author'] = {
   name: MASKED_NAME,
   handle: MASKED_HANDLE,
   /**
@@ -124,7 +124,7 @@ const MASKED_AUTHOR: TweetData['author'] = {
   avatarDataUrl: undefined,
 }
 
-function Avatar({ author, size }: { author: TweetData['author']; size: number }) {
+function Avatar({ author, size }: { author: Post['author']; size: number }) {
   // 只用 data URL。退回原始跨域網址會污染 canvas 導致匯出整個失敗，
   // 寧可退化成首字母色塊也不能讓匯出爆掉。
   const src = author.avatarDataUrl
@@ -212,16 +212,16 @@ function fitFontSize(base: number, raw: string, aspect: CardSettings['aspect']):
   return Math.max(11, effectiveBase * 0.58)
 }
 
-export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSettings }) {
+export function Card({ post, settings }: { post: Post; settings: CardSettings }) {
   const s = settings
   const accent = accentFrom(s.textColor)
   const panelBg = s.panelColor + Math.round(s.panelOpacity * 255).toString(16).padStart(2, '0')
   // 外層與引用推文的作者一起遮。遮蔽時卡片上不該出現任何帳號資訊 ——
   // 留著引用推文的帳號雖然那通常是另一個人，仍會提供辨識線索。
-  const author = s.maskIdentity ? MASKED_AUTHOR : tweet.author
+  const author = s.maskIdentity ? MASKED_AUTHOR : post.author
   const quotedAuthor =
-    tweet.quoted && (s.maskIdentity ? MASKED_AUTHOR : tweet.quoted.author)
-  const fontSize = fitFontSize(s.fontSize, tweet.rawText, s.aspect)
+    post.quoted && (s.maskIdentity ? MASKED_AUTHOR : post.quoted.author)
+  const fontSize = fitFontSize(s.fontSize, post.rawText, s.aspect)
 
   const canvasRef = useRef<HTMLDivElement>(null)
   const ratio = ASPECT_VALUE[s.aspect]
@@ -252,7 +252,7 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
     const ro = new ResizeObserver(measure)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [ratio, settings, tweet])
+  }, [ratio, settings, post])
 
   return (
     <div
@@ -333,7 +333,7 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
                   flex: '0 0 auto',
                 }}
               >
-                {relTime(tweet.createdAt)}
+                {relTime(post.createdAt)}
               </div>
             )
           )}
@@ -348,10 +348,10 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
             position: 'relative',
           }}
         >
-          <Text segments={tweet.text} accent={accent} />
+          <Text segments={post.text} accent={accent} />
         </div>
 
-        {!tweet.textComplete && (
+        {!post.textComplete && (
           <div
             data-part="incomplete"
             style={{
@@ -364,9 +364,9 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
           </div>
         )}
 
-        {s.show.media && <MediaGrid media={tweet.media} />}
+        {s.show.media && <MediaGrid media={post.media} />}
 
-        {tweet.quoted && (
+        {post.quoted && (
           <div
             data-part="quoted"
             style={{
@@ -383,9 +383,9 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
               <span style={{ opacity: 0.5 }}>{quotedAuthor!.handleDisplay}</span>
             </div>
             <div style={{ lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
-              <Text segments={tweet.quoted.text} accent={accent} />
+              <Text segments={post.quoted.text} accent={accent} />
             </div>
-            {!tweet.quoted.textComplete && (
+            {!post.quoted.textComplete && (
               <div
                 data-part="incomplete"
                 style={{
@@ -397,7 +397,7 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
                 內文未完整取得
               </div>
             )}
-            {s.show.media && <MediaGrid media={tweet.quoted.media} />}
+            {s.show.media && <MediaGrid media={post.quoted.media} />}
           </div>
         )}
 
@@ -406,7 +406,7 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
           與統計列共用同一組低對比樣式，讓「時間 + 數據」讀起來是同一個資訊層，
           而不是兩個互相競爭的元素。
         */}
-        {s.show.timestamp && s.timeFormat === 'absolute' && absTime(tweet.createdAt) && (
+        {s.show.timestamp && s.timeFormat === 'absolute' && absTime(post.createdAt) && (
           <div
             data-part="time"
             style={{
@@ -418,7 +418,7 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
               letterSpacing: '0.01em',
             }}
           >
-            {absTime(tweet.createdAt)}
+            {absTime(post.createdAt)}
           </div>
         )}
 
@@ -438,7 +438,7 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
               fontSize: s.fontSize * 0.72,
             }}
           >
-            {tweet.metrics.map((m, i) => (
+            {post.metrics.map((m, i) => (
               <Fragment key={m.kind}>
                 {i > 0 && <Sep />}
                 <Stat metric={m} />

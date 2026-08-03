@@ -68,9 +68,9 @@ describe('extractFromDom', () => {
     expect(t.author.avatarUrl).toContain('profile_images')
   })
 
-  it('標記來源為 dom-fallback，讓 UI 顯示鎖推提醒並預設遮蔽', () => {
+  it('標記來源為 dom，讓 UI 顯示鎖推提醒並預設遮蔽', () => {
     buildPage()
-    expect(extractFromDom(PERMALINK)!.source).toBe('dom-fallback')
+    expect(extractFromDom(PERMALINK)!.source).toBe('dom')
   })
 
   it('互動數一律 null —— X 只渲染非零數字且不帶標籤，猜錯比顯示「—」更糟', () => {

@@ -39,20 +39,29 @@ export type Media = {
 }
 
 /**
- * 這則推文的資料從哪裡來。
- *
- * `microdata` 是正常路徑：不帶 cookie 抓取公開頁面解析 schema.org 資料。
- * `dom-fallback` 表示公開抓取拿不到內容 —— 最常見的原因是鎖推帳號，
- * 其內容對未登入請求本來就不可見 —— 改從使用者眼前這個已登入頁面讀取。
- *
- * 這個區別會一路影響 UI：來源為 `dom-fallback` 時要顯示傳播範圍的提醒，
- * 且身分遮蔽預設開啟。
+ * 目前只有 X。階段 2 加 'threads'，階段 3 加 'weibo' | 'xhs'。
+ * 現在就定義這個型別而不是等到有第二個平台，是因為 Post.platform 需要它 ——
+ * 而 platform 本身在單一平台時就有用：它決定匯出的檔名前綴。
  */
-export type TweetSource = 'microdata' | 'dom-fallback'
+export type Platform = 'x'
 
-export type TweetData = {
+/**
+ * 這則貼文的資料從哪裡來。
+ *
+ * `fetch` 是正常路徑：不帶 cookie 抓取公開頁面解析結構化資料。
+ * `dom` 表示公開抓取拿不到內容 —— 最常見的原因是鎖定帳號，其內容對未登入
+ * 請求本來就不可見 —— 改從使用者眼前這個已登入頁面讀取。
+ * `manual` 是使用者自己輸入的。
+ *
+ * 這個區別會一路影響 UI：來源為 `dom` 時要顯示傳播範圍的提醒，且身分遮蔽
+ * 預設開啟。
+ */
+export type PostSource = 'fetch' | 'dom' | 'manual'
+
+export type Post = {
   id: string
   url: string
+  platform: Platform
   author: Author
   rawText: string
   text: Segment[]
@@ -60,8 +69,8 @@ export type TweetData = {
   /** 有序：卡片依此順序渲染統計列。由 adapter 決定內容與順序。 */
   metrics: Metric[]
   media: Media[]
-  source: TweetSource
-  quoted?: Omit<TweetData, 'quoted'>
+  source: PostSource
+  quoted?: Omit<Post, 'quoted'>
   /**
    * 內文是否完整。
    *
@@ -69,7 +78,7 @@ export type TweetData = {
    * card.css.ts 的 canvasSizeStyle）。這個區別要傳到 UI：來源截斷換什麼比例
    * 都救不回來，不告訴使用者的話他會一直調比例。
    *
-   * 因為 quoted 的型別是 Omit<TweetData, 'quoted'>，引用推文自動帶有自己的
+   * 因為 quoted 的型別是 Omit<Post, 'quoted'>，引用推文自動帶有自己的
    * 這個旗標 —— 正好對上「主推文完整、引用推文截斷」這個 X 實際會出現的組合。
    */
   textComplete: boolean
