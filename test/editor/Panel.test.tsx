@@ -77,6 +77,42 @@ function mountReady() {
   return waitFor(() => (host.querySelector('.xf-export') as HTMLButtonElement)?.disabled === false)
 }
 
+/**
+ * happy-dom 沒有版面引擎，offsetWidth/offsetHeight 恆為 0，沒辦法靠真實幾何
+ * 分辨「量到的是 loading 佔位符（.xf-msg）還是 Card 的畫布（[data-part=canvas]）」。
+ * 改成依元素身分覆寫這兩個 getter：loading 佔位符給一個正常尺寸（不會觸發
+ * 提示），Card 畫布給一個會撞上 MAX_EXPORT_PIXELS 的尺寸（會觸發提示）。這樣
+ * 不管程式碼在哪個時間點讀到哪個節點，測到的就是「讀到了誰」，而不是「讀到
+ * 了什麼數字」——後者在這個環境裡本來就測不到。
+ */
+function mockOffsetsByElementIdentity() {
+  const widthDesc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth')!
+  const heightDesc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')!
+  const CANVAS_WIDTH = 358
+  // 保證撞上 MAX_EXPORT_PIXELS：算法與 export.test.ts 的「撞到像素上限」案例相同。
+  const CANVAS_HEIGHT = (exportMod.MAX_EXPORT_PIXELS / exportMod.EXPORT_WIDTH) * 2 * (CANVAS_WIDTH / exportMod.EXPORT_WIDTH)
+  Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
+    configurable: true,
+    get(this: HTMLElement) {
+      if (this.classList?.contains('xf-msg')) return 1080
+      if (this.dataset?.part === 'canvas') return CANVAS_WIDTH
+      return 0
+    },
+  })
+  Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+    configurable: true,
+    get(this: HTMLElement) {
+      if (this.classList?.contains('xf-msg')) return 100
+      if (this.dataset?.part === 'canvas') return CANVAS_HEIGHT
+      return 0
+    },
+  })
+  return () => {
+    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', widthDesc)
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', heightDesc)
+  }
+}
+
 describe('Panel doExport 失敗處理（Fix A）', () => {
   it('exportPng 失敗時顯示錯誤訊息，而不是靜默恢復成「下載 PNG」', async () => {
     vi.mocked(exportMod.exportPng).mockRejectedValue(new Error('rasterize failed'))
@@ -186,5 +222,46 @@ describe('Panel busy 時鎖定設定控制項（Fix B）', () => {
 
     resolveExport(new Blob())
     await waitFor(() => fieldset.disabled === false)
+  })
+})
+
+describe('Panel 匯出寬度提示（審查修正）', () => {
+  it('推文載入完成的那一次 render，提示就要量到 Card 本身，不是還沒替換掉的 loading 佔位符', async () => {
+    const restore = mockOffsetsByElementIdentity()
+    try {
+      await mountReady()
+      // 沒有觸發任何後續 re-render（沒有動設定、沒有點按鈕）——只靠 tweet
+      // 載入完成那一次 commit，提示就必須已經量到 Card 畫布（CANVAS_HEIGHT
+      // 撞上像素上限），而不是量到 loading 佔位符（offsetWidth=1080，不會
+      // 觸發）。舊寫法在 render body 內同步讀 cardRef.current，那一次 render
+      // 讀到的仍是上一次 commit 的節點（loading 佔位符），提示會判定為 false。
+      expect(host.textContent).toContain(`輸出寬度會低於 ${exportMod.EXPORT_WIDTH}px`)
+    } finally {
+      restore()
+    }
+  })
+
+  it('一般尺寸（撞不到像素上限）時不顯示提示', async () => {
+    // 不覆寫 offsetWidth/offsetHeight：兩者維持 happy-dom 預設的 0。
+    // exportWidth(0, 0) 回傳 0（量不到尺寸），這不代表撞了像素上限，只是
+    // 這個環境測不到真實幾何——所以這裡改用 mockOffsetsByElementIdentity
+    // 之外的「一般尺寸」分支來斷言 false，而不是依賴量到 0 這件事本身。
+    const widthDesc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth')!
+    const heightDesc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')!
+    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
+      configurable: true,
+      get(this: HTMLElement) { return this.dataset?.part === 'canvas' ? 540 : 0 },
+    })
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+      configurable: true,
+      get(this: HTMLElement) { return this.dataset?.part === 'canvas' ? 675 : 0 },
+    })
+    try {
+      await mountReady()
+      expect(host.textContent).not.toContain('輸出寬度會低於')
+    } finally {
+      Object.defineProperty(HTMLElement.prototype, 'offsetWidth', widthDesc)
+      Object.defineProperty(HTMLElement.prototype, 'offsetHeight', heightDesc)
+    }
   })
 })

@@ -50,6 +50,18 @@ export function exportWidth(layoutWidth: number, layoutHeight: number): number {
 }
 
 /**
+ * 這張卡片撞到 MAX_EXPORT_PIXELS、輸出寬度會低於 EXPORT_WIDTH 嗎。
+ *
+ * 抽成純函式而非留在 Panel 的 JSX 三元運算式裡，理由跟 card.css.ts 的
+ * canvasSizeStyle 一樣：happy-dom 沒有版面引擎，量不到真實幾何，但「給定一組
+ * 尺寸該不該顯示提示」是純邏輯，與環境無關，值得被單獨斷言 —— 不然比較運算子
+ * 寫反、門檻寫錯都只能靠「渲染輸出沒回歸」去間接發現。
+ */
+export function exportWidthBelowTarget(layoutWidth: number, layoutHeight: number): boolean {
+  return exportWidth(layoutWidth, layoutHeight) < EXPORT_WIDTH
+}
+
+/**
  * 對預覽節點本身光柵化。
  * 預覽即輸出 —— 不存在第二套渲染路徑，因此不可能出現「下載的圖跟預覽不一樣」。
  */

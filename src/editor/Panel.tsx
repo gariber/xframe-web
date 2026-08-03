@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import type { CardSettings, TweetData } from '../types'
 import { Card, DEFAULT_SETTINGS } from '../render/Card'
 import { PRESETS, generate, randomPreset } from '../render/backgrounds'
-import { exportPng, buildFilename, downloadBlob, exportWidth, EXPORT_WIDTH } from '../render/export'
+import { exportPng, buildFilename, downloadBlob, exportWidthBelowTarget, EXPORT_WIDTH } from '../render/export'
 import { loadSettings, saveSettings } from './store'
 import { parseTweet, extractTweetId } from '../parse/microdata'
 import { buildManualTweet, type ManualInput } from './manual'
@@ -111,7 +111,28 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
 
   // 跟 doExport 量的是同一個節點——這裡只是讀不是光柵化，用來預先判斷輸出
   // 寬度會不會撞上 MAX_EXPORT_PIXELS 而被 exportScale 悄悄縮小。
-  const previewNode = status.phase === 'ready' ? (cardRef.current?.firstElementChild as HTMLElement | null) : null
+  //
+  // 不能在 render body 裡同步讀 cardRef.current：cardRef 掛在跨所有
+  // status.phase 都存在的外層 .xf-preview，所以 status.phase 從 'loading'
+  // 翻成 'ready' 的那一次 render，cardRef.current 仍指向上一次 commit 的節點
+  // （loading 佔位符），不是這次剛渲染出來的 Card。跟 Card.tsx 量 minHeight
+  // 同一手法：在 useLayoutEffect 裡量，保證量到的是已經 commit 的 DOM。
+  // 相依陣列涵蓋 status（tweet 隨它變動）與 settings——兩者都可能改變卡片
+  // 的版面尺寸。
+  const [exportSize, setExportSize] = useState<{ width: number; height: number } | null>(null)
+  useLayoutEffect(() => {
+    const node = status.phase === 'ready' ? (cardRef.current?.firstElementChild as HTMLElement | null) : null
+    if (!node) {
+      setExportSize(null)
+      return
+    }
+    const measure = () => setExportSize({ width: node.offsetWidth, height: node.offsetHeight })
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(measure)
+    ro.observe(node)
+    return () => ro.disconnect()
+  }, [status, settings])
 
   return (
     <div class="xf-panel">
@@ -195,7 +216,7 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
         {busy ? '產生中…' : '下載 PNG'}
       </button>
       {exportError && <div class="xf-export-error">{exportError}</div>}
-      {previewNode && exportWidth(previewNode.offsetWidth, previewNode.offsetHeight) < EXPORT_WIDTH && (
+      {exportSize && exportWidthBelowTarget(exportSize.width, exportSize.height) && (
         <p class="xf-hint">
           這則貼文很長，圖片高度已達上限，輸出寬度會低於 {EXPORT_WIDTH}px。
         </p>

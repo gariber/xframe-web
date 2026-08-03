@@ -1,5 +1,12 @@
 import { describe, it, expect, vi } from 'vitest'
-import { buildFilename, exportScale, exportWidth, EXPORT_WIDTH, MAX_EXPORT_PIXELS } from '../../src/render/export'
+import {
+  buildFilename,
+  exportScale,
+  exportWidth,
+  exportWidthBelowTarget,
+  EXPORT_WIDTH,
+  MAX_EXPORT_PIXELS,
+} from '../../src/render/export'
 import { parseTweet } from '../../src/parse/microdata'
 import { readFileSync } from 'node:fs'
 
@@ -81,6 +88,24 @@ describe('exportWidth', () => {
 
   it('量不到尺寸時回傳 0 而非 NaN', () => {
     expect(exportWidth(0, 500)).toBe(0)
+  })
+})
+
+describe('exportWidthBelowTarget', () => {
+  // 從 Panel 的 JSX 條件式裡抽出來的純函式（同 canvasSizeStyle 的手法）：這樣
+  // 「該不該顯示提示」這個判斷本身可以被斷言，不必依賴一定量不到真實幾何的
+  // happy-dom 去間接檢查一個渲染輸出。
+  it('一般尺寸沒撞上限，回傳 false', () => {
+    expect(exportWidthBelowTarget(540, 675)).toBe(false)
+  })
+
+  it('撞到像素上限時回傳 true', () => {
+    const layoutHeight = (MAX_EXPORT_PIXELS / EXPORT_WIDTH) * 2 * (540 / EXPORT_WIDTH)
+    expect(exportWidthBelowTarget(540, layoutHeight)).toBe(true)
+  })
+
+  it('剛好等於 EXPORT_WIDTH 時回傳 false（門檻是嚴格小於，不是小於等於）', () => {
+    expect(exportWidthBelowTarget(540, 675)).toBe(false)
   })
 })
 
