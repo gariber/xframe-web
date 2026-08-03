@@ -89,7 +89,9 @@ describe('Card', () => {
 
   it('null 統計顯示為 —，0 統計正常顯示數字（spec §5：null 與 0 意義不同）', () => {
     const t = parseTweet(fx('plain'), '2083053369351090254')!
-    t.stats = { ...t.stats, replies: null, reposts: 0 }
+    t.metrics = t.metrics.map((m) =>
+      m.kind === 'replies' ? { ...m, value: null } : m.kind === 'reposts' ? { ...m, value: 0 } : m,
+    )
     const stats = mount(t).querySelector('[data-part="stats"]') as HTMLElement
     // 改用圖示的 aria-label 定位。那是圖示真正的無障礙名稱（螢幕閱讀器唯一
     // 讀得到的東西），不是為了測試才加的鉤子 —— 換掉顯示文字不該讓這個
@@ -256,7 +258,7 @@ describe('身分遮蔽（隱私）', () => {
 describe('互動數格式（國際單位，不用中文）', () => {
   const withStats = (views: number) => {
     const t = parseTweet(fx('plain'), '2083053369351090254')!
-    return { ...t, stats: { ...t.stats, views } }
+    return { ...t, metrics: t.metrics.map((m) => (m.kind === 'views' ? { ...m, value: views } : m)) }
   }
   const statsText = (views: number) =>
     (mount(withStats(views)).querySelector('[data-part="stats"]') as HTMLElement).textContent!

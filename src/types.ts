@@ -4,13 +4,17 @@ export type Segment =
   | { type: 'mention'; value: string }
   | { type: 'link'; value: string; href: string }
 
-export type Stats = {
-  replies: number | null
-  reposts: number | null
-  quotes: number | null
-  likes: number | null
-  views: number | null
-}
+/**
+ * 互動數的種類。
+ *
+ * 不是所有平台都有全部種類，也不是每個平台的順序都一樣 —— X 有瀏覽數而
+ * Threads 沒有，Threads 有分享數而 X 沒有。因此卡片上放哪幾個、什麼順序，
+ * 由各平台的 adapter 決定，這裡只定義有哪些可能。
+ */
+export type MetricKind = 'views' | 'replies' | 'reposts' | 'likes'
+
+/** `value` 為 null 代表來源沒有提供這個數字，與「數字是零」不同。 */
+export type Metric = { kind: MetricKind; value: number | null }
 
 export type Author = {
   name: string
@@ -44,7 +48,8 @@ export type TweetData = {
   rawText: string
   text: Segment[]
   createdAt: string
-  stats: Stats
+  /** 有序：卡片依此順序渲染統計列。由 adapter 決定內容與順序。 */
+  metrics: Metric[]
   media: Media[]
   source: TweetSource
   quoted?: Omit<TweetData, 'quoted'>

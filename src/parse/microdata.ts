@@ -1,13 +1,21 @@
-import type { TweetData, Stats, Author, Media } from '../types'
+import type { TweetData, Metric, MetricKind, Author, Media } from '../types'
 import { tokenize } from './tokenize'
 
-const INTERACTION: Record<string, keyof Stats> = {
+const INTERACTION: Record<string, MetricKind> = {
   'https://schema.org/ReplyAction': 'replies',
   'https://schema.org/ShareAction': 'reposts',
-  'https://schema.org/InteractAction': 'quotes',
   'https://schema.org/LikeAction': 'likes',
   'https://schema.org/ViewAction': 'views',
 }
+
+/**
+ * X 的卡片統計列順序。與 x.com 網頁本身的排列一致。
+ *
+ * schema.org 還提供 InteractAction（引用數），但卡片從未顯示它，因此不解析 ——
+ * 解析了卻永遠不顯示的欄位只會讓人以為它有用。要加回來的話，MetricKind、
+ * METRIC_META、INTERACTION、這個陣列四處一起補。
+ */
+const X_METRIC_ORDER: readonly MetricKind[] = ['views', 'replies', 'reposts', 'likes']
 
 /** 從推文永久連結取出數字 ID。 */
 export function extractTweetId(url: string): string | null {
@@ -117,21 +125,21 @@ function parseAuthor(article: Element): Author | null {
   return { name: decodeEntities(name), handle, avatarUrl: metaOf(a, 'image') ?? '' }
 }
 
-function parseStats(article: Element): Stats {
-  const stats: Stats = {
-    replies: null, reposts: null, quotes: null, likes: null, views: null,
-  }
+function parseMetrics(article: Element): Metric[] {
+  const found = new Map<MetricKind, number>()
   // 直接子層過濾至關重要：作者的追蹤者統計巢狀在 author 節點之下，不可混入
   for (const block of directChildren(article, 'interactionStatistic')) {
     const type = block.querySelector('[itemprop="interactionType"]')?.getAttribute('content')
     const count = block.querySelector('[itemprop="userInteractionCount"]')?.getAttribute('content')
-    const key = type ? INTERACTION[type] : undefined
-    if (key && count !== null && count !== undefined && count !== '') {
+    const kind = type ? INTERACTION[type] : undefined
+    if (kind && count) {
       const n = Number(count)
-      if (Number.isFinite(n)) stats[key] = n
+      if (Number.isFinite(n)) found.set(kind, n)
     }
   }
-  return stats
+  // 依固定順序輸出，而非依 DOM 中出現的順序 —— 後者會讓卡片的統計列順序
+  // 隨 X 的標記變動而改變。
+  return X_METRIC_ORDER.map((kind) => ({ kind, value: found.get(kind) ?? null }))
 }
 
 /**
@@ -166,7 +174,7 @@ function parseArticle(article: Element): Omit<TweetData, 'quoted' | 'media' | 't
     source: 'microdata',
     rawText,
     createdAt: metaOf(article, 'dateCreated') ?? metaOf(article, 'datePublished') ?? '',
-    stats: parseStats(article),
+    metrics: parseMetrics(article),
   }
 }
 

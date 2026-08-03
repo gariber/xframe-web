@@ -35,54 +35,72 @@ describe('parseTweet 基本欄位', () => {
 
 describe('parseTweet 互動數', () => {
   const t = parseTweet(fx('plain'), '2083053369351090254')!
+  const KINDS = ['replies', 'reposts', 'likes', 'views'] as const
+  const metricOf = (kind: (typeof KINDS)[number]) => t.metrics.find((m) => m.kind === kind)!.value
 
-  it('五個欄位皆為數字', () => {
-    for (const k of ['replies', 'reposts', 'quotes', 'likes', 'views'] as const) {
-      expect(typeof t.stats[k]).toBe('number')
+  it('四個欄位皆為數字', () => {
+    for (const k of KINDS) {
+      expect(typeof metricOf(k)).toBe('number')
     }
   })
-  it('讚數為正整數', () => expect(t.stats.likes!).toBeGreaterThan(0))
-  it('瀏覽數大於讚數', () => expect(t.stats.views!).toBeGreaterThan(t.stats.likes!))
+  it('讚數為正整數', () => expect(metricOf('likes')!).toBeGreaterThan(0))
+  it('瀏覽數大於讚數', () => expect(metricOf('views')!).toBeGreaterThan(metricOf('likes')!))
   it('不把作者的追蹤者數誤當成推文統計', () => {
     // 作者有 37 萬追蹤者；推文的任何統計都不應等於該值
     const followers = 378_000
-    for (const v of Object.values(t.stats)) {
-      expect(Math.abs((v ?? 0) - followers)).toBeGreaterThan(5_000)
+    for (const m of t.metrics) {
+      expect(Math.abs((m.value ?? 0) - followers)).toBeGreaterThan(5_000)
     }
+  })
+})
+
+describe('parseTweet metrics', () => {
+  it('依 X 的顯示順序產出，不是解析順序', () => {
+    const t = parseTweet(fx('plain'), '2083053369351090254')!
+    expect(t.metrics.map((m) => m.kind)).toEqual(['views', 'replies', 'reposts', 'likes'])
+  })
+
+  it('缺漏的欄位是 null 而非 0 —— 呼叫端要分得出「沒有這個數字」和「數字是零」', () => {
+    const t = parseTweet('<article data-tweet-id="1" itemtype="https://schema.org/SocialMediaPosting">' +
+      '<meta itemprop="identifier" content="1">' +
+      '<meta itemprop="text" content="hi">' +
+      '<div itemprop="author"><meta itemprop="name" content="A"><meta itemprop="alternateName" content="a"></div>' +
+      '</article>', '1')!
+    expect(t.metrics.every((m) => m.value === null)).toBe(true)
   })
 })
 
 describe('parseTweet 巢狀引用推文隔離', () => {
   // quoted.html: 外層推文 2082883636177916306 內嵌了引用推文（citation）
   // 2082878156483219672。兩者的 interactionStatistic 數字必須完全不同，
-  // 若 parseStats 不小心用了非直接子層的 querySelectorAll，會把 citation
+  // 若 parseMetrics 不小心用了非直接子層的 querySelectorAll，會把 citation
   // 的統計也掃進來，依 DOM 順序覆蓋掉外層自己的值。
   //
   // 以下期望值皆直接從 test/fixtures/quoted.html 的原始 markup 讀出，
   // 不是憑空捏造：
   //   外層 article（data-tweet-id="2082883636177916306"）自己的
-  //   interactionStatistic 區塊：Likes=8015 Retweets=367 Quotes=195
+  //   interactionStatistic 區塊：Likes=8015 Retweets=367
   //   Replies=1003 Views=1096657
   //   巢狀 citation article（data-tweet-id="2082878156483219672"）自己的
-  //   interactionStatistic 區塊：Replies=982 Retweets=1600 Quotes=1594
+  //   interactionStatistic 區塊：Replies=982 Retweets=1600
   //   Likes=16299 Views=5928637
   const t = parseTweet(fx('quoted'), '2082883636177916306')!
+  const KINDS = ['replies', 'reposts', 'likes', 'views'] as const
+  const metricOf = (tw: typeof t, kind: (typeof KINDS)[number]) =>
+    tw.metrics.find((m) => m.kind === kind)!.value
 
   it('外層推文統計取自外層自己的區塊，而非巢狀引用推文', () => {
     expect(t).not.toBeNull()
-    expect(t.stats).toEqual({
-      replies: 1003,
-      reposts: 367,
-      quotes: 195,
-      likes: 8015,
-      views: 1096657,
-    })
+    expect(metricOf(t, 'replies')).toBe(1003)
+    expect(metricOf(t, 'reposts')).toBe(367)
+    expect(metricOf(t, 'likes')).toBe(8015)
+    expect(metricOf(t, 'views')).toBe(1096657)
   })
 
   it('外層推文統計不等於巢狀引用推文的統計（防止未加範圍限制的迴歸）', () => {
-    const citationStats = { replies: 982, reposts: 1600, quotes: 1594, likes: 16299, views: 5928637 }
-    for (const k of ['replies', 'reposts', 'quotes', 'likes', 'views'] as const) {
-      expect(t.stats[k]).not.toBe(citationStats[k])
+    const citation = { replies: 982, reposts: 1600, likes: 16299, views: 5928637 }
+    for (const k of KINDS) {
+      expect(metricOf(t, k)).not.toBe(citation[k])
     }
   })
 })

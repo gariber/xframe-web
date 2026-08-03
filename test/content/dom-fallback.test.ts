@@ -75,9 +75,12 @@ describe('extractFromDom', () => {
 
   it('互動數一律 null —— X 只渲染非零數字且不帶標籤，猜錯比顯示「—」更糟', () => {
     buildPage()
-    expect(extractFromDom(PERMALINK)!.stats).toEqual({
-      replies: null, reposts: null, quotes: null, likes: null, views: null,
-    })
+    expect(extractFromDom(PERMALINK)!.metrics).toEqual([
+      { kind: 'views', value: null },
+      { kind: 'replies', value: null },
+      { kind: 'reposts', value: null },
+      { kind: 'likes', value: null },
+    ])
   })
 
   it('不抓圖片：歸屬錯誤會把別人的圖畫進卡片', () => {

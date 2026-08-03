@@ -75,7 +75,12 @@ export function extractFromDom(permalink: string): TweetData | null {
     // 互動數一律 null。X 只渲染非零的數字且不帶標籤 —— 實測某則有 2 回覆、
     // 0 轉推、0 讚的推文，整個 [role="group"] 的文字就只有 '2'，無從判斷它
     // 屬於哪一項。猜錯（把回覆數當成讚數）比顯示「—」糟得多。
-    stats: { replies: null, reposts: null, quotes: null, likes: null, views: null },
+    metrics: [
+      { kind: 'views', value: null },
+      { kind: 'replies', value: null },
+      { kind: 'reposts', value: null },
+      { kind: 'likes', value: null },
+    ],
     // 圖片同理不處理：時間軸的圖片節點與引用推文的難以可靠區分，而歸屬錯誤
     // 會把別人的圖畫進卡片。降級路徑寧可少給，不可給錯。
     media: [],

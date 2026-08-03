@@ -65,7 +65,12 @@ const tweet = (over: Partial<TweetData> = {}): TweetData => ({
   id: '1', url: URL_, source: 'microdata',
   author: { name: 'A', handle: 'a', avatarUrl: 'https://pbs.twimg.com/profile_images/1/x_normal.jpg' },
   rawText: 'hi', text: [{ type: 'text', value: 'hi' }], createdAt: '',
-  stats: { replies: null, reposts: null, quotes: null, likes: null, views: null },
+  metrics: [
+    { kind: 'views', value: null },
+    { kind: 'replies', value: null },
+    { kind: 'reposts', value: null },
+    { kind: 'likes', value: null },
+  ],
   media: [], ...over,
 })
 
