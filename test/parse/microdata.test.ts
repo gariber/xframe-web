@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { parseTweet, extractTweetId } from '../../src/parse/microdata'
+import {
+  parseTweet, extractTweetId, decodeEntities, stripTrailingLink, fullTextFromTitle,
+} from '../../src/parse/microdata'
 
 const fx = (n: string) => readFileSync(`test/fixtures/${n}.html`, 'utf8')
 
@@ -182,4 +184,76 @@ describe('parseTweet 文字分段', () => {
     // round-trip 仍要成立，證明分段沒有遺漏或重複任何字元
     expect(t.text.map((s) => ('value' in s ? s.value : '')).join('')).toBe(t.rawText)
   })
+})
+
+// X 把 <meta itemprop="text"> 截在約 200 字，完整內文只在 <title> 裡。
+// 實測那則 AGI Bar 推文：meta 199 字、實際 538 字。
+describe('decodeEntities', () => {
+  it('解掉 X 多編碼的一層 &amp;', () =>
+    expect(decodeEntities('担任MAS&amp;Head of growth')).toBe('担任MAS&Head of growth'))
+  it('解 &lt; &gt; &quot;', () =>
+    expect(decodeEntities('&lt;b&gt;a&quot;b&quot;')).toBe('<b>a"b"'))
+  it('作者自己打出的 &lt; 字樣只被解一層，不會變成真的 <', () =>
+    expect(decodeEntities('&amp;lt;')).toBe('&lt;'))
+  it('沒有實體時原樣返回', () =>
+    expect(decodeEntities('plain text 100% fine')).toBe('plain text 100% fine'))
+})
+
+describe('stripTrailingLink', () => {
+  it('去掉尾端自動附加的 t.co', () =>
+    expect(stripTrailingLink('是的是的，大清查开始了 https://t.co/GgDZmccdqn'))
+      .toBe('是的是的，大清查开始了'))
+  it('不動內文中間的連結', () => {
+    const s = '看 https://t.co/abc123 這個 然後還有後話'
+    expect(stripTrailingLink(s)).toBe(s)
+  })
+  it('只去掉一個，不會把連續連結全吃掉', () =>
+    expect(stripTrailingLink('a https://t.co/aaa https://t.co/bbb'))
+      .toBe('a https://t.co/aaa'))
+  it('非 t.co 的尾端網址保留（那是作者打的）', () => {
+    const s = '推薦這個 https://example.com/x'
+    expect(stripTrailingLink(s)).toBe(s)
+  })
+})
+
+describe('fullTextFromTitle', () => {
+  const title = (name: string, body: string) => `${name} on X: "${body}" / X`
+
+  it('meta 被截斷時取回完整內文', () => {
+    const full = '無需訂閱，也不用擔心 Token 消耗。只需要把 Base URL 和 API Key 填到 Claude Code、Codex'
+    const meta = '無需訂閱，也不用擔心 Token 消耗。只需要把 Base URL 和 API Key 填到 Claude'
+    expect(fullTextFromTitle(title('Max For AI', full), 'Max For AI', meta)).toBe(full)
+  })
+
+  it('順便去掉尾端 t.co', () =>
+    expect(fullTextFromTitle(title('Max For AI', 'aaa https://t.co/GgDZmccdqn'), 'Max For AI', 'aaa'))
+      .toBe('aaa'))
+
+  // 安全條件：title 必須是 meta 的延長，否則不採用
+  it('title 內容與 meta 對不上時退回 meta', () =>
+    expect(fullTextFromTitle(title('Max For AI', '完全不同的東西'), 'Max For AI', '原本的內文'))
+      .toBe('原本的內文'))
+
+  it('title 格式改變時退回 meta，而不是把標題列雜訊當內文', () => {
+    for (const t of ['Max For AI (@MaxForAI) / X', '', 'Max For AI on X: 沒有引號 / X', 'X']) {
+      expect(fullTextFromTitle(t, 'Max For AI', '原本的內文')).toBe('原本的內文')
+    }
+  })
+
+  it('作者名稱不符時退回 meta', () =>
+    expect(fullTextFromTitle(title('別人', '完整內文更長一些'), 'Max For AI', '完整內文'))
+      .toBe('完整內文'))
+
+  it('內文本身含引號也能正確取出', () => {
+    const body = '他說 "這樣不對" 然後就走了'
+    expect(fullTextFromTitle(title('A', body), 'A', '他說')).toBe(body)
+  })
+
+  it('內文結尾就是引號時不會多切一個字元', () => {
+    const body = '他說 "這樣不對"'
+    expect(fullTextFromTitle(title('A', body), 'A', '他說')).toBe(body)
+  })
+
+  it('meta 與完整內文相同時原樣返回（大多數短推文）', () =>
+    expect(fullTextFromTitle(title('Tibo', 'short one'), 'Tibo', 'short one')).toBe('short one'))
 })
