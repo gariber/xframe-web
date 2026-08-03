@@ -1,4 +1,4 @@
-import { findPermalink, findTweetRoots } from './permalink'
+import { ADAPTERS } from '../platforms'
 
 const MARK = 'data-xframe-injected'
 const BUTTON_CLASS = 'xframe-trigger'
@@ -25,13 +25,19 @@ function makeButton(permalink: string, onClick: (p: string) => void): HTMLButton
 }
 
 function inject(root: ParentNode, onClick: (p: string) => void): void {
-  for (const el of findTweetRoots(root)) {
-    if (el.hasAttribute(MARK)) continue
-    const permalink = findPermalink(el)
-    if (!permalink) continue // 找不到連結就不注入，避免按了沒反應的按鈕
-    el.setAttribute(MARK, '')
-    if (getComputedStyle(el).position === 'static') el.style.position = 'relative'
-    el.appendChild(makeButton(permalink, onClick))
+  // 走註冊表而非直接呼叫某個平台的偵測函式 —— 這是本檔案與「有哪些平台」
+  // 唯一的耦合點，新增平台不必再改這裡。anchor 是不是找得到連結、是不是
+  // 巢狀引用推文，都是平台知識，交給各 adapter 的 findPermalinks 決定。
+  for (const adapter of ADAPTERS) {
+    for (const { url, anchor } of adapter.findPermalinks(root)) {
+      if (anchor.hasAttribute(MARK)) continue
+      anchor.setAttribute(MARK, '')
+      // anchor 的靜態型別是 Adapter 介面裡的 Element（跨平台的最小公倍數），
+      // 但注入按鈕本來就要求它是頁面上真實的 HTMLElement。
+      const htmlAnchor = anchor as HTMLElement
+      if (getComputedStyle(htmlAnchor).position === 'static') htmlAnchor.style.position = 'relative'
+      htmlAnchor.appendChild(makeButton(url, onClick))
+    }
   }
 }
 
