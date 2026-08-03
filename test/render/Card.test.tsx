@@ -3,7 +3,6 @@ import { render } from 'preact'
 import { Card, DEFAULT_SETTINGS } from '../../src/render/Card'
 import { parseTweet } from '../../src/parse/microdata'
 import { readFileSync } from 'node:fs'
-import { MIN_HEIGHT_ASPECTS } from '../../src/render/card.css'
 import type { CardSettings } from '../../src/types'
 
 const fx = (n: string) => readFileSync(`test/fixtures/${n}.html`, 'utf8')
@@ -147,13 +146,6 @@ describe('長文自動縮字級', () => {
   it('字級不低於 11', () => {
     expect(sizeOf('中'.repeat(2000))).toBeGreaterThanOrEqual(11)
   })
-
-  it('超長文截斷並加遮罩淡出', () => {
-    const el = mount(withText('a'.repeat(1200)))
-    const body = el.querySelector('[data-part="body"]') as HTMLElement
-    expect(body.style.overflow).toBe('hidden')
-    expect(body.style.getPropertyValue('-webkit-mask-image') || body.style.maskImage).toContain('gradient')
-  })
 })
 
 describe('DEFAULT_SETTINGS', () => {
@@ -204,59 +196,10 @@ describe('固定比例模式的版面收斂（Fix 1）', () => {
       expect(fontSizeOf(aspect)).toBeLessThan(autoSize)
     }
   })
-
-  it('固定比例模式下，同一段文字比 auto 模式更早被截斷', () => {
-    const base = parseTweet(fx('plain'), '2083053369351090254')!
-    // 700 刻意落在 auto 的 900 與 1:1 的 640 之間，才問得出「固定比例更早截斷」
-    const raw = 'a'.repeat(700)
-    const t = { ...base, rawText: raw, text: [{ type: 'text' as const, value: raw }] }
-    const bodyOf = (aspect: (typeof DEFAULT_SETTINGS)['aspect']) =>
-      mount(t, { ...DEFAULT_SETTINGS, aspect }).querySelector('[data-part="body"]') as HTMLElement
-
-    expect(bodyOf('auto').style.overflow).not.toBe('hidden')
-    expect(bodyOf('1:1').style.overflow).toBe('hidden')
-  })
 })
 
-// 第二輪修正：真瀏覽器實測（1280×800 viewport，dev preview，見
-// final-fixwave-report.md 的「Aspect ratio second pass」）發現 aspect-ratio
-// 本身在「畫布是 flex 容器、面板是內容驅動高度的 flex item」這個組合下不保證
-// 贏過內容的 min-content 貢獻——16:9 量到撐高 14%，即使 minHeight:0 與
-// overflow:hidden 都已經套用在 canvas 節點上。改成量測目前寬度、直接算出定值
-// px 高度指定給 height，讓比例由「這是一個具體長度」保證成立，不再參與那場
-// CSS 規格對 flex + aspect-ratio 互動語意仍不完全明確的自動定size演算法。
-//
-// 這條路徑同樣受 happy-dom 沒有排版引擎所限：量到的寬度恆為 0，算出的 height
-// 恆為 '0px'。下面的斷言證明的是「非 auto aspect 真的觸發了量測並把結果寫進
-// height」這條程式路徑本身有跑到、且 auto 模式完全不會走這條路徑——不是「量到
-// 的數字對不對」，那需要真瀏覽器，已經在 dev preview 手動驗證過。
-describe('固定比例模式改用量測寬度算出的定值 height（Fix 1 第二輪）', () => {
-  // useLayoutEffect 裡的 setFixedHeight 觸發的是「下一輪」render，Preact 預設
-  // 用 Promise.resolve().then() 排程（stock preact 沒有 debounceRendering，
-  // 見 node_modules/preact/src/component.js），不是跟初次 render 同步寫進
-  // DOM。mount() 本身是同步函式，呼叫完的當下這個第二輪 render 通常還沒被
-  // flush，所以這裡要多等一輪微工作佇列（microtask）才看得到 height 被寫入。
-  const flush = () => Promise.resolve()
-
-  it.each(['1:1', '4:5'] as const)(
-    'aspect=%s 時，canvas 節點的 height 由 useLayoutEffect 寫入（happy-dom 下量到的寬度為 0，故為 0px）',
-    async (aspect) => {
-      const s = { ...DEFAULT_SETTINGS, aspect }
-      const el = mount(undefined, s)
-      await flush()
-      const canvas = el.querySelector('[data-part="canvas"]') as HTMLElement
-      expect(canvas.style.height).toBe('0px')
-    },
-  )
-
-  it('auto 模式下 canvas 節點不會被設定 height（維持內容驅動的高度）', async () => {
-    const el = mount()
-    await flush()
-    const canvas = el.querySelector('[data-part="canvas"]') as HTMLElement
-    expect(canvas.style.height).toBe('')
-  })
-
-  it('canvas 節點設定 box-sizing:border-box，讓定值 height 與量測到的 border-box 寬度是同一套座標系', () => {
+describe('canvas 節點的 box-sizing', () => {
+  it('canvas 節點設定 box-sizing:border-box，讓定值 minHeight 與量測到的 border-box 寬度是同一套座標系', () => {
     const el = mount(undefined, { ...DEFAULT_SETTINGS, aspect: '1:1' })
     const canvas = el.querySelector('[data-part="canvas"]') as HTMLElement
     expect(canvas.style.boxSizing).toBe('border-box')
@@ -405,23 +348,13 @@ describe('發文時間格式', () => {
   })
 })
 
-// 幾何無法在此驗證：happy-dom 沒有版面引擎，且 useLayoutEffect 裡的
-// setState 在測試同步讀取樣式時尚未 flush，所以 height 與 minHeight
-// 對所有模式都是相同的空值，彼此無法區分。真正的幾何行為已在真瀏覽器
-// 驗證（720 寬：9:16 短文 1280 高、長文長到 1820 且與 auto 一致、不裁切）。
-// 這裡守的是「哪個模式走哪條分支」這個決策本身。
-describe('9:16 最小高度模式', () => {
-  it('9:16 被歸類為最小高度模式', () => {
-    expect(MIN_HEIGHT_ASPECTS.has('9:16')).toBe(true)
-  })
-
-  it('固定比例不是最小高度模式', () => {
-    for (const a of ['1:1', '4:5']) {
-      expect(MIN_HEIGHT_ASPECTS.has(a)).toBe(false)
-    }
-  })
-
-  it('9:16 不套用縮字係數（不鎖高度就沒有塞不下的問題）', () => {
+// 9:16 一直都是最小高度（見 card.css.ts 的 canvasSizeStyle 與下面的
+// ASPECT_SHRINK 說明），全比例改最小高度後這已不是它獨有的行為，不再需要
+// 用「9:16 是不是最小高度模式」這個已消失的區分來測。這裡只留仍然獨有的
+// 一件事：ASPECT_SHRINK 表裡 9:16 的係數是 1（跟 auto 一樣不縮字），
+// 1:1／4:5 才縮，這件事與截斷機制無關，改動後依然成立。
+describe('9:16 字級不縮', () => {
+  it('9:16 不套用縮字係數，與 auto 相同；1:1 才縮', () => {
     const raw = '中'.repeat(60)
     const withText = (aspect: CardSettings['aspect']) => {
       const base = parseTweet(fx('plain'), '2083053369351090254')!
@@ -432,12 +365,51 @@ describe('9:16 最小高度模式', () => {
     expect(withText('9:16')).toBe(withText('auto'))
     expect(withText('1:1')).toBeLessThan(withText('auto'))
   })
+})
 
-  it('9:16 不截斷內文（不裁切就不需要漸層淡出）', () => {
-    const base = parseTweet(fx('plain'), '2083053369351090254')!
-    const raw = 'a'.repeat(700)
-    const t = { ...base, rawText: raw, text: [{ type: 'text' as const, value: raw }] }
-    const body = mount(t, { ...DEFAULT_SETTINGS, aspect: '9:16' }).querySelector('[data-part="body"]') as HTMLElement
-    expect(body.style.overflow).not.toBe('hidden')
+describe('內文完整性', () => {
+  // 640 是舊的 1:1 字數上限，760 是 4:5、900 是 auto/9:16。
+  // 取 1200 字確保四種比例在舊行為下全部會截斷。
+  const LONG = '長'.repeat(1200)
+
+  const longTweet = () => {
+    const t = parseTweet(fx('plain'), '2083053369351090254')!
+    return { ...t, rawText: LONG, text: [{ type: 'text' as const, value: LONG }] }
+  }
+
+  it.each(['auto', '1:1', '4:5', '9:16'] as const)(
+    '%s 比例下內文一字不少',
+    (aspect) => {
+      const el = mount(longTweet(), { ...DEFAULT_SETTINGS, aspect })
+      expect(el.querySelector('[data-part="body"]')?.textContent).toBe(LONG)
+    },
+  )
+
+  it('內文不再被鎖高度或套淡出遮罩', () => {
+    const el = mount(longTweet(), { ...DEFAULT_SETTINGS, aspect: '1:1' })
+    const body = el.querySelector('[data-part="body"]') as HTMLElement
+    expect(body.style.maxHeight).toBe('')
+    // maskImage 用 toBeFalsy 而非 toBe('')：happy-dom 15.11.7 的
+    // CSSStyleDeclaration 只預先定義了一份標準 CSS 屬性清單（maxHeight 在
+    // 內），mask-image 不在清單裡——沒被賦值過的話讀回是 undefined，賦值過
+    // 一次（哪怕是空字串）之後才會變成 ''。這裡的程式碼已完全不再賦值
+    // maskImage（見 Card.tsx 內文 style），所以讀回的是 undefined 而非 ''，
+    // 跟「有沒有套遮罩」這件事本身無關。toBeFalsy 兩種空值都收，但遇到真的
+    // 塞回一個漸層字串（截斷邏輯復辟）時仍會是 truthy 而失敗，守備力不變。
+    expect(body.style.maskImage).toBeFalsy()
+  })
+
+  it('畫布不再套溢出淡出遮罩', () => {
+    const el = mount(longTweet(), { ...DEFAULT_SETTINGS, aspect: '4:5' })
+    const canvas = el.querySelector('[data-part="canvas"]') as HTMLElement
+    // 同上一則測試：maskImage 不在 happy-dom 預先定義的 CSS 屬性清單裡，
+    // 未賦值過會讀回 undefined 而非 ''，toBeFalsy 兩者都收。
+    expect(canvas.style.maskImage).toBeFalsy()
+  })
+
+  it('面板不再被縮放 —— 畫布長高取代縮小', () => {
+    const el = mount(longTweet(), { ...DEFAULT_SETTINGS, aspect: '1:1' })
+    const panel = el.querySelector('[data-part="panel"]') as HTMLElement
+    expect(panel.style.transform).toBe('')
   })
 })
