@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { buildFilename, exportScale, EXPORT_WIDTH, MAX_EXPORT_PIXELS } from '../../src/render/export'
+import { buildFilename, exportScale, exportWidth, EXPORT_WIDTH, MAX_EXPORT_PIXELS } from '../../src/render/export'
 import { parseTweet } from '../../src/parse/microdata'
 import { readFileSync } from 'node:fs'
 
@@ -64,6 +64,23 @@ describe('exportScale：輸出寬度固定，不隨裝置畫面寬度變動', ()
   it('量到 0 時退回 1 而不是 Infinity', () => {
     expect(exportScale(0, 500)).toBe(1)
     expect(exportScale(500, 0)).toBe(1)
+  })
+})
+
+describe('exportWidth', () => {
+  it('一般尺寸輸出剛好是 EXPORT_WIDTH', () => {
+    expect(exportWidth(540, 675)).toBe(EXPORT_WIDTH)
+  })
+
+  it('撞到像素上限時低於 EXPORT_WIDTH', () => {
+    // 1080 寬時高度上限是 MAX_EXPORT_PIXELS / 1080 ≈ 14814px。
+    // 用版面 540 寬、高度為該上限兩倍的卡片，必定超過。
+    const layoutHeight = (MAX_EXPORT_PIXELS / EXPORT_WIDTH) * 2 * (540 / EXPORT_WIDTH)
+    expect(exportWidth(540, layoutHeight)).toBeLessThan(EXPORT_WIDTH)
+  })
+
+  it('量不到尺寸時回傳 0 而非 NaN', () => {
+    expect(exportWidth(0, 500)).toBe(0)
   })
 })
 

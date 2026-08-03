@@ -17,7 +17,7 @@ export const EXPORT_WIDTH = 1080
 
 /**
  * canvas 的像素數上限。iOS Safari 超過約 1600 萬像素會直接給出空白畫布 ——
- * 不丟例外，只是靜靜產出一張全白的圖。自動高度與 9:16 都不限制長度，極長的
+ * 不丟例外，只是靜靜產出一張全白的圖。四種比例都不再限制內文長度，極長的
  * 推文有可能撞到，所以寧可整體縮一點也不要無聲失敗。
  */
 export const MAX_EXPORT_PIXELS = 16_000_000
@@ -35,6 +35,18 @@ export function exportScale(layoutWidth: number, layoutHeight: number): number {
   const pixels = layoutWidth * k * layoutHeight * k
   if (pixels <= MAX_EXPORT_PIXELS) return k
   return k * Math.sqrt(MAX_EXPORT_PIXELS / pixels)
+}
+
+/**
+ * 這張卡片實際會輸出的像素寬度。
+ *
+ * 正常情況等於 EXPORT_WIDTH。只有在畫布高到讓總像素數撞上 MAX_EXPORT_PIXELS
+ * 時，exportScale 會整體縮小以避開 iOS Safari 的全白畫布，輸出寬度才會低於
+ * 1080 —— 那是正確的取捨（無聲全白更糟），但使用者看不出來，所以要有辦法問。
+ */
+export function exportWidth(layoutWidth: number, layoutHeight: number): number {
+  if (layoutWidth <= 0 || layoutHeight <= 0) return 0
+  return Math.round(exportScale(layoutWidth, layoutHeight) * layoutWidth)
 }
 
 /**

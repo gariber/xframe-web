@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks'
 import type { CardSettings, TweetData } from '../types'
 import { Card, DEFAULT_SETTINGS } from '../render/Card'
 import { PRESETS, generate, randomPreset } from '../render/backgrounds'
-import { exportPng, buildFilename, downloadBlob } from '../render/export'
+import { exportPng, buildFilename, downloadBlob, exportWidth, EXPORT_WIDTH } from '../render/export'
 import { loadSettings, saveSettings } from './store'
 import { parseTweet, extractTweetId } from '../parse/microdata'
 import { buildManualTweet, type ManualInput } from './manual'
@@ -109,6 +109,10 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
     }
   }
 
+  // 跟 doExport 量的是同一個節點——這裡只是讀不是光柵化，用來預先判斷輸出
+  // 寬度會不會撞上 MAX_EXPORT_PIXELS 而被 exportScale 悄悄縮小。
+  const previewNode = status.phase === 'ready' ? (cardRef.current?.firstElementChild as HTMLElement | null) : null
+
   return (
     <div class="xf-panel">
       <header class="xf-head">
@@ -191,6 +195,11 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
         {busy ? '產生中…' : '下載 PNG'}
       </button>
       {exportError && <div class="xf-export-error">{exportError}</div>}
+      {previewNode && exportWidth(previewNode.offsetWidth, previewNode.offsetHeight) < EXPORT_WIDTH && (
+        <p class="xf-hint">
+          這則貼文很長，圖片高度已達上限，輸出寬度會低於 {EXPORT_WIDTH}px。
+        </p>
+      )}
 
       {/*
         exportPng 是直接對 cardRef 底下這個活生生的 DOM 節點做光柵化，光柵化
