@@ -80,11 +80,35 @@ const TITLE_SUFFIX = '" / X'
  *
  * 實測 22 則全部通過這個檢查。
  */
-export function fullTextFromTitle(title: string, authorName: string, metaText: string): string {
+export function fullTextFromTitle(
+  title: string,
+  authorName: string,
+  metaText: string,
+): { text: string; fromTitle: boolean } {
   const prefix = `${authorName} on X: "`
-  if (!title.startsWith(prefix) || !title.endsWith(TITLE_SUFFIX)) return metaText
+  if (!title.startsWith(prefix) || !title.endsWith(TITLE_SUFFIX)) {
+    return { text: metaText, fromTitle: false }
+  }
   const candidate = stripTrailingLink(title.slice(prefix.length, -TITLE_SUFFIX.length))
-  return candidate.startsWith(metaText) ? candidate : metaText
+  return candidate.startsWith(metaText)
+    ? { text: candidate, fromTitle: true }
+    : { text: metaText, fromTitle: false }
+}
+
+/**
+ * meta itemprop="text" 被視為可能截斷的長度下界。
+ *
+ * X 截在約 200 字，但不是精確值 —— 實測有 199 與 277 兩種。取 190 作為下界，
+ * 寧可把剛好夠長的完整推文誤標為不確定，也不要把截斷的推文標成完整：前者
+ * 只是多一行提示，後者是騙人。
+ *
+ * 主推文幾乎總能從 title 補回全文（實測 22 則全通過），所以這條路實際上
+ * 只服務引用推文 —— 那是唯一沒有第二份來源可以驗證的地方。
+ */
+const META_TRUNCATION_FLOOR = 190
+
+function looksComplete(text: string, fromTitle: boolean): boolean {
+  return fromTitle || text.length < META_TRUNCATION_FLOOR
 }
 
 /**
@@ -157,8 +181,11 @@ function parseMedia(article: Element): Media[] {
     .filter((m) => m.url !== '')
 }
 
-/** 解析單一 article 節點。不含引用推文與圖片，由 Task 4 補上。 */
-function parseArticle(article: Element): Omit<TweetData, 'quoted' | 'media' | 'text'> | null {
+/**
+ * 解析單一 article 節點。不含引用推文與圖片。也不含 textComplete —— 這一層
+ * 拿不到 title（截斷判斷需要它），由兩個呼叫點各自依自己的情境補上。
+ */
+function parseArticle(article: Element): Omit<TweetData, 'quoted' | 'media' | 'text' | 'textComplete'> | null {
   const author = parseAuthor(article)
   const raw = metaOf(article, 'text')
   const rawText = raw === null ? null : decodeEntities(raw)
@@ -198,7 +225,7 @@ export function parseTweet(html: string, tweetId: string): TweetData | null {
   // 只有主推文能從 title 補回完整內文：一份文件只有一個 <title>，而它描述的
   // 是主推文。引用推文的內文若超過 200 字仍會是截斷的 —— 這是這個資料來源
   // 的極限，不是可以在這裡繞過的東西。
-  const fullText = fullTextFromTitle(
+  const { text: fullText, fromTitle } = fullTextFromTitle(
     doc.querySelector('title')?.textContent ?? '',
     base.author.name,
     base.rawText,
@@ -210,7 +237,14 @@ export function parseTweet(html: string, tweetId: string): TweetData | null {
   if (citeEl) {
     const cbase = parseArticle(citeEl)
     if (cbase) {
-      quoted = { ...cbase, text: tokenize(cbase.rawText), media: parseMedia(citeEl) }
+      quoted = {
+        ...cbase,
+        text: tokenize(cbase.rawText),
+        media: parseMedia(citeEl),
+        // 一份文件只有一個 <title>，而它描述的是主推文。引用推文沒有第二份
+        // 來源可以驗證，只能靠長度判斷 —— 這是這個資料來源的極限。
+        textComplete: looksComplete(cbase.rawText, false),
+      }
     }
   }
 
@@ -219,6 +253,7 @@ export function parseTweet(html: string, tweetId: string): TweetData | null {
     rawText: fullText,
     text: tokenize(fullText),
     media: parseMedia(article),
+    textComplete: looksComplete(fullText, fromTitle),
     ...(quoted ? { quoted } : {}),
   }
 }

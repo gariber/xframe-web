@@ -71,7 +71,7 @@ const tweet = (over: Partial<TweetData> = {}): TweetData => ({
     { kind: 'reposts', value: null },
     { kind: 'likes', value: null },
   ],
-  media: [], ...over,
+  media: [], textComplete: true, ...over,
 })
 
 describe('來源允許清單', () => {

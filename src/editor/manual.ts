@@ -55,5 +55,7 @@ export function buildManualTweet(input: ManualInput): TweetData | null {
       { kind: 'likes', value: null },
     ],
     media: [],
+    // 使用者自己打的字，沒有「來源截斷」這回事，定義上就是完整內文。
+    textComplete: true,
   }
 }

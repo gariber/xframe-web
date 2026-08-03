@@ -53,6 +53,17 @@ export type TweetData = {
   media: Media[]
   source: TweetSource
   quoted?: Omit<TweetData, 'quoted'>
+  /**
+   * 內文是否完整。
+   *
+   * `false` 代表**來源就沒給全文**，不是排版放不下 —— 排版永遠不截字（見
+   * card.css.ts 的 canvasSizeStyle）。這個區別要傳到 UI：來源截斷換什麼比例
+   * 都救不回來，不告訴使用者的話他會一直調比例。
+   *
+   * 因為 quoted 的型別是 Omit<TweetData, 'quoted'>，引用推文自動帶有自己的
+   * 這個旗標 —— 正好對上「主推文完整、引用推文截斷」這個 X 實際會出現的組合。
+   */
+  textComplete: boolean
 }
 
 export type BgKind = 'mesh' | 'aurora' | 'wave' | 'split' | 'grid'

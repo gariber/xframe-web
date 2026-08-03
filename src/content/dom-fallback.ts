@@ -85,5 +85,8 @@ export function extractFromDom(permalink: string): TweetData | null {
     // 會把別人的圖畫進卡片。降級路徑寧可少給，不可給錯。
     media: [],
     source: 'dom-fallback',
+    // 從已登入頁面的 live DOM 讀到什麼就是什麼，沒有第二份來源會截斷它，
+    // 定義上就是完整內文。
+    textComplete: true,
   }
 }

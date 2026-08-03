@@ -427,3 +427,17 @@ describe('內文完整性', () => {
     expect(panel.style.transform).toBe('')
   })
 })
+
+describe('來源截斷', () => {
+  const plain = () => parseTweet(fx('plain'), '2083053369351090254')!
+
+  it('來源截斷時顯示提示', () => {
+    const el = mount({ ...plain(), textComplete: false })
+    expect(el.querySelector('[data-part="incomplete"]')).not.toBeNull()
+  })
+
+  it('內文完整時不顯示提示', () => {
+    const el = mount({ ...plain(), textComplete: true })
+    expect(el.querySelector('[data-part="incomplete"]')).toBeNull()
+  })
+})

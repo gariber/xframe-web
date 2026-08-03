@@ -346,6 +346,19 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
           <Text segments={tweet.text} accent={accent} />
         </div>
 
+        {!tweet.textComplete && (
+          <div
+            data-part="incomplete"
+            style={{
+              marginTop: 8,
+              opacity: 0.5,
+              fontSize: s.fontSize * 0.72,
+            }}
+          >
+            內文未完整取得
+          </div>
+        )}
+
         {s.show.media && <MediaGrid media={tweet.media} />}
 
         {tweet.quoted && (
@@ -367,6 +380,18 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
             <div style={{ lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
               <Text segments={tweet.quoted.text} accent={accent} />
             </div>
+            {!tweet.quoted.textComplete && (
+              <div
+                data-part="incomplete"
+                style={{
+                  marginTop: 8,
+                  opacity: 0.5,
+                  fontSize: s.fontSize * 0.72,
+                }}
+              >
+                內文未完整取得
+              </div>
+            )}
             {s.show.media && <MediaGrid media={tweet.quoted.media} />}
           </div>
         )}

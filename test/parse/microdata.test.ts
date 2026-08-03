@@ -234,44 +234,75 @@ describe('stripTrailingLink', () => {
   })
 })
 
+describe('textComplete', () => {
+  it('主推文從 title 補回全文時標記為完整', () => {
+    const t = parseTweet(fx('plain'), '2083053369351090254')!
+    expect(t.textComplete).toBe(true)
+  })
+
+  // quoted fixture 的引用推文（citation）meta itemprop="text" 實測 276 字
+  // （超過 190 字下界，且句子在「Luna and Terra's lower prices are」中間斷開，
+  // 確實是被截斷，不是巧合地剛好夠長），brief 原先斷言的「小於 190」不成立。
+  // 一份文件只有一個 <title>，它描述主推文，引用推文沒有第二份來源可以驗證
+  // 是否被截斷，只能靠長度判斷 —— 這正是這個測試要證明的：長度過線時標記為
+  // 不完整，而不是誤標成完整。
+  it('長的引用推文（實測 276 字，超過 190 字下界且確實斷句）標記為不完整', () => {
+    const t = parseTweet(fx('quoted'), '2082883636177916306')!
+    expect(t.quoted!.rawText.length).toBeGreaterThanOrEqual(190)
+    expect(t.quoted!.textComplete).toBe(false)
+  })
+})
+
 describe('fullTextFromTitle', () => {
   const title = (name: string, body: string) => `${name} on X: "${body}" / X`
 
   it('meta 被截斷時取回完整內文', () => {
     const full = '無需訂閱，也不用擔心 Token 消耗。只需要把 Base URL 和 API Key 填到 Claude Code、Codex'
     const meta = '無需訂閱，也不用擔心 Token 消耗。只需要把 Base URL 和 API Key 填到 Claude'
-    expect(fullTextFromTitle(title('Max For AI', full), 'Max For AI', meta)).toBe(full)
+    expect(fullTextFromTitle(title('Max For AI', full), 'Max For AI', meta))
+      .toEqual({ text: full, fromTitle: true })
   })
 
   it('順便去掉尾端 t.co', () =>
     expect(fullTextFromTitle(title('Max For AI', 'aaa https://t.co/GgDZmccdqn'), 'Max For AI', 'aaa'))
-      .toBe('aaa'))
+      .toEqual({ text: 'aaa', fromTitle: true }))
 
   // 安全條件：title 必須是 meta 的延長，否則不採用
   it('title 內容與 meta 對不上時退回 meta', () =>
     expect(fullTextFromTitle(title('Max For AI', '完全不同的東西'), 'Max For AI', '原本的內文'))
-      .toBe('原本的內文'))
+      .toEqual({ text: '原本的內文', fromTitle: false }))
 
   it('title 格式改變時退回 meta，而不是把標題列雜訊當內文', () => {
     for (const t of ['Max For AI (@MaxForAI) / X', '', 'Max For AI on X: 沒有引號 / X', 'X']) {
-      expect(fullTextFromTitle(t, 'Max For AI', '原本的內文')).toBe('原本的內文')
+      expect(fullTextFromTitle(t, 'Max For AI', '原本的內文')).toEqual({ text: '原本的內文', fromTitle: false })
     }
   })
 
   it('作者名稱不符時退回 meta', () =>
     expect(fullTextFromTitle(title('別人', '完整內文更長一些'), 'Max For AI', '完整內文'))
-      .toBe('完整內文'))
+      .toEqual({ text: '完整內文', fromTitle: false }))
 
   it('內文本身含引號也能正確取出', () => {
     const body = '他說 "這樣不對" 然後就走了'
-    expect(fullTextFromTitle(title('A', body), 'A', '他說')).toBe(body)
+    expect(fullTextFromTitle(title('A', body), 'A', '他說')).toEqual({ text: body, fromTitle: true })
   })
 
   it('內文結尾就是引號時不會多切一個字元', () => {
     const body = '他說 "這樣不對"'
-    expect(fullTextFromTitle(title('A', body), 'A', '他說')).toBe(body)
+    expect(fullTextFromTitle(title('A', body), 'A', '他說')).toEqual({ text: body, fromTitle: true })
   })
 
   it('meta 與完整內文相同時原樣返回（大多數短推文）', () =>
-    expect(fullTextFromTitle(title('Tibo', 'short one'), 'Tibo', 'short one')).toBe('short one'))
+    expect(fullTextFromTitle(title('Tibo', 'short one'), 'Tibo', 'short one'))
+      .toEqual({ text: 'short one', fromTitle: true }))
+
+  it('title 是 meta 的延長時採用它，並標記來源', () => {
+    const meta = '前半段'
+    const t = 'A on X: "前半段後半段" / X'
+    expect(fullTextFromTitle(t, 'A', meta)).toEqual({ text: '前半段後半段', fromTitle: true })
+  })
+
+  it('title 格式不符時退回 meta，不標記', () => {
+    expect(fullTextFromTitle('完全不同的標題', 'A', '內文')).toEqual({ text: '內文', fromTitle: false })
+  })
 })
