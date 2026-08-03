@@ -216,7 +216,7 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
   const s = settings
   const accent = accentFrom(s.textColor)
   const panelBg = s.panelColor + Math.round(s.panelOpacity * 255).toString(16).padStart(2, '0')
-  // 外層與引用推文的作者一起遮。遮蔽時卡片上不該出現任何帳號資訊 ——
+  // 外層與被引用貼文的作者一起遮。遮蔽時卡片上不該出現任何帳號資訊 ——
   // 留著引用推文的帳號雖然那通常是另一個人，仍會提供辨識線索。
   const author = s.maskIdentity ? MASKED_AUTHOR : post.author
   const quotedAuthor =
@@ -402,7 +402,7 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
         )}
 
         {/*
-          絕對時間的落點：內文（與圖片、引用推文）之後、統計列之前，獨立成行。
+          絕對時間的落點：內文（與圖片、被引用貼文）之後、統計列之前，獨立成行。
           與統計列共用同一組低對比樣式，讓「時間 + 數據」讀起來是同一個資訊層，
           而不是兩個互相競爭的元素。
         */}

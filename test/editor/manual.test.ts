@@ -95,4 +95,11 @@ describe('buildManualTweet 與匯出檔名', () => {
     const t = buildManualTweet({ ...ok, handle: 'a/b:c*d' })!
     expect(buildFilename(t)).not.toMatch(/[\/\\:*?"<>|]/)
   })
+
+  it('來源是 manual，不冒充抓取結果', () => {
+    // 沒有任何東西被抓取過，標成 'fetch' 等於在資料裡說謊。目前只有 'dom'
+    // 有分支邏輯，所以這個值今天不影響行為 —— 正因為如此才要有測試守著，
+    // 否則日後有人依 source 分流時才會發現它一直是錯的。
+    expect(buildManualTweet(ok)!.source).toBe('manual')
+  })
 })

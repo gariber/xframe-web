@@ -42,10 +42,12 @@ export function buildManualTweet(input: ManualInput): Post | null {
     url: '',
     platform: 'x',
     author: { name, handle, handleDisplay: '@' + handle, avatarUrl: '' },
-    // 使用者自己打的內容，不是從任何頁面讀來的。歸在 fetch 是因為它不該
-    // 觸發鎖推提醒 —— 那個提醒的意義是「這內容原本不公開」，手動輸入沒有
-    // 這個性質。
-    source: 'fetch',
+    // 使用者自己打的內容，不是從任何頁面讀來的。
+    //
+    // 不是 'dom'：那條路的提醒意義是「這內容原本不公開」，手動輸入沒有這個
+    // 性質。也不是 'fetch'：沒有任何東西被抓取過，那樣標等於在資料裡說謊，
+    // 日後任何依 source 分流的邏輯都會被誤導。
+    source: 'manual',
     rawText: text,
     text: tokenize(text),
     createdAt: '',
