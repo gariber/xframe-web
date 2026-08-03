@@ -165,9 +165,9 @@ describe('DEFAULT_SETTINGS', () => {
 // 器或視覺回歸測試；本次已在 dev preview 手動驗證過（見
 // final-fixwave-report.md 的「Aspect ratio second pass」一節），不在本檔案
 // 自動化測試的涵蓋範圍內。
-describe('固定比例模式的版面收斂（Fix 1）', () => {
+describe('比例的版面樣式與字級收斂（Fix 1）', () => {
   it.each(['auto', '1:1', '4:5', '9:16'] as const)(
-    'canvas 節點不再設定 CSS 的 aspect-ratio（改用下面量測出來的定值 height，見 Fix 1 第二輪）',
+    'canvas 節點不再設定 CSS 的 aspect-ratio（改用量測出來的 minHeight）',
     (aspect) => {
       const s = { ...DEFAULT_SETTINGS, aspect }
       const el = mount(undefined, s)
@@ -183,7 +183,7 @@ describe('固定比例模式的版面收斂（Fix 1）', () => {
     expect(canvas.style.overflow).toBe('hidden')
   })
 
-  it('固定比例模式下，同一段文字的字級比 auto 模式更小（可用高度被鎖死，須提早縮字）', () => {
+  it('非 auto 比例下，同一段文字的字級比 auto 模式更小（ASPECT_SHRINK 讓中等長度貼文仍落在精確比例上）', () => {
     const base = parseTweet(fx('plain'), '2083053369351090254')!
     const raw = '中'.repeat(60)
     const t = { ...base, rawText: raw, text: [{ type: 'text' as const, value: raw }] }
@@ -397,6 +397,13 @@ describe('內文完整性', () => {
     // 跟「有沒有套遮罩」這件事本身無關。toBeFalsy 兩種空值都收，但遇到真的
     // 塞回一個漸層字串（截斷邏輯復辟）時仍會是 truthy 而失敗，守備力不變。
     expect(body.style.maskImage).toBeFalsy()
+    // overflow 是被刪掉的四個 body 屬性之一，maxHeight／maskImage 已有斷言
+    // 守著，這裡補上 overflow：截斷路徑復辟的話這行會變回 'hidden'。
+    expect(body.style.overflow).not.toBe('hidden')
+    // 第四個被刪掉的屬性 WebkitMaskImage 沒有斷言，是因為它測不到而不是遺漏：
+    // 實測把 WebkitMaskImage 設成漸層字串後，body.style.webkitMaskImage 仍讀回
+    // 空值，這則測試照樣通過。加一個永遠不會紅的斷言比不加更糟 —— 它讓人以為
+    // 這個屬性有人看著。真正守住遮罩的是上面的 maskImage（實測會紅）。
   })
 
   it('畫布不再套溢出淡出遮罩', () => {
@@ -405,6 +412,11 @@ describe('內文完整性', () => {
     // 同上一則測試：maskImage 不在 happy-dom 預先定義的 CSS 屬性清單裡，
     // 未賦值過會讀回 undefined 而非 ''，toBeFalsy 兩者都收。
     expect(canvas.style.maskImage).toBeFalsy()
+    // 沒有斷言 canvas.style.height 為空，同樣是因為測不到：happy-dom 沒有版面
+    // 引擎，offsetWidth 恆為 0，而 useLayoutEffect 裡的 setState 在測試同步讀取
+    // 樣式時尚未 flush —— 不論有沒有固定高度，height 都讀回空字串。實測把
+    // 固定 height 塞回 Card 後這則測試照樣通過。固定高度是否真的消失只能在真
+    // 瀏覽器驗（Task 8 的目視驗收）；純函式那一半由 card.css.test.ts 守著。
   })
 
   it('面板不再被縮放 —— 畫布長高取代縮小', () => {

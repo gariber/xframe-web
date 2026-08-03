@@ -190,7 +190,9 @@ const ASPECT_SHRINK: Record<CardSettings['aspect'], number> = {
   auto: 1,
   '1:1': 0.85,
   '4:5': 0.92,
-  // 不鎖死高度，內容長就讓畫布變高，沒有塞不下的問題
+  // 9:16 是三者最高（height = width × 16/9），同一份內容在這個比例下可用的
+  // 高度本就比 1:1／4:5 寬裕，中等長度貼文不太需要收縮字級就能留在精確比例
+  // 上，故跟 auto 一樣不套收縮係數。
   '9:16': 1,
 }
 
@@ -198,11 +200,11 @@ const ASPECT_SHRINK: Record<CardSettings['aspect'], number> = {
  * 推文過長時自動縮字級。
  * 以字元數估算：中日韓文字寬度約為拉丁字母兩倍，故加權計算。
  *
- * `aspect` 也是輸入之一：固定比例模式下畫布高度是量測寬度後算出的定值，不會
- * 像 auto 模式隨內容長高，可用的內容高度遠小於 auto，且三種固定比例彼此差異
- * 很大（見 ASPECT_SHRINK 說明）。因此非 auto 比例依各自可用高度套上不同的
- * 縮小係數（作用在 base 上，不動下面既有的 floor 鎖定值），讓固定比例模式
- * 傾向縮字級而不是把內容撐出畫布。
+ * `aspect` 也是輸入之一：畫布現在只有最小高度，塞不下時會自己長高，
+ * 完整性由那個機制保證，跟這裡無關。這裡要處理的是另一件事——不同比例
+ * 讓「中等長度的貼文盡量仍落在使用者選的那個精確比例上」所需的字級收縮
+ * 不一樣（各比例的係數見上面 ASPECT_SHRINK 的說明）。因此非 auto 比例依
+ * 各自的收縮係數調整 base（作用在 base 上，不動下面既有的 floor 鎖定值）。
  */
 function fitFontSize(base: number, raw: string, aspect: CardSettings['aspect']): number {
   const effectiveBase = base * ASPECT_SHRINK[aspect]

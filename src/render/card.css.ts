@@ -1,8 +1,8 @@
 /**
- * width / height，供 JS 直接算出定值 height 用。
+ * width / height，供 JS 算出 minHeight 用。
  * CSS 的 `aspect-ratio` 在「畫布是 flex 容器、面板是內容驅動高度的 flex item」
  * 這個組合下不保證贏過內容的 min-content 貢獻（實測過：16:9 在真瀏覽器下可以
- * 撐高 14%）。這份數值表讓 Card 量測目前寬度後直接算出定值 px 高度，讓比例
+ * 撐高 14%）。這份數值表讓 Card 量測目前寬度後算出 minHeight 的 px 值，讓比例
  * 由「這是一個具體的長度」這件事本身保證成立，不再參與那場輸贏未定的自動
  * 定size演算法。
  *
