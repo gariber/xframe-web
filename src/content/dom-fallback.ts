@@ -67,6 +67,7 @@ export function extractFromDom(permalink: string): TweetData | null {
     author: {
       name: who.name,
       handle: who.handle,
+      handleDisplay: '@' + who.handle,
       avatarUrl: article.querySelector<HTMLImageElement>(SEL.avatar)?.src ?? '',
     },
     rawText,

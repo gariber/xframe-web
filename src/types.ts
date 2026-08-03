@@ -19,6 +19,15 @@ export type Metric = { kind: MetricKind; value: number | null }
 export type Author = {
   name: string
   handle: string
+  /**
+   * 卡片上顯示的帳號字串，已含平台慣用前綴。
+   *
+   * 前綴是平台知識，不是渲染知識：X 用 `@`，Threads 的規則不同。由 adapter
+   * 產生，Card 原樣輸出，渲染層不對任何平台的命名慣例做假設。
+   *
+   * `handle` 保留原始值（不含前綴），檔名與比對邏輯用它。
+   */
+  handleDisplay: string
   avatarUrl: string
   avatarDataUrl?: string
 }

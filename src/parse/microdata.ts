@@ -146,7 +146,12 @@ function parseAuthor(article: Element): Author | null {
   if (!name || !handle) return null
   // 只對顯示用文字解實體。帳號是 [\w]+ 不可能含實體，頭像網址解了反而可能
   // 改壞查詢字串。
-  return { name: decodeEntities(name), handle, avatarUrl: metaOf(a, 'image') ?? '' }
+  return {
+    name: decodeEntities(name),
+    handle,
+    handleDisplay: '@' + handle,
+    avatarUrl: metaOf(a, 'image') ?? '',
+  }
 }
 
 function parseMetrics(article: Element): Metric[] {

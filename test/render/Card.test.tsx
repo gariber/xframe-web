@@ -21,6 +21,14 @@ describe('Card', () => {
     expect(el.textContent).toContain('@thsottiaux')
   })
 
+  it('作者帳號用 handleDisplay 原樣輸出，不由卡片加前綴', () => {
+    const t = parseTweet(fx('plain'), '2083053369351090254')!
+    const el = mount({ ...t, author: { ...t.author, handleDisplay: '＠自訂前綴' } })
+    expect(el.textContent).toContain('＠自訂前綴')
+    // 卡片若仍自己加 @，會變成 '@＠自訂前綴'
+    expect(el.textContent).not.toContain('@＠自訂前綴')
+  })
+
   it('顯示推文內文', () => {
     expect(mount().textContent).toContain('There will be signs')
   })

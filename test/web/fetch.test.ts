@@ -63,7 +63,7 @@ describe('fetchTweetHtml', () => {
 
 const tweet = (over: Partial<TweetData> = {}): TweetData => ({
   id: '1', url: URL_, source: 'microdata',
-  author: { name: 'A', handle: 'a', avatarUrl: 'https://pbs.twimg.com/profile_images/1/x_normal.jpg' },
+  author: { name: 'A', handle: 'a', handleDisplay: '@a', avatarUrl: 'https://pbs.twimg.com/profile_images/1/x_normal.jpg' },
   rawText: 'hi', text: [{ type: 'text', value: 'hi' }], createdAt: '',
   metrics: [
     { kind: 'views', value: null },
@@ -101,7 +101,7 @@ describe('來源允許清單', () => {
     }))
     vi.stubGlobal('fetch', spy)
     const t = await hydrateAssets(tweet({
-      author: { name: 'A', handle: 'a', avatarUrl: 'https://evil.example/a.png' },
+      author: { name: 'A', handle: 'a', handleDisplay: '@a', avatarUrl: 'https://evil.example/a.png' },
     }))
     expect(t.author.avatarDataUrl).toBeUndefined()
     expect(spy).not.toHaveBeenCalled()
@@ -129,7 +129,7 @@ describe('hydrateAssets', () => {
     stubFetch(async () => new Response(new Uint8Array([1]), {
       status: 200, headers: { 'content-type': 'image/png' },
     }))
-    const q = { ...tweet(), author: { name: 'B', handle: 'b', avatarUrl: 'https://pbs.twimg.com/profile_images/2/b_normal.png' } }
+    const q = { ...tweet(), author: { name: 'B', handle: 'b', handleDisplay: '@b', avatarUrl: 'https://pbs.twimg.com/profile_images/2/b_normal.png' } }
     const t = await hydrateAssets(tweet({ quoted: q }))
     expect(t.quoted!.author.avatarDataUrl).toMatch(/^data:image\/png;base64,/)
   })

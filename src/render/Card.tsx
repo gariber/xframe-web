@@ -115,6 +115,11 @@ export const MASKED_HANDLE = '•••••'
 const MASKED_AUTHOR: TweetData['author'] = {
   name: MASKED_NAME,
   handle: MASKED_HANDLE,
+  /**
+   * 遮蔽後仍保留平台前綴：遮的是身分，不是「這是哪個平台」。X 的遮蔽結果
+   * 應該仍然看得出是一則 X 貼文。
+   */
+  handleDisplay: '@' + MASKED_HANDLE,
   avatarUrl: '',
   avatarDataUrl: undefined,
 }
@@ -311,7 +316,7 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
           {s.show.avatar && <Avatar author={author} size={44} />}
           <div style={{ lineHeight: 1.2, minWidth: 0 }}>
             <div style={{ fontWeight: 700, fontSize: s.fontSize * 0.9 }}>{author.name}</div>
-            <div style={{ opacity: 0.55, fontSize: s.fontSize * 0.8 }}>@{author.handle}</div>
+            <div style={{ opacity: 0.55, fontSize: s.fontSize * 0.8 }}>{author.handleDisplay}</div>
           </div>
           {s.show.timestamp && (
             // 只有相對時間放標頭右上角。絕對時間長 8 倍（'1h' vs
@@ -375,7 +380,7 @@ export function Card({ tweet, settings }: { tweet: TweetData; settings: CardSett
             <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 6 }}>
               <Avatar author={quotedAuthor!} size={22} />
               <span style={{ fontWeight: 600 }}>{quotedAuthor!.name}</span>
-              <span style={{ opacity: 0.5 }}>@{quotedAuthor!.handle}</span>
+              <span style={{ opacity: 0.5 }}>{quotedAuthor!.handleDisplay}</span>
             </div>
             <div style={{ lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
               <Text segments={tweet.quoted.text} accent={accent} />

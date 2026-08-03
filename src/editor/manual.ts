@@ -40,7 +40,7 @@ export function buildManualTweet(input: ManualInput): TweetData | null {
   return {
     id: MANUAL_ID,
     url: '',
-    author: { name, handle, avatarUrl: '' },
+    author: { name, handle, handleDisplay: '@' + handle, avatarUrl: '' },
     // 使用者自己打的內容，不是從任何頁面讀來的。歸在 microdata 是因為它不該
     // 觸發鎖推提醒 —— 那個提醒的意義是「這內容原本不公開」，手動輸入沒有
     // 這個性質。
