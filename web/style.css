@@ -1,9 +1,9 @@
 :root {
-  --ink: #16130f; --ink-soft: #7a736a; --line: #e2ddd4;
+  --ink: #16130f; --ink-soft: #7a736a; --ink-faint: #918980; --line: #e2ddd4;
   --ground: #f3efe8; --card: #fff; --accent: #16130f;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --ink: #f2ece6; --ink-soft: #a89b91; --line: #362b24; --ground: #17120f; --card: #211a16; --accent: #f2ece6; }
+  :root { --ink: #f2ece6; --ink-soft: #a89b91; --ink-faint: #958a82; --line: #362b24; --ground: #17120f; --card: #211a16; --accent: #f2ece6; }
 }
 * { box-sizing: border-box; }
 body {
@@ -13,7 +13,7 @@ body {
   /* iOS 主畫面模式下避開瀏海與底部指示條 */
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
-.wrap { max-width: 44rem; margin: 0 auto; padding: 1rem 1rem 3rem; }
+.wrap { width: 100%; min-width: 0; max-width: 44rem; margin: 0 auto; padding: 1rem 1rem 3rem; }
 h1 { font-size: 1.1rem; margin: 0 0 1rem; }
 /* 預覽釘在畫面上方，設定往下捲時仍看得到 —— 調滑桿要能即時看到效果，
    而不是捲上去看一眼再捲下來調。
@@ -27,7 +27,7 @@ h1 { font-size: 1.1rem; margin: 0 0 1rem; }
   top: env(safe-area-inset-top, 0px);
   z-index: 5;
   border-radius: 14px; margin-bottom: 1rem; background: var(--ground);
-  max-height: 52vh; overflow: hidden auto; overscroll-behavior: contain;
+  max-height: 52vh; overflow: hidden; overscroll-behavior: contain;
   /* 下緣做一點陰影，讓捲動的設定內容從它底下經過時看得出層次 */
   box-shadow: 0 8px 16px -12px rgba(0,0,0,.5);
 }
@@ -36,14 +36,17 @@ h1 { font-size: 1.1rem; margin: 0 0 1rem; }
 .preview-fit { transform-origin: top center; }
 .msg { padding: 3rem 1rem; text-align: center; color: var(--ink-soft); }
 .msg button { margin-top: .75rem; }
-.urlbar { display: flex; gap: .5rem; margin-bottom: .75rem; }
+.urlbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem; min-width: 0; margin-bottom: .75rem; }
 .urlbar input {
   flex: 1; min-width: 0; font: inherit; padding: .7rem .8rem;
   border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink);
 }
 button {
   font: inherit; padding: .7rem 1rem; border-radius: 10px; border: 1px solid var(--line);
-  background: var(--card); color: var(--ink); cursor: pointer;
+  min-height: 44px; background: var(--card); color: var(--ink); cursor: pointer; touch-action: manipulation;
+}
+button:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--ink); outline-offset: 2px;
 }
 button.primary { background: var(--accent); color: var(--ground); border-color: var(--accent); font-weight: 600; }
 button:disabled { opacity: .45; }
@@ -51,6 +54,13 @@ button:disabled { opacity: .45; }
 .result { margin-bottom: 1rem; }
 .result img { width: 100%; display: block; border-radius: 12px; }
 .result p { font-size: .85rem; color: var(--ink-soft); margin: .5rem 0 0; }
+.result-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; margin-top: .75rem; }
+.result-actions > :only-child { grid-column: 1 / -1; }
+.result-actions button { width: 100%; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
 .sheet { border: 1px solid var(--line); border-radius: 12px; background: var(--card); margin-bottom: .6rem; }
 .sheet-head { padding: .8rem 1rem; font-weight: 600; cursor: pointer; list-style: none; }
 .sheet-head::-webkit-details-marker { display: none; }

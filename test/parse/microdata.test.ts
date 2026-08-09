@@ -174,6 +174,26 @@ describe('parseTweet 引用推文', () => {
   })
 })
 
+describe('parseTweet 新版 X 公開頁面', () => {
+  const t = parseTweet(fx('shared-content'), '2086283765132022130')!
+
+  it('meta 與 title 同時被截斷時，從 article 的可見文字補回完整五段', () => {
+    expect(t.rawText).toContain('Codex 的限制。')
+    expect(t.rawText).toContain('估计这是为了恶心 Anthropic')
+    expect(t.rawText).toContain('周一还有一次重置')
+    expect(t.textComplete).toBe(true)
+  })
+
+  it('解析新版 sharedContent 引用推文', () => {
+    expect(t.quoted?.id).toBe('2086280578215924039')
+    expect(t.quoted?.rawText).toBe('啊？突然就重置了')
+  })
+
+  it('統計仍取自主推文自己的 microdata', () => {
+    expect(t.metrics.find((m) => m.kind === 'reposts')?.value).toBe(3)
+  })
+})
+
 describe('parseTweet 文字分段', () => {
   it('text 已分段且非空', () => {
     const t = parseTweet(fx('plain'), '2083053369351090254')!

@@ -96,19 +96,55 @@ export function fullTextFromTitle(
 }
 
 /**
+ * 從 article 自己的可見文字節點取回全文。
+ *
+ * X 在 2026-08 的公開頁面會同時輸出兩份主文：`meta[itemprop="text"]`
+ * 與 `<title>` 都可能在約 200 字處被截斷，但 article 裡實際顯示的
+ * `[dir="auto"]` 仍保留全文。這個節點沒有穩定的 class，因此只依賴兩個語意：
+ * 它必須屬於目前這則 article（不能是巢狀引用），且內容必須是可信 meta 的延長。
+ *
+ * `textContent` 已由 DOMParser 解過 HTML 實體，不能再呼叫 decodeEntities，否則
+ * 作者原本打出的 `&lt;` 會被多解一層變成 `<`。
+ */
+function fullTextFromArticle(
+  article: Element,
+  metaText: string,
+): { text: string; fromArticle: boolean } {
+  const trustedPrefix = stripTrailingLink(metaText)
+  const candidates = [...article.querySelectorAll('[dir="auto"]')]
+    .filter((el) => el.closest('article') === article)
+    .map((el) => {
+      // 舊版 X 會把「Show more」按鈕放進同一個 dir=auto 容器。若直接讀
+      // textContent，它會看似比 meta 多幾個字，反而把截斷內容誤判為全文。
+      const copy = el.cloneNode(true) as Element
+      for (const button of copy.querySelectorAll('button')) button.remove()
+      return stripTrailingLink(copy.textContent ?? '')
+    })
+    .filter((text) => text.length > trustedPrefix.length && text.startsWith(trustedPrefix))
+
+  const full = candidates.reduce<string | null>(
+    (longest, text) => longest === null || text.length > longest.length ? text : longest,
+    null,
+  )
+  return full === null
+    ? { text: metaText, fromArticle: false }
+    : { text: full, fromArticle: true }
+}
+
+/**
  * meta itemprop="text" 被視為可能截斷的長度下界。
  *
  * X 截在約 200 字，但不是精確值 —— 實測有 199 與 277 兩種。取 190 作為下界，
  * 寧可把剛好夠長的完整推文誤標為不確定，也不要把截斷的推文標成完整：前者
  * 只是多一行提示，後者是騙人。
  *
- * 主推文幾乎總能從 title 補回全文（實測 22 則全通過），所以這條路實際上
- * 只服務引用推文 —— 那是唯一沒有第二份來源可以驗證的地方。
+ * 主推文通常能從可見 article 或 title 補回全文；舊版引用推文若沒有可驗證的
+ * 可見文字，仍需靠這個下界保守標示為可能不完整。
  */
 const META_TRUNCATION_FLOOR = 190
 
-function looksComplete(text: string, fromTitle: boolean): boolean {
-  return fromTitle || text.length < META_TRUNCATION_FLOOR
+function looksComplete(text: string, fromVerifiedSource: boolean): boolean {
+  return fromVerifiedSource || text.length < META_TRUNCATION_FLOOR
 }
 
 /**
@@ -229,28 +265,40 @@ export function parseTweet(html: string, tweetId: string): Post | null {
   const base = parseArticle(article)
   if (!base) return null
 
-  // 只有主推文能從 title 補回完整內文：一份文件只有一個 <title>，而它描述的
-  // 是主推文。引用推文的內文若超過 200 字仍會是截斷的 —— 這是這個資料來源
-  // 的極限，不是可以在這裡繞過的東西。
-  const { text: fullText, fromTitle } = fullTextFromTitle(
+  // 先讀 article 自己的可見文字。新版 X 會同時截斷 meta 與 title，完整內文只在
+  // 這裡；若頁面結構不同，再退回舊版頁面可用的 title 路徑。兩條路都必須通過
+  // 「是可信 meta 的延長」檢查，不會把其他 UI 文字誤當成推文。
+  const visibleText = fullTextFromArticle(article, base.rawText)
+  const titleText = fullTextFromTitle(
     doc.querySelector('title')?.textContent ?? '',
     base.author.name,
     base.rawText,
   )
+  const useVisibleText = visibleText.fromArticle && visibleText.text.length >= titleText.text.length
+  const fullText = useVisibleText
+    ? visibleText.text
+    : titleText.text
+  const fromFullSource = useVisibleText
+    ? visibleText.fromArticle
+    : titleText.fromTitle
 
-  // 引用推文不是直接子節點，須以後代選擇器尋找
-  const citeEl = article.querySelector('article[itemprop="citation"]')
+  // 舊版頁面使用 citation；新版公開頁面改成 sharedContent。兩者都不是直接子節點。
+  const citeEl = article.querySelector(
+    'article[itemprop="citation"], article[itemprop="sharedContent"]',
+  )
   let quoted: Omit<Post, 'quoted'> | undefined
   if (citeEl) {
     const cbase = parseArticle(citeEl)
     if (cbase) {
+      const quoteText = fullTextFromArticle(citeEl, cbase.rawText)
       quoted = {
         ...cbase,
-        text: tokenize(cbase.rawText),
+        rawText: quoteText.text,
+        text: tokenize(quoteText.text),
         media: parseMedia(citeEl),
-        // 一份文件只有一個 <title>，而它描述的是主推文。引用推文沒有第二份
-        // 來源可以驗證，只能靠長度判斷 —— 這是這個資料來源的極限。
-        textComplete: looksComplete(cbase.rawText, false),
+        // 引用推文沒有自己的 title，但新版頁面的可見文字仍可作為第二份來源。
+        // 若找不到，就保留原本的保守長度判斷。
+        textComplete: looksComplete(quoteText.text, quoteText.fromArticle),
       }
     }
   }
@@ -260,7 +308,7 @@ export function parseTweet(html: string, tweetId: string): Post | null {
     rawText: fullText,
     text: tokenize(fullText),
     media: parseMedia(article),
-    textComplete: looksComplete(fullText, fromTitle),
+    textComplete: looksComplete(fullText, fromFullSource),
     ...(quoted ? { quoted } : {}),
   }
 }

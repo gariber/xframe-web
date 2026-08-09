@@ -7,6 +7,7 @@ import { ASPECT_VALUE } from '../src/render/card.css'
 import { parseTweet, extractTweetId } from '../src/parse/microdata'
 import { fetchTweetHtml, hydrateAssets } from './fetch'
 import { Sheet } from './Sheet'
+import { canShareImageFile, createPngFile, shareImageFile } from './share'
 
 const STORAGE_KEY = 'xframe.web.settings'
 
@@ -22,6 +23,7 @@ const ERROR_TEXT: Record<string, string> = {
   parse: '無法讀取這則推文。若是鎖推帳號，網頁版取不到內容，請用 Chrome 擴充功能',
   badurl: '這看起來不是推文網址',
   export: '產生圖片失敗，請重試',
+  share: '這個瀏覽器目前無法分享圖片，請改用下載或長按圖片',
 }
 
 type Status =
@@ -88,6 +90,7 @@ export function App() {
   // 用 ref 而非讀 state 來撤銷 —— state 在非同步 callback 裡可能是舊的閉包值，
   // ref 永遠是「目前真正存活的那個 URL」，撤銷才不會漏掉或撤錯。
   const pngUrlRef = useRef<string | null>(null)
+  const requestRef = useRef(0)
 
   // createObjectURL 產生的 URL 不會自動回收，整個分頁生命週期都會佔住記憶體，
   // 除非明確 revokeObjectURL —— 每次換圖前先撤銷舊的，卸載時再撤銷最後一個。
@@ -107,17 +110,23 @@ export function App() {
   }, [])
 
   const patch = (p: Partial<CardSettings>) => {
+    // 設定一變，舊 PNG 就不再代表目前預覽；移除它可避免誤分享舊圖。
+    releasePng()
+    setExportErr(null)
     const next = { ...settings, ...p }
     setSettings(next)
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)) } catch { /* 隱私瀏覽模式可能不給寫 */ }
   }
 
   async function go(target = url) {
+    const request = ++requestRef.current
     setStatus({ phase: 'loading' })
     releasePng()
     try {
-      setStatus({ phase: 'ready', tweet: await loadTweet(target.trim()) })
+      const tweet = await loadTweet(target.trim())
+      if (request === requestRef.current) setStatus({ phase: 'ready', tweet })
     } catch (e) {
+      if (request !== requestRef.current) return
       const key = e instanceof Error ? (e as { kind?: string }).kind ?? e.message : 'network'
       setStatus({ phase: 'error', message: ERROR_TEXT[key] ?? ERROR_TEXT.network })
     }
@@ -175,16 +184,43 @@ export function App() {
     }
   }
 
-  const isTouch = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches
+  async function doShare() {
+    if (!pngBlob || status.phase !== 'ready') return
+    const file = createPngFile(pngBlob, buildFilename(status.tweet))
+    setBusy(true)
+    setExportErr(null)
+    try {
+      const result = await shareImageFile(file)
+      if (result === 'unsupported') setExportErr(ERROR_TEXT.share)
+    } catch {
+      setExportErr(ERROR_TEXT.share)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const shareFile = pngBlob && status.phase === 'ready'
+    ? createPngFile(pngBlob, buildFilename(status.tweet))
+    : null
+  const shareSupported = shareFile !== null && canShareImageFile(shareFile)
 
   return (
     <div class="wrap">
       <h1>XFrame</h1>
 
       <div class="urlbar">
+        <label class="sr-only" for="tweet-url">推文網址</label>
         <input
-          type="url" inputMode="url" placeholder="貼上推文網址" value={url}
-          onInput={(e) => setUrl(e.currentTarget.value)}
+          id="tweet-url" type="url" inputMode="url" placeholder="貼上推文網址" value={url}
+          disabled={busy}
+          onInput={(e) => {
+            // 輸入值一變，舊卡片與任何尚未完成的讀取都不再代表這個網址。
+            requestRef.current += 1
+            setUrl(e.currentTarget.value)
+            setStatus({ phase: 'idle' })
+            releasePng()
+            setExportErr(null)
+          }}
           onKeyDown={(e) => { if (e.key === 'Enter') void go() }}
         />
         <button type="button" disabled={busy} onClick={paste}>貼上</button>
@@ -195,11 +231,11 @@ export function App() {
 
       <div class="preview" ref={cardRef}>
         <div class="preview-fit" ref={fitRef} style={{ transform: `scale(${fit})` }}>
-        {status.phase === 'idle' && <div class="msg">貼上一則推文的網址，就會出現卡片。</div>}
-        {status.phase === 'loading' && <div class="msg">讀取推文中…</div>}
+        {status.phase === 'idle' && <div class="msg" role="status">貼上一則推文的網址，就會出現卡片。</div>}
+        {status.phase === 'loading' && <div class="msg" role="status">讀取推文中…</div>}
         {status.phase === 'error' && (
           <div class="msg">
-            <div class="err">{status.message}</div>
+            <div class="err" role="alert">{status.message}</div>
             <button type="button" onClick={() => void go()}>重試</button>
           </div>
         )}
@@ -212,17 +248,23 @@ export function App() {
           {busy ? '產生中…' : '存成圖片'}
         </button>
       )}
-      {exportErr && <div class="err">{exportErr}</div>}
+      {exportErr && <div class="err" role="alert">{exportErr}</div>}
 
       {pngUrl && status.phase === 'ready' && (
         <div class="result">
           <img src={pngUrl} alt="產生的分享圖" />
-          {isTouch ? (
-            <p>長按上面的圖片 → 「加入照片」即可存檔。</p>
-          ) : (
+          <p>
+            {shareSupported
+              ? '可直接分享，或長按圖片加入照片。'
+              : '可下載圖片；在 iPhone 上也能長按圖片加入照片。'}
+          </p>
+          <div class="result-actions">
             <button type="button" disabled={!pngBlob}
               onClick={() => pngBlob && downloadBlob(pngBlob, buildFilename(status.tweet))}>下載</button>
-          )}
+            {shareSupported && (
+              <button type="button" disabled={busy || !pngBlob} onClick={() => void doShare()}>分享</button>
+            )}
+          </div>
         </div>
       )}
 
