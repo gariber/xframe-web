@@ -7,10 +7,23 @@ import type { CardSettings } from '../../src/types'
 
 const fx = (n: string) => readFileSync(`test/fixtures/${n}.html`, 'utf8')
 
-function mount(tweet = parseTweet(fx('plain'), '2083053369351090254')!, settings = DEFAULT_SETTINGS) {
+function mount(
+  tweet = parseTweet(fx('plain'), '2083053369351090254')!,
+  settings = DEFAULT_SETTINGS,
+  translationLanguages?: { main?: string; quoted?: string },
+  allowBrowserTranslation = false,
+) {
   const host = document.createElement('div')
   document.body.appendChild(host)
-  render(<Card post={tweet} settings={settings} />, host)
+  render(
+    <Card
+      post={tweet}
+      settings={settings}
+      translationLanguages={translationLanguages}
+      allowBrowserTranslation={allowBrowserTranslation}
+    />,
+    host,
+  )
   return host
 }
 
@@ -130,6 +143,46 @@ describe('Card', () => {
     const stats = mount().querySelector('[data-part="stats"]') as HTMLElement
     for (const word of ['回覆', '轉推', '讚', '瀏覽']) {
       expect(stats.textContent).not.toContain(word)
+    }
+  })
+})
+
+describe('Safari 網頁翻譯邊界', () => {
+  it('預設整張卡與正文都禁止瀏覽器翻譯，Chrome 擴充功能不受手機流程影響', () => {
+    const el = mount()
+    expect(el.querySelector('[data-part="canvas"]')?.getAttribute('translate')).toBe('no')
+    expect(el.querySelector('[data-part="body"]')?.getAttribute('translate')).toBe('no')
+  })
+
+  it('網頁版只對指定的外文主文開放翻譯並提供來源語言提示', () => {
+    const body = mount(undefined, DEFAULT_SETTINGS, { main: 'und' }, true)
+      .querySelector('[data-part="body"]') as HTMLElement
+    expect(body.getAttribute('translate')).toBe('yes')
+    expect(body.lang).toBe('und')
+    expect(body.dir).toBe('auto')
+  })
+
+  it('主文與引用可分開控制，只翻外文引用', () => {
+    const t = parseTweet(fx('quoted'), '2082883636177916306')!
+    const el = mount(t, DEFAULT_SETTINGS, { quoted: 'ja' }, true)
+    expect(el.querySelector('[data-part="body"]')?.getAttribute('translate')).toBe('no')
+    const quoted = el.querySelector('[data-part="quote-body"]') as HTMLElement
+    expect(quoted.getAttribute('translate')).toBe('yes')
+    expect(quoted.lang).toBe('ja')
+  })
+
+  it('網址、帳號與 hashtag 永遠禁止翻譯', () => {
+    const t = parseTweet(fx('plain'), '2083053369351090254')!
+    t.text = [
+      { type: 'mention', value: '@openai' },
+      { type: 'text', value: ' launches ' },
+      { type: 'hashtag', value: '#AI' },
+      { type: 'text', value: ' at ' },
+      { type: 'link', value: 'https://example.com', href: 'https://example.com' },
+    ]
+    const el = mount(t, DEFAULT_SETTINGS, { main: 'und' }, true)
+    for (const token of el.querySelectorAll('[data-seg]')) {
+      expect(token.getAttribute('translate')).toBe('no')
     }
   })
 })

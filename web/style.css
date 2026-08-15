@@ -57,6 +57,20 @@ button:disabled { opacity: .45; }
 .result-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; margin-top: .75rem; }
 .result-actions > :only-child { grid-column: 1 / -1; }
 .result-actions button { width: 100%; }
+.translation-guide {
+  margin: 0 0 1rem; padding: .9rem 1rem; border: 1px solid var(--line);
+  border-radius: 12px; background: var(--card);
+}
+.translation-guide strong { display: block; margin-bottom: .35rem; }
+.translation-guide ol { margin: .35rem 0 .75rem; padding-left: 1.35rem; color: var(--ink-soft); }
+.translation-guide > button { width: 100%; }
+.translation-note { margin: .65rem 0 0; color: var(--ink-faint); font-size: .78rem; line-height: 1.55; }
+.translation-note a { color: inherit; text-underline-offset: .18em; }
+.translation-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; margin-top: .75rem; }
+.translation-actions button { width: 100%; }
+.translation-actions button[aria-pressed="true"] { background: var(--accent); color: var(--ground); border-color: var(--accent); }
+.translation-guide .translation-restart { margin-top: .5rem; background: transparent; color: var(--ink-soft); }
+.translation-feedback { margin: -.35rem 0 1rem; }
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;

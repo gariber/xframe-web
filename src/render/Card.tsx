@@ -5,6 +5,15 @@ import { generate, GRAIN_DATA_URI } from './backgrounds'
 import { ASPECT_VALUE, canvasSizeStyle, accentFrom } from './card.css'
 import { METRIC_META } from './metrics'
 
+/**
+ * Preact 的 JSX 型別把 HTMLElement.translate 視為 boolean，但 HTML 實際是
+ * `yes` / `no` 列舉屬性。直接傳 boolean 會輸出 `translate="true"` 或把 false
+ * 屬性移除，兩者都無法可靠覆寫父層。保留型別轉換在這一處，DOM 仍得到標準值。
+ */
+function htmlTranslate(enabled: boolean): boolean {
+  return (enabled ? 'yes' : 'no') as unknown as boolean
+}
+
 export const DEFAULT_SETTINGS: CardSettings = {
   background: { kind: 'mesh', palette: 'sunset', seed: 1 },
   padding: 72,
@@ -91,7 +100,9 @@ function Text({ segments, accent }: { segments: Segment[]; accent: string }) {
         s.type === 'text' ? (
           <span key={i}>{s.value}</span>
         ) : (
-          <span key={i} data-seg={s.type} style={{ color: accent }}>
+          // 帳號、hashtag 與網址是識別字串，不是自然語言。Safari 翻譯若改動它們，
+          // 使用者套用譯文後就可能得到失效連結或錯誤帳號。
+          <span key={i} data-seg={s.type} translate={htmlTranslate(false)} style={{ color: accent }}>
             {s.value}
           </span>
         ),
@@ -212,7 +223,19 @@ function fitFontSize(base: number, raw: string, aspect: CardSettings['aspect']):
   return Math.max(11, effectiveBase * 0.58)
 }
 
-export function Card({ post, settings }: { post: Post; settings: CardSettings }) {
+export type CardTranslationLanguages = { main?: string; quoted?: string }
+
+export function Card({
+  post,
+  settings,
+  translationLanguages,
+  allowBrowserTranslation = false,
+}: {
+  post: Post
+  settings: CardSettings
+  translationLanguages?: CardTranslationLanguages
+  allowBrowserTranslation?: boolean
+}) {
   const s = settings
   const accent = accentFrom(s.textColor)
   const panelBg = s.panelColor + Math.round(s.panelOpacity * 255).toString(16).padStart(2, '0')
@@ -258,6 +281,7 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
     <div
       ref={canvasRef}
       data-part="canvas"
+      translate={htmlTranslate(false)}
       style={{
         position: 'relative',
         boxSizing: 'border-box',
@@ -341,6 +365,9 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
 
         <div
           data-part="body"
+          translate={htmlTranslate(Boolean(allowBrowserTranslation && translationLanguages?.main))}
+          lang={translationLanguages?.main}
+          dir="auto"
           style={{
             fontSize,
             lineHeight: 1.55,
@@ -382,7 +409,13 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
               <span style={{ fontWeight: 600 }}>{quotedAuthor!.name}</span>
               <span style={{ opacity: 0.5 }}>{quotedAuthor!.handleDisplay}</span>
             </div>
-            <div style={{ lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+            <div
+              data-part="quote-body"
+              translate={htmlTranslate(Boolean(allowBrowserTranslation && translationLanguages?.quoted))}
+              lang={translationLanguages?.quoted}
+              dir="auto"
+              style={{ lineHeight: 1.5, whiteSpace: 'pre-wrap' }}
+            >
               <Text segments={post.quoted.text} accent={accent} />
             </div>
             {!post.quoted.textComplete && (
