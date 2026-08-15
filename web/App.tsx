@@ -302,7 +302,7 @@ export function App() {
             onInput={(e) => patch({ textColor: e.currentTarget.value })} /></label>
           <label>比例
             <select value={settings.aspect} onChange={(e) => patch({ aspect: e.currentTarget.value as CardSettings['aspect'] })}>
-              <option value="9:16">9:16 直式</option>
+              <option value="9:16">9:16 IG 限動</option>
               <option value="auto">自動高度</option>
               <option value="1:1">1:1 方形</option>
               <option value="4:5">4:5 直式</option>
@@ -317,7 +317,9 @@ export function App() {
           {downloadHeight !== null && (
             <p class="hint">
               下載尺寸固定 {EXPORT_WIDTH}×{downloadHeight} px，
-              不隨這台裝置的畫面寬度變動。預覽只是縮小顯示，不影響輸出。
+              不隨這台裝置的畫面寬度變動。
+              {settings.aspect === '9:16' && ' 已保留 IG 限動上下安全區。'}
+              預覽只是縮小顯示，不影響輸出。
             </p>
           )}
         </Sheet>

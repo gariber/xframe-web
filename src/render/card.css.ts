@@ -51,3 +51,23 @@ export function fitPanelScale(availableHeight: number, panelHeight: number): num
   if (availableHeight <= 0 || panelHeight <= 0) return 1
   return Math.min(1, availableHeight / panelHeight)
 }
+
+/**
+ * IG 限動編輯器會在畫面上、下疊放返回／文字工具與說明文字控制列。9:16 的
+ * 畫布本身仍是精確 1080×1920，只把內容安全區往內收；使用者若主動把留白拉得
+ * 更大，仍尊重其設定。安全區使用畫布寬度的 15.625%，因此不論手機或桌面
+ * 產生，固定 1080px 輸出寬度下都約為 169px。
+ */
+export const STORY_SAFE_PADDING_RATIO = 5 / 32
+
+export function canvasPaddingY(aspect: string, padding: number, canvasWidth: number): number {
+  return aspect === '9:16' && canvasWidth > 0
+    ? Math.max(canvasWidth * STORY_SAFE_PADDING_RATIO, padding)
+    : padding
+}
+
+export function canvasPaddingYStyle(aspect: string, padding: number): string {
+  return aspect === '9:16'
+    ? `max(${padding}px, ${STORY_SAFE_PADDING_RATIO * 100}%)`
+    : `${padding}px`
+}

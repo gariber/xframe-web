@@ -216,6 +216,56 @@ describe('比例的版面樣式與字級收斂（Fix 1）', () => {
   })
 })
 
+describe('固定比例的媒體填滿版面', () => {
+  const mediaTweet = () => {
+    const t = parseTweet(fx('media'), '2083061426923475451')!
+    return { ...t, media: t.media.map((m) => ({ ...m, dataUrl: 'data:image/png;base64,eA==' })) }
+  }
+
+  it.each(['1:1', '4:5', '9:16'] as const)(
+    '%s 有圖片時面板維持滿寬滿高，不再整張縮成小卡',
+    (aspect) => {
+      const el = mount(mediaTweet(), { ...DEFAULT_SETTINGS, aspect, padding: 28 })
+      const panel = el.querySelector('[data-part="panel"]') as HTMLElement
+      expect(panel.style.width).toBe('100%')
+      expect(panel.style.height).toBe('100%')
+      expect(panel.style.transform).toBe('')
+      expect(panel.style.display).toBe('flex')
+      expect(panel.style.overflow).toBe('hidden')
+    },
+  )
+
+  it('固定比例讓圖片區吃滿剩餘高度，並以 cover 裁切', () => {
+    const el = mount(mediaTweet(), { ...DEFAULT_SETTINGS, aspect: '1:1' })
+    const media = el.querySelector('[data-part="media"]') as HTMLElement
+    const image = media.querySelector('img') as HTMLElement
+    expect(media.style.flex).toBe('1 1 0px')
+    expect(media.style.minHeight).toBe('0px')
+    expect(image.style.height).toBe('100%')
+    expect(image.style.objectFit).toBe('cover')
+  })
+
+  it('auto 維持原本的完整圖片與內容高度', () => {
+    const el = mount(mediaTweet(), { ...DEFAULT_SETTINGS, aspect: 'auto' })
+    const panel = el.querySelector('[data-part="panel"]') as HTMLElement
+    const media = el.querySelector('[data-part="media"]') as HTMLElement
+    const image = media.querySelector('img') as HTMLElement
+    expect(panel.style.height).toBe('')
+    expect(panel.style.display).toBe('')
+    expect(media.style.flex).toBe('')
+    expect(image.style.height).toBe('')
+    expect(image.style.objectFit).toBe('')
+  })
+
+  it('9:16 標記在 canvas，讓固定比例匯出與安全區共用同一個模式', () => {
+    const el = mount(mediaTweet(), { ...DEFAULT_SETTINGS, aspect: '9:16', padding: 28 })
+    const canvas = el.querySelector('[data-part="canvas"]') as HTMLElement
+    // happy-dom 會丟棄含 CSS max() 的 padding shorthand，實際數值由
+    // card.css.test.ts 的純函式與真瀏覽器幾何驗證。
+    expect(canvas.dataset.aspect).toBe('9:16')
+  })
+})
+
 describe('canvas 節點的 box-sizing', () => {
   it('canvas 節點設定 box-sizing:border-box，讓固定 height 與量測寬度是同一套座標系', () => {
     const el = mount(undefined, { ...DEFAULT_SETTINGS, aspect: '1:1' })

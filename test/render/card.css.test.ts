@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { canvasSizeStyle, fitPanelScale, ASPECT_VALUE } from '../../src/render/card.css'
+import {
+  canvasPaddingY,
+  canvasPaddingYStyle,
+  canvasSizeStyle,
+  fitPanelScale,
+  STORY_SAFE_PADDING_RATIO,
+  ASPECT_VALUE,
+} from '../../src/render/card.css'
 
 describe('canvasSizeStyle', () => {
   it('量測到高度時設為固定高度', () => {
@@ -27,6 +34,28 @@ describe('fitPanelScale', () => {
   it('無效量測維持原尺寸', () => {
     expect(fitPanelScale(0, 400)).toBe(1)
     expect(fitPanelScale(400, 0)).toBe(1)
+  })
+})
+
+describe('canvasPaddingY', () => {
+  it('9:16 依畫布寬度保留固定比例的 IG 上下安全區', () => {
+    expect(canvasPaddingY('9:16', 28, 358)).toBeCloseTo(358 * STORY_SAFE_PADDING_RATIO)
+    expect(canvasPaddingY('9:16', 28, 672)).toBeCloseTo(672 * STORY_SAFE_PADDING_RATIO)
+  })
+
+  it('使用者設定比安全區大時不縮小', () => {
+    expect(canvasPaddingY('9:16', 80, 358)).toBe(80)
+  })
+
+  it('其他比例完全沿用使用者留白', () => {
+    for (const aspect of ['auto', '1:1', '4:5']) {
+      expect(canvasPaddingY(aspect, 28, 358)).toBe(28)
+    }
+  })
+
+  it('CSS 樣式同樣以百分比表達安全區，輸出不受裝置寬度影響', () => {
+    expect(canvasPaddingYStyle('9:16', 28)).toBe('max(28px, 15.625%)')
+    expect(canvasPaddingYStyle('1:1', 28)).toBe('28px')
   })
 })
 
