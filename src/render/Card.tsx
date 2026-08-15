@@ -2,7 +2,14 @@ import { Fragment } from 'preact'
 import { useLayoutEffect, useRef, useState } from 'preact/hooks'
 import type { Post, CardSettings, Segment, Media, Metric } from '../types'
 import { generate, GRAIN_DATA_URI } from './backgrounds'
-import { ASPECT_VALUE, canvasSizeStyle, accentFrom } from './card.css'
+import {
+  ASPECT_VALUE,
+  canvasPaddingY,
+  canvasPaddingYStyle,
+  canvasSizeStyle,
+  fitPanelScale,
+  accentFrom,
+} from './card.css'
 import { METRIC_META } from './metrics'
 
 /**
@@ -160,7 +167,13 @@ function Avatar({ author, size }: { author: Post['author']; size: number }) {
   )
 }
 
-function MediaGrid({ media }: { media: Media[] }) {
+function MediaGrid({
+  media,
+  constrained = false,
+}: {
+  media: Media[]
+  constrained?: boolean
+}) {
   // 同 Avatar：抓取失敗（無 dataUrl）的圖位直接隱藏，不可退回跨域網址
   const usable = media.filter((m) => m.dataUrl)
   if (usable.length === 0) return null
@@ -170,14 +183,59 @@ function MediaGrid({ media }: { media: Media[] }) {
       style={{
         display: 'grid',
         gridTemplateColumns: usable.length > 1 ? '1fr 1fr' : '1fr',
+        gridTemplateRows: constrained
+          ? usable.length > 2 ? 'repeat(2, minmax(0, 1fr))' : 'minmax(0, 1fr)'
+          : undefined,
         gap: 6,
-        marginTop: 12,
+        marginTop: constrained ? 8 : 12,
         borderRadius: 12,
         overflow: 'hidden',
+        flex: constrained ? '1 1 0' : undefined,
+        minHeight: constrained ? 0 : undefined,
       }}
     >
-      {usable.slice(0, 4).map((m, i) => (
-        <img key={i} src={m.dataUrl} alt={m.alt} style={{ width: '100%', display: 'block' }} />
+      {usable.slice(0, 4).map((m, i) => constrained ? (
+        <div
+          key={i}
+          data-part="media-tile"
+          style={{
+            position: 'relative',
+            minWidth: 0,
+            minHeight: 0,
+            overflow: 'hidden',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'transparent',
+          }}
+        >
+          <img
+            data-part="media-image"
+            src={m.dataUrl}
+            alt={m.alt}
+            style={{
+              position: 'relative',
+              zIndex: 1,
+              width: 'auto',
+              height: 'auto',
+              maxWidth: '100%',
+              maxHeight: '100%',
+              minHeight: 0,
+              display: 'block',
+              objectFit: 'contain',
+              objectPosition: 'center center',
+              borderRadius: 12,
+            }}
+          />
+        </div>
+      ) : (
+        <img
+          key={i}
+          data-part="media-image"
+          src={m.dataUrl}
+          alt={m.alt}
+          style={{ width: '100%', display: 'block' }}
+        />
       ))}
     </div>
   )
@@ -186,9 +244,8 @@ function MediaGrid({ media }: { media: Media[] }) {
 /**
  * 中等長度貼文的字級微調。
  *
- * 畫布改成最小高度後，這個係數不再負責「把內容擠進固定高度」—— 塞不下時
- * 畫布會自己長高，完整性由那個機制保證。它現在只做一件事：讓中等長度的
- * 貼文盡量仍然落在使用者選的那個精確比例上，而不是動輒長成 1:1.4。
+ * 固定比例下，這個係數先把中等長度貼文的字級略為收斂：有圖片時可留更多
+ * 高度給圖片，純文字或引用內容過高時也能減少整張面板需要縮小的幅度。
  *
  * 4:5 是三種比例裡最高的（height = width × 1.25），1:1 較矮，同一份內容
  * 在兩者可用的高度差很多，所以係數分開給。這是手動調校的經驗值。
@@ -207,11 +264,8 @@ const ASPECT_SHRINK: Record<CardSettings['aspect'], number> = {
  * 推文過長時自動縮字級。
  * 以字元數估算：中日韓文字寬度約為拉丁字母兩倍，故加權計算。
  *
- * `aspect` 也是輸入之一：畫布現在只有最小高度，塞不下時會自己長高，
- * 完整性由那個機制保證，跟這裡無關。這裡要處理的是另一件事——不同比例
- * 讓「中等長度的貼文盡量仍落在使用者選的那個精確比例上」所需的字級收縮
- * 不一樣（各比例的係數見上面 ASPECT_SHRINK 的說明）。因此非 auto 比例依
- * 各自的收縮係數調整 base（作用在 base 上，不動下面既有的 floor 鎖定值）。
+ * `aspect` 也是輸入之一：不同比例的可用高度不同，先依係數調整 base，能讓
+ * 常見長度在固定比例裡保持較大的實際字級（作用在 base 上，不動 floor）。
  */
 function fitFontSize(base: number, raw: string, aspect: CardSettings['aspect']): number {
   const effectiveBase = base * ASPECT_SHRINK[aspect]
@@ -247,20 +301,24 @@ export function Card({
   const fontSize = fitFontSize(s.fontSize, post.rawText, s.aspect)
 
   const canvasRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
   const ratio = ASPECT_VALUE[s.aspect]
-  const [minHeight, setMinHeight] = useState<number | undefined>(undefined)
+  const paddingY = canvasPaddingYStyle(s.aspect, s.padding)
+  const constrainedMedia = ratio !== undefined &&
+    s.show.media &&
+    post.media.some((media) => Boolean(media.dataUrl))
+  const [canvasHeight, setCanvasHeight] = useState<number | undefined>(undefined)
+  const [panelScale, setPanelScale] = useState(1)
 
-  // CSS 的 aspect-ratio 在真瀏覽器下實測會輸給內容：畫布是 flex 容器、面板是
-  // 內容驅動高度的 flex item，兩者對「auto 高度該怎麼算」互相打架時，
-  // aspect-ratio 不保證贏（實測撐高達 14%）。改成量測目前寬度、直接算出一個
-  // 定值 px 高度指定給 minHeight——一個具體的長度不會再參與那場輸贏未定的
-  // 自動定size演算法，比例由建構方式保證成立。只在非 auto 時量測；量到 0
-  // （例如測試環境沒有真正的排版引擎、或元素還沒被插入 DOM）就會得到
-  // minHeight:0，這是量測值本身的極限，不是這段邏輯的 bug。
+  // CSS aspect-ratio 會被 flex item 的 min-content 高度撐開，所以非 auto 模式
+  // 直接由 offsetWidth 算固定 px height。有主圖時面板維持滿寬滿高，讓完整
+  // 原圖置中並以底板純色承接剩餘空間；沒有主圖時才等比縮小過高面板。
   useLayoutEffect(() => {
     const el = canvasRef.current
+    const panel = panelRef.current
     if (!el || ratio === undefined) {
-      setMinHeight(undefined)
+      setCanvasHeight(undefined)
+      setPanelScale(1)
       return
     }
     const measure = () => {
@@ -268,41 +326,54 @@ export function Card({
       // 縮放。行動網頁版把卡片包在 .preview-fit 的 scale() 裡塞進預覽框，量到的
       // 是縮放後的寬度，算出的高度就跟著縮。offsetWidth 是版面寬度，同樣是
       // border-box，不受任何 transform 影響。
-      setMinHeight(el.offsetWidth / ratio)
+      const width = el.offsetWidth
+      if (width <= 0) {
+        setCanvasHeight(undefined)
+        setPanelScale(1)
+        return
+      }
+      const height = width / ratio
+      const measuredPaddingY = canvasPaddingY(s.aspect, s.padding, width)
+      setCanvasHeight(height)
+      setPanelScale(constrainedMedia
+        ? 1
+        : panel ? fitPanelScale(height - measuredPaddingY * 2, panel.offsetHeight) : 1)
     }
     measure()
     if (typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver(measure)
     ro.observe(el)
+    if (panel) ro.observe(panel)
     return () => ro.disconnect()
-  }, [ratio, settings, post])
+  }, [ratio, s.aspect, s.padding, constrainedMedia, settings, post])
 
   return (
     <div
       ref={canvasRef}
       data-part="canvas"
       translate={htmlTranslate(false)}
+      data-aspect={s.aspect}
       style={{
         position: 'relative',
         boxSizing: 'border-box',
-        // 定值 minHeight 是對 border-box 算的（見上面量測邏輯：offsetWidth
+        // 定值 height 是對 border-box 算的（見上面量測邏輯：offsetWidth
         // 量到的就是 border-box 寬度）。沒有 box-sizing:border-box 的話，
-        // minHeight 只會指定 content-box，padding 會疊加在外面把實際框撐得
+        // height 只會指定 content-box，padding 會疊加在外面把實際框撐得
         // 比目標比例更高。
-        padding: s.padding,
+        padding: `${paddingY} ${s.padding}px`,
         background: generate(s.background.kind, s.background.palette, s.background.seed),
         // 不設定 CSS 的 aspect-ratio。實測過：把它跟下面這個量測出來的定值
-        // minHeight 同時留著，兩者會互相打架——minHeight 定案後，aspect-ratio
+        // height 同時留著，兩者會互相打架——height 定案後，aspect-ratio
         // 因為 width 仍是 auto，會反過來用「新 height × ratio」去改 width，
         // 改動後的 width 又觸發下面 ResizeObserver 重新量測、重新算高度……
         // 在 4:5 上實測會一路收斂到明顯偏小的框（576×720 而不是正確的
         // 720×900）。aspect-ratio 在這裡本來就是多餘的：useLayoutEffect
-        // 保證在瀏覽器真正畫出東西之前就把 minHeight 定案，CSS 版本從來沒有
+        // 保證在瀏覽器真正畫出東西之前就把固定 height 定案，CSS 版本從來沒有
         // 機會被使用者看到。
-        // 所有比例都只給下限，不鎖死高度，內容更長時畫布自然變高、不裁切。
+        // 非 auto 比例鎖定固定高度；有主圖時由圖片裁切填滿，否則必要時縮面板。
         // 決策抽在 card.css.ts 的 canvasSizeStyle 裡，因為留在這裡就測不到 ——
         // 展開的位置必須維持在原本兩行的位置，往後挪會被後面的屬性蓋掉。
-        ...canvasSizeStyle(minHeight),
+        ...canvasSizeStyle(canvasHeight),
         overflow: 'hidden',
         display: 'flex',
         alignItems: 'center',
@@ -322,6 +393,7 @@ export function Card({
         }}
       />
       <div
+        ref={panelRef}
         data-part="panel"
         style={{
           position: 'relative',
@@ -331,13 +403,22 @@ export function Card({
           WebkitBackdropFilter: 'blur(28px) saturate(1.3)',
           border: '1px solid rgba(255,255,255,.14)',
           borderRadius: 18,
-          padding: '20px 24px',
+          padding: constrainedMedia ? '12px 14px' : '20px 24px',
           color: s.textColor,
           boxShadow: '0 24px 60px rgba(0,0,0,.28)',
+          transform: panelScale < 1 ? `scale(${panelScale})` : undefined,
+          transformOrigin: 'center center',
+          flex: '0 0 auto',
+          boxSizing: 'border-box',
+          height: constrainedMedia ? '100%' : undefined,
+          minHeight: constrainedMedia ? 0 : undefined,
+          overflow: constrainedMedia ? 'hidden' : undefined,
+          display: constrainedMedia ? 'flex' : undefined,
+          flexDirection: constrainedMedia ? 'column' : undefined,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-          {s.show.avatar && <Avatar author={author} size={44} />}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: constrainedMedia ? 8 : 12, flex: '0 0 auto' }}>
+          {s.show.avatar && <Avatar author={author} size={constrainedMedia ? 36 : 44} />}
           <div style={{ lineHeight: 1.2, minWidth: 0 }}>
             <div style={{ fontWeight: 700, fontSize: s.fontSize * 0.9 }}>{author.name}</div>
             <div style={{ opacity: 0.55, fontSize: s.fontSize * 0.8 }}>{author.handleDisplay}</div>
@@ -373,6 +454,7 @@ export function Card({
             lineHeight: 1.55,
             whiteSpace: 'pre-wrap',
             position: 'relative',
+            flex: '0 0 auto',
           }}
         >
           <Text segments={post.text} accent={accent} />
@@ -385,13 +467,16 @@ export function Card({
               marginTop: 8,
               opacity: 0.5,
               fontSize: s.fontSize * 0.72,
+              flex: '0 0 auto',
             }}
           >
             內文未完整取得
           </div>
         )}
 
-        {s.show.media && <MediaGrid media={post.media} />}
+        {s.show.media && (
+          <MediaGrid media={post.media} constrained={constrainedMedia} />
+        )}
 
         {post.quoted && (
           <div
@@ -402,6 +487,7 @@ export function Card({
               border: '1px solid rgba(255,255,255,.16)',
               borderRadius: 12,
               fontSize: s.fontSize * 0.85,
+              flex: '0 0 auto',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 6 }}>
@@ -443,12 +529,13 @@ export function Card({
           <div
             data-part="time"
             style={{
-              marginTop: 14,
+              marginTop: constrainedMedia ? 8 : 14,
               opacity: 0.45,
               fontSize: s.fontSize * 0.72,
               whiteSpace: 'nowrap',
               fontVariantNumeric: 'tabular-nums',
               letterSpacing: '0.01em',
+              flex: '0 0 auto',
             }}
           >
             {absTime(post.createdAt)}
@@ -464,11 +551,12 @@ export function Card({
               flexWrap: 'wrap',
               rowGap: '0.35em',
               gap: '0.6em',
-              marginTop: 14,
-              paddingTop: 12,
+              marginTop: constrainedMedia ? 8 : 14,
+              paddingTop: constrainedMedia ? 8 : 12,
               borderTop: '1px solid rgba(255,255,255,.1)',
               opacity: 0.55,
               fontSize: s.fontSize * 0.72,
+              flex: '0 0 auto',
             }}
           >
             {post.metrics.map((m, i) => (

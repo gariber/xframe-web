@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import {
   buildFilename,
   exportScale,
+  exportLayoutHeight,
   exportWidth,
   exportWidthBelowTarget,
   EXPORT_WIDTH,
@@ -122,6 +123,26 @@ describe('exportWidthBelowTarget', () => {
 
   it('剛好等於 EXPORT_WIDTH 時回傳 false（門檻是嚴格小於，不是小於等於）', () => {
     expect(exportWidthBelowTarget(540, 675)).toBe(false)
+  })
+})
+
+describe('exportLayoutHeight：固定比例輸出精確平台尺寸', () => {
+  it('手機版 9:16 不受 offsetHeight 整數捨入影響', () => {
+    const h = exportLayoutHeight(358, 636, '9:16')
+    expect(Math.round(h * (EXPORT_WIDTH / 358))).toBe(1920)
+  })
+
+  it.each([
+    ['1:1', 1080],
+    ['4:5', 1350],
+    ['9:16', 1920],
+  ])('%s 對應 1080×%d', (aspect, expectedHeight) => {
+    const h = exportLayoutHeight(358, 1, aspect)
+    expect(Math.round(h * (EXPORT_WIDTH / 358))).toBe(expectedHeight)
+  })
+
+  it('auto 沿用內容實際高度', () => {
+    expect(exportLayoutHeight(358, 712, 'auto')).toBe(712)
   })
 })
 

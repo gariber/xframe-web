@@ -233,14 +233,12 @@ describe('DEFAULT_SETTINGS', () => {
 // 所以「用固定寬度掛載卡片並量測實際渲染出的框高寬比」在這個測試環境裡做不到：
 // 量到的永遠是 0/0，不會因為 aspect 設定不同而變化，斷言會恆真或恆假，量不出
 // 真的有沒有守住比例。改為對「我們設定了什麼樣式」做斷言——這是 fix 實際落地
-// 的地方，也是唯一在這個環境裡可觀察、且會在 revert 後失敗的東西。無法涵蓋的
-// 是：這些樣式疊加後，瀏覽器實際渲染出來的框是否真的沒有被撐開——這需要真瀏覽
-// 器或視覺回歸測試；本次已在 dev preview 手動驗證過（見
-// final-fixwave-report.md 的「Aspect ratio second pass」一節），不在本檔案
-// 自動化測試的涵蓋範圍內。
+// 的地方，也是唯一在這個環境裡可觀察、且會在 revert 後失敗的東西。真實比例
+// 與內容縮放仍需要在瀏覽器驗證；固定 height 與縮放計算的純邏輯則由
+// card.css.test.ts 守住。
 describe('比例的版面樣式與字級收斂（Fix 1）', () => {
   it.each(['auto', '1:1', '4:5', '9:16'] as const)(
-    'canvas 節點不再設定 CSS 的 aspect-ratio（改用量測出來的 minHeight）',
+    'canvas 節點不設定 CSS 的 aspect-ratio（改用量測出來的固定 height）',
     (aspect) => {
       const s = { ...DEFAULT_SETTINGS, aspect }
       const el = mount(undefined, s)
@@ -249,7 +247,7 @@ describe('比例的版面樣式與字級收斂（Fix 1）', () => {
     },
   )
 
-  it('canvas 節點設定 minHeight:0 與 overflow:hidden，避免 Chrome 的 min-height:auto 把比例撐開', () => {
+  it('canvas 節點設定 minHeight:0 與 overflow:hidden，避免內容把固定比例撐開', () => {
     const el = mount()
     const canvas = el.querySelector('[data-part="canvas"]') as HTMLElement
     expect(canvas.style.minHeight).toBe('0px')
@@ -271,8 +269,80 @@ describe('比例的版面樣式與字級收斂（Fix 1）', () => {
   })
 })
 
+describe('固定比例的媒體填滿版面', () => {
+  const mediaTweet = () => {
+    const t = parseTweet(fx('media'), '2083061426923475451')!
+    return { ...t, media: t.media.map((m) => ({ ...m, dataUrl: 'data:image/png;base64,eA==' })) }
+  }
+
+  it.each(['1:1', '4:5', '9:16'] as const)(
+    '%s 有圖片時面板維持滿寬滿高，不再整張縮成小卡',
+    (aspect) => {
+      const el = mount(mediaTweet(), { ...DEFAULT_SETTINGS, aspect, padding: 28 })
+      const panel = el.querySelector('[data-part="panel"]') as HTMLElement
+      expect(panel.style.width).toBe('100%')
+      expect(panel.style.height).toBe('100%')
+      expect(panel.style.transform).toBe('')
+      expect(panel.style.display).toBe('flex')
+      expect(panel.style.overflow).toBe('hidden')
+    },
+  )
+
+  it.each(['1:1', '4:5', '9:16'] as const)(
+    '%s 讓圖片區吃滿剩餘高度，原圖以 contain 完整顯示',
+    (aspect) => {
+      const el = mount(mediaTweet(), { ...DEFAULT_SETTINGS, aspect })
+      const media = el.querySelector('[data-part="media"]') as HTMLElement
+      const tile = media.querySelector('[data-part="media-tile"]') as HTMLElement
+      const image = media.querySelector('[data-part="media-image"]') as HTMLElement
+      expect(media.style.flex).toBe('1 1 0px')
+      expect(media.style.minHeight).toBe('0px')
+      expect(tile.style.overflow).toBe('hidden')
+      expect(tile.style.display).toBe('flex')
+      expect(tile.style.alignItems).toBe('center')
+      expect(tile.style.justifyContent).toBe('center')
+      expect(tile.style.background).toBe('transparent')
+      expect(image.style.width).toBe('auto')
+      expect(image.style.height).toBe('auto')
+      expect(image.style.maxWidth).toBe('100%')
+      expect(image.style.maxHeight).toBe('100%')
+      expect(image.style.objectFit).toBe('contain')
+      expect(image.style.objectPosition).toBe('center center')
+      expect(image.style.borderRadius).toBe('12px')
+    },
+  )
+
+  it('固定比例由卡片底板自然承接比例差，不畫出額外媒體底框', () => {
+    const el = mount(mediaTweet(), { ...DEFAULT_SETTINGS, aspect: '4:5' })
+    const tile = el.querySelector('[data-part="media-tile"]') as HTMLElement
+    expect(tile.style.background).toBe('transparent')
+    expect(el.querySelector('[data-part="media-backdrop"]')).toBeNull()
+  })
+
+  it('auto 維持原本的完整圖片與內容高度', () => {
+    const el = mount(mediaTweet(), { ...DEFAULT_SETTINGS, aspect: 'auto' })
+    const panel = el.querySelector('[data-part="panel"]') as HTMLElement
+    const media = el.querySelector('[data-part="media"]') as HTMLElement
+    const image = media.querySelector('[data-part="media-image"]') as HTMLElement
+    expect(panel.style.height).toBe('')
+    expect(panel.style.display).toBe('')
+    expect(media.style.flex).toBe('')
+    expect(image.style.height).toBe('')
+    expect(image.style.objectFit).toBe('')
+    expect(media.querySelector('[data-part="media-backdrop"]')).toBeNull()
+  })
+
+  it('9:16 標記在 canvas，讓固定比例匯出與安全區共用同一個模式', () => {
+    const el = mount(mediaTweet(), { ...DEFAULT_SETTINGS, aspect: '9:16', padding: 28 })
+    const canvas = el.querySelector('[data-part="canvas"]') as HTMLElement
+    // happy-dom 會丟棄含 CSS max() 的 padding shorthand，實際數值由
+    // card.css.test.ts 的純函式與真瀏覽器幾何驗證。
+    expect(canvas.dataset.aspect).toBe('9:16')
+  })
+})
+
 describe('canvas 節點的 box-sizing', () => {
-  it('canvas 節點設定 box-sizing:border-box，讓定值 minHeight 與量測到的 border-box 寬度是同一套座標系', () => {
+  it('canvas 節點設定 box-sizing:border-box，讓固定 height 與量測寬度是同一套座標系', () => {
     const el = mount(undefined, { ...DEFAULT_SETTINGS, aspect: '1:1' })
     const canvas = el.querySelector('[data-part="canvas"]') as HTMLElement
     expect(canvas.style.boxSizing).toBe('border-box')
@@ -421,11 +491,8 @@ describe('發文時間格式', () => {
   })
 })
 
-// 9:16 一直都是最小高度（見 card.css.ts 的 canvasSizeStyle 與下面的
-// ASPECT_SHRINK 說明），全比例改最小高度後這已不是它獨有的行為，不再需要
-// 用「9:16 是不是最小高度模式」這個已消失的區分來測。這裡只留仍然獨有的
-// 一件事：ASPECT_SHRINK 表裡 9:16 的係數是 1（跟 auto 一樣不縮字），
-// 1:1／4:5 才縮，這件事與截斷機制無關，改動後依然成立。
+// ASPECT_SHRINK 表裡 9:16 的係數是 1（跟 auto 一樣不預先縮字），
+// 1:1／4:5 才縮；最終放不下時仍由整張面板等比縮放。
 describe('9:16 字級不縮', () => {
   it('9:16 不套用縮字係數，與 auto 相同；1:1 才縮', () => {
     const raw = '中'.repeat(60)
@@ -479,23 +546,21 @@ describe('內文完整性', () => {
     // 這個屬性有人看著。真正守住遮罩的是上面的 maskImage（實測會紅）。
   })
 
-  it('畫布不再套溢出淡出遮罩', () => {
+  it('畫布不用淡出遮罩假裝比例成立', () => {
     const el = mount(longTweet(), { ...DEFAULT_SETTINGS, aspect: '4:5' })
     const canvas = el.querySelector('[data-part="canvas"]') as HTMLElement
     // 同上一則測試：maskImage 不在 happy-dom 預先定義的 CSS 屬性清單裡，
     // 未賦值過會讀回 undefined 而非 ''，toBeFalsy 兩者都收。
     expect(canvas.style.maskImage).toBeFalsy()
-    // 沒有斷言 canvas.style.height 為空，同樣是因為測不到：happy-dom 沒有版面
-    // 引擎，offsetWidth 恆為 0，而 useLayoutEffect 裡的 setState 在測試同步讀取
-    // 樣式時尚未 flush —— 不論有沒有固定高度，height 都讀回空字串。實測把
-    // 固定 height 塞回 Card 後這則測試照樣通過。固定高度是否真的消失只能在真
-    // 瀏覽器驗（Task 8 的目視驗收）；純函式那一半由 card.css.test.ts 守著。
+    // happy-dom 沒有版面引擎，offsetWidth 恆為 0，因此固定高度的實際幾何由
+    // 真瀏覽器驗證；純函式輸出由 card.css.test.ts 守著。
   })
 
-  it('面板不再被縮放 —— 畫布長高取代縮小', () => {
+  it('量測無效時不誤縮面板，縮放原點固定在中心', () => {
     const el = mount(longTweet(), { ...DEFAULT_SETTINGS, aspect: '1:1' })
     const panel = el.querySelector('[data-part="panel"]') as HTMLElement
     expect(panel.style.transform).toBe('')
+    expect(panel.style.transformOrigin).toBe('center center')
   })
 })
 
