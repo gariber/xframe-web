@@ -235,26 +235,41 @@ describe('固定比例的媒體填滿版面', () => {
     },
   )
 
-  it('固定比例讓圖片區吃滿剩餘高度，並以 cover 裁切', () => {
-    const el = mount(mediaTweet(), { ...DEFAULT_SETTINGS, aspect: '1:1' })
-    const media = el.querySelector('[data-part="media"]') as HTMLElement
-    const image = media.querySelector('img') as HTMLElement
-    expect(media.style.flex).toBe('1 1 0px')
-    expect(media.style.minHeight).toBe('0px')
-    expect(image.style.height).toBe('100%')
-    expect(image.style.objectFit).toBe('cover')
+  it.each(['1:1', '4:5', '9:16'] as const)(
+    '%s 讓圖片區吃滿剩餘高度，原圖以 contain 完整顯示',
+    (aspect) => {
+      const el = mount(mediaTweet(), { ...DEFAULT_SETTINGS, aspect })
+      const media = el.querySelector('[data-part="media"]') as HTMLElement
+      const tile = media.querySelector('[data-part="media-tile"]') as HTMLElement
+      const image = media.querySelector('[data-part="media-image"]') as HTMLElement
+      expect(media.style.flex).toBe('1 1 0px')
+      expect(media.style.minHeight).toBe('0px')
+      expect(tile.style.overflow).toBe('hidden')
+      expect(image.style.height).toBe('100%')
+      expect(image.style.objectFit).toBe('contain')
+    },
+  )
+
+  it('固定比例以同圖模糊背景填補比例差，不留下生硬空白邊', () => {
+    const el = mount(mediaTweet(), { ...DEFAULT_SETTINGS, aspect: '4:5' })
+    const backdrop = el.querySelector('[data-part="media-backdrop"]') as HTMLElement
+    expect(backdrop).not.toBeNull()
+    expect(backdrop.getAttribute('aria-hidden')).toBe('true')
+    expect(backdrop.style.objectFit).toBe('cover')
+    expect(backdrop.style.filter).toContain('blur(20px)')
   })
 
   it('auto 維持原本的完整圖片與內容高度', () => {
     const el = mount(mediaTweet(), { ...DEFAULT_SETTINGS, aspect: 'auto' })
     const panel = el.querySelector('[data-part="panel"]') as HTMLElement
     const media = el.querySelector('[data-part="media"]') as HTMLElement
-    const image = media.querySelector('img') as HTMLElement
+    const image = media.querySelector('[data-part="media-image"]') as HTMLElement
     expect(panel.style.height).toBe('')
     expect(panel.style.display).toBe('')
     expect(media.style.flex).toBe('')
     expect(image.style.height).toBe('')
     expect(image.style.objectFit).toBe('')
+    expect(media.querySelector('[data-part="media-backdrop"]')).toBeNull()
   })
 
   it('9:16 標記在 canvas，讓固定比例匯出與安全區共用同一個模式', () => {

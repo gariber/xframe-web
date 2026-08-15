@@ -177,18 +177,66 @@ function MediaGrid({ media, constrained = false }: { media: Media[]; constrained
         minHeight: constrained ? 0 : undefined,
       }}
     >
-      {usable.slice(0, 4).map((m, i) => (
+      {usable.slice(0, 4).map((m, i) => constrained ? (
+        <div
+          key={i}
+          data-part="media-tile"
+          style={{
+            position: 'relative',
+            minWidth: 0,
+            minHeight: 0,
+            overflow: 'hidden',
+            background: 'rgba(0,0,0,.16)',
+          }}
+        >
+          <img
+            data-part="media-backdrop"
+            src={m.dataUrl}
+            alt=""
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              inset: '-8%',
+              width: '116%',
+              height: '116%',
+              display: 'block',
+              objectFit: 'cover',
+              filter: 'blur(20px) saturate(1.05) brightness(.88)',
+              transform: 'scale(1.08)',
+              opacity: 0.86,
+            }}
+          />
+          <div
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: 'linear-gradient(180deg,rgba(0,0,0,.03),rgba(0,0,0,.14))',
+            }}
+          />
+          <img
+            data-part="media-image"
+            src={m.dataUrl}
+            alt={m.alt}
+            style={{
+              position: 'relative',
+              zIndex: 1,
+              width: '100%',
+              height: '100%',
+              minHeight: 0,
+              display: 'block',
+              objectFit: 'contain',
+              filter: 'drop-shadow(0 8px 18px rgba(0,0,0,.18))',
+            }}
+          />
+        </div>
+      ) : (
         <img
           key={i}
+          data-part="media-image"
           src={m.dataUrl}
           alt={m.alt}
-          style={{
-            width: '100%',
-            height: constrained ? '100%' : undefined,
-            minHeight: constrained ? 0 : undefined,
-            display: 'block',
-            objectFit: constrained ? 'cover' : undefined,
-          }}
+          style={{ width: '100%', display: 'block' }}
         />
       ))}
     </div>
@@ -253,8 +301,8 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
   const [panelScale, setPanelScale] = useState(1)
 
   // CSS aspect-ratio 會被 flex item 的 min-content 高度撐開，所以非 auto 模式
-  // 直接由 offsetWidth 算固定 px height。有主圖時面板維持滿寬滿高，讓圖片以
-  // cover 吃掉剩餘空間；沒有主圖時才等比縮小過高面板，以保留完整文字。
+  // 直接由 offsetWidth 算固定 px height。有主圖時面板維持滿寬滿高，讓完整
+  // 原圖置中並以同圖柔焦背景填滿剩餘空間；沒有主圖時才等比縮小過高面板。
   useLayoutEffect(() => {
     const el = canvasRef.current
     const panel = panelRef.current
