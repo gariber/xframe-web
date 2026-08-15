@@ -17,6 +17,13 @@ const INTERACTION: Record<string, MetricKind> = {
  */
 const X_METRIC_ORDER: readonly MetricKind[] = ['views', 'replies', 'reposts', 'likes']
 
+const VISIBLE_INTERACTION: Record<string, MetricKind> = {
+  Reply: 'replies',
+  Repost: 'reposts',
+  Like: 'likes',
+  'View count': 'views',
+}
+
 /** 從推文永久連結取出數字 ID。 */
 export function extractTweetId(url: string): string | null {
   return url.match(/\/status\/(\d+)/)?.[1] ?? null
@@ -211,6 +218,73 @@ function parseMetrics(article: Element): Metric[] {
 }
 
 /**
+ * 解析 X 可見介面使用的縮寫數字。公開頁會依瀏覽器語言輸出 `13K`、`1.3萬`
+ * 等不同格式，不能只用 Number()。只接受 X 目前使用的有限單位，避免把日期、
+ * 帳號或其他 UI 文字誤當成互動數。
+ */
+function parseVisibleMetricNumber(raw: string): number | null {
+  const normalized = raw.normalize('NFKC').replace(/[\s,，٬]/g, '')
+  const match = normalized.match(/^(\d+(?:\.\d+)?)(K|M|B|千|万|萬|亿|億)?$/i)
+  if (!match) return null
+  const value = Number(match[1])
+  if (!Number.isFinite(value)) return null
+  const multiplier: Record<string, number> = {
+    K: 1_000,
+    M: 1_000_000,
+    B: 1_000_000_000,
+    千: 1_000,
+    万: 10_000,
+    萬: 10_000,
+    亿: 100_000_000,
+    億: 100_000_000,
+  }
+  const unit = match[2]
+  return Math.round(value * (unit ? multiplier[unit.toUpperCase()] : 1))
+}
+
+/**
+ * 新版未登入 SSR 已移除 interactionStatistic，但可見操作列仍提供穩定的
+ * aria-label（Reply / Repost / Like / View count），數字則放在同一語意群組的
+ * data-animated-count-visual 裡。主推文詳情頁的瀏覽數另外顯示成 `1.3萬 Views`
+ * 連結，故一併以文字標籤辨識。
+ *
+ * 所有查詢都限制在目前 article；引用推文或下方回覆各有自己的 article，不能
+ * 讓它們的數字外洩進主推文。按鈕存在但沒有數字代表 X 隱藏了零值，解析為 0；
+ * 整個語意控制不存在才維持 null。
+ */
+function parseVisibleMetrics(article: Element): Metric[] {
+  const found = new Map<MetricKind, number>()
+
+  for (const control of article.querySelectorAll('[aria-label]')) {
+    if (control.closest('article') !== article) continue
+    const kind = VISIBLE_INTERACTION[control.getAttribute('aria-label') ?? '']
+    if (!kind) continue
+
+    const group = control.parentElement
+    const count = group?.querySelector('[data-animated-count-visual]')
+    if (count && count.closest('article') !== article) continue
+    const value = count ? parseVisibleMetricNumber(count.textContent ?? '') : 0
+    if (value === null) continue
+    const previous = found.get(kind)
+    if (previous === undefined || value > previous) found.set(kind, value)
+  }
+
+  // 主推文詳情頁的瀏覽數不在下方操作列，而在時間旁的 `{數字} Views` 連結。
+  for (const link of article.querySelectorAll('a[href]')) {
+    if (link.closest('article') !== article) continue
+    const text = (link.textContent ?? '').replace(/\s+/g, '')
+    const match = text.match(/^(.+?)Views$/i)
+    if (!match) continue
+    const value = parseVisibleMetricNumber(match[1])
+    if (value === null) continue
+    const previous = found.get('views')
+    if (previous === undefined || value > previous) found.set('views', value)
+  }
+
+  return X_METRIC_ORDER.map((kind) => ({ kind, value: found.get(kind) ?? null }))
+}
+
+/**
  * 取得屬於此 article 的圖片。
  * `img.closest('article') === article` 是正確歸屬的關鍵：若圖片位於巢狀的
  * 引用推文內，其最近的 article 祖先會是引用推文而非外層推文。
@@ -320,7 +394,7 @@ function parseVisibleArticle(
     source: 'fetch',
     rawText: normalizedTitle,
     createdAt: metaOf(article, 'dateCreated') ?? metaOf(article, 'datePublished') ?? '',
-    metrics: parseMetrics(article),
+    metrics: parseVisibleMetrics(article),
   }
 }
 

@@ -15,6 +15,7 @@ function visibleOnlyHtml({
   titleText = VISIBLE_ONLY_TEXT,
   visibleText = VISIBLE_ONLY_TEXT,
   permalink = `https://x.com/${VISIBLE_ONLY_HANDLE}/status/${VISIBLE_ONLY_ID}`,
+  metrics = true,
 } = {}): string {
   return `<!doctype html>
     <html>
@@ -29,6 +30,14 @@ function visibleOnlyHtml({
             <a href="https://x.com/${VISIBLE_ONLY_HANDLE}">@${VISIBLE_ONLY_HANDLE}</a>
             <img src="https://pbs.twimg.com/profile_images/2077732264398782464/w2OVbwE6_normal.jpg" alt="user avatar">
             <div dir="auto"><span>${visibleText}</span></div>
+            ${metrics ? `
+              <a href="/${VISIBLE_ONLY_HANDLE}/status/${VISIBLE_ONLY_ID}">
+                <span>1.3萬</span><span>Views</span>
+              </a>
+              <span><button aria-label="Reply"></button><button><span data-animated-count-visual="true">3</span></button></span>
+              <span><button aria-label="Repost"></button><button><span data-animated-count-visual="true">77</span></button></span>
+              <span><button aria-label="Like"></button><button><span data-animated-count-visual="true">1155</span></button></span>
+            ` : ''}
             <div itemprop="image">
               <img src="https://pbs.twimg.com/media/HPo8v-gaEAAHsFx?format=webp&amp;name=medium" alt="">
             </div>
@@ -244,7 +253,12 @@ describe('parseTweet 2026-08 可見 SSR fallback', () => {
     expect(t.media).toEqual([
       expect.objectContaining({ url: expect.stringContaining('pbs.twimg.com/media/HPo8v-gaEAAHsFx') }),
     ])
-    expect(t.metrics.every((m) => m.value === null)).toBe(true)
+    expect(t.metrics).toEqual([
+      { kind: 'views', value: 13_000 },
+      { kind: 'replies', value: 3 },
+      { kind: 'reposts', value: 77 },
+      { kind: 'likes', value: 1155 },
+    ])
     expect(t.source).toBe('fetch')
     expect(t.textComplete).toBe(true)
   })
@@ -256,6 +270,21 @@ describe('parseTweet 2026-08 可見 SSR fallback', () => {
   it('article ID 與 permalink ID 不同時 fail closed', () => {
     const wrong = `https://x.com/${VISIBLE_ONLY_HANDLE}/status/9999999999999999999`
     expect(parseTweet(visibleOnlyHtml({ permalink: wrong }), VISIBLE_ONLY_ID)).toBeNull()
+  })
+
+  it('語意互動按鈕存在但沒有數字時解析為 0；整組不存在仍為 null', () => {
+    const html = visibleOnlyHtml({ metrics: false }).replace(
+      '<div itemprop="image">',
+      '<span><button aria-label="Reply"></button></span><div itemprop="image">',
+    )
+    const t = parseTweet(html, VISIBLE_ONLY_ID)!
+
+    expect(t.metrics).toEqual([
+      { kind: 'views', value: null },
+      { kind: 'replies', value: 0 },
+      { kind: 'reposts', value: null },
+      { kind: 'likes', value: null },
+    ])
   })
 })
 

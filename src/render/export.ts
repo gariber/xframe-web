@@ -1,5 +1,6 @@
 import { domToBlob } from 'modern-screenshot'
 import type { Post } from '../types'
+import { ASPECT_VALUE } from './card.css'
 
 /**
  * 輸出圖片的固定寬度。
@@ -17,8 +18,8 @@ export const EXPORT_WIDTH = 1080
 
 /**
  * canvas 的像素數上限。iOS Safari 超過約 1600 萬像素會直接給出空白畫布 ——
- * 不丟例外，只是靜靜產出一張全白的圖。四種比例都不再限制內文長度，極長的
- * 推文有可能撞到，所以寧可整體縮一點也不要無聲失敗。
+ * 不丟例外，只是靜靜產出一張全白的圖。auto 仍可能因極長推文撞到上限，
+ * 所以寧可整體縮一點也不要無聲失敗。
  */
 export const MAX_EXPORT_PIXELS = 16_000_000
 
@@ -62,6 +63,20 @@ export function exportWidthBelowTarget(layoutWidth: number, layoutHeight: number
 }
 
 /**
+ * offsetHeight 只能回傳整數 CSS px；358px 寬的 9:16 畫布實際高度是
+ * 636.444…px，若直接拿 offsetHeight=636 匯出，最後會變成 1080×1919。
+ * 固定比例改用寬度與比例重算可保證原生尺寸；auto 才沿用實際內容高度。
+ */
+export function exportLayoutHeight(
+  layoutWidth: number,
+  measuredHeight: number,
+  aspect: string | undefined,
+): number {
+  const ratio = aspect ? ASPECT_VALUE[aspect] : undefined
+  return ratio && layoutWidth > 0 ? layoutWidth / ratio : measuredHeight
+}
+
+/**
  * 對預覽節點本身光柵化。
  * 預覽即輸出 —— 不存在第二套渲染路徑，因此不可能出現「下載的圖跟預覽不一樣」。
  */
@@ -77,12 +92,17 @@ export async function exportPng(node: HTMLElement): Promise<Blob> {
   // 而且不會報錯，只會默默產出一張又小又糊的圖。
   // offsetWidth/offsetHeight 是版面尺寸，不受 transform 影響；擴充功能沒有
   // 縮放祖先，傳這兩個值對它而言等同原本行為。
+  const layoutHeight = exportLayoutHeight(
+    node.offsetWidth,
+    node.offsetHeight,
+    node.dataset.aspect,
+  )
   const blob = await domToBlob(node, {
-    scale: exportScale(node.offsetWidth, node.offsetHeight),
+    scale: exportScale(node.offsetWidth, layoutHeight),
     type: 'image/png',
     font: false,
     width: node.offsetWidth,
-    height: node.offsetHeight,
+    height: layoutHeight,
   })
   if (!blob) throw new Error('光柵化失敗')
   return blob

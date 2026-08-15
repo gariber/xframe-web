@@ -11,7 +11,7 @@ import { canShareImageFile, createPngFile, shareImageFile } from './share'
 
 const STORAGE_KEY = 'xframe.web.settings'
 
-/** 網頁版預設直式，適合限時動態；不鎖死高度，長推文會繼續變高。
+/** 網頁版預設精確 9:16 直式，適合限時動態；放不下時完整面板會等比縮小。
  *  留白改小：72 是桌面尺寸，在 390px 手機上會把內容寬度壓到剩約 166px。 */
 const WEB_DEFAULTS: CardSettings = { ...DEFAULT_SETTINGS, aspect: '9:16', padding: 28 }
 
@@ -203,6 +203,12 @@ export function App() {
     ? createPngFile(pngBlob, buildFilename(status.tweet))
     : null
   const shareSupported = shareFile !== null && canShareImageFile(shareFile)
+  const fixedRatio = ASPECT_VALUE[settings.aspect]
+  const downloadHeight = cardSize
+    ? Math.round(fixedRatio
+      ? EXPORT_WIDTH / fixedRatio
+      : EXPORT_WIDTH * cardSize[1] / cardSize[0])
+    : null
 
   return (
     <div class="wrap">
@@ -296,7 +302,7 @@ export function App() {
             onInput={(e) => patch({ textColor: e.currentTarget.value })} /></label>
           <label>比例
             <select value={settings.aspect} onChange={(e) => patch({ aspect: e.currentTarget.value as CardSettings['aspect'] })}>
-              <option value="9:16">9:16 直式（不限長度）</option>
+              <option value="9:16">9:16 直式</option>
               <option value="auto">自動高度</option>
               <option value="1:1">1:1 方形</option>
               <option value="4:5">4:5 直式</option>
@@ -308,9 +314,9 @@ export function App() {
               <option value="absolute">絕對（2026-08-01 05:54）</option>
             </select>
           </label>
-          {cardSize && (
+          {downloadHeight !== null && (
             <p class="hint">
-              下載尺寸固定 {EXPORT_WIDTH}×{Math.round(EXPORT_WIDTH * cardSize[1] / cardSize[0])} px，
+              下載尺寸固定 {EXPORT_WIDTH}×{downloadHeight} px，
               不隨這台裝置的畫面寬度變動。預覽只是縮小顯示，不影響輸出。
             </p>
           )}
