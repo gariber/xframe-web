@@ -6,6 +6,38 @@ import {
 
 const fx = (n: string) => readFileSync(`test/fixtures/${n}.html`, 'utf8')
 
+const VISIBLE_ONLY_ID = '2088048454077763827'
+const VISIBLE_ONLY_NAME = 'Aoi | Digital Cat Life🐾もな'
+const VISIBLE_ONLY_HANDLE = 'basarafire'
+const VISIBLE_ONLY_TEXT = '「いってらっしゃい。ニンゲン」'
+
+function visibleOnlyHtml({
+  titleText = VISIBLE_ONLY_TEXT,
+  visibleText = VISIBLE_ONLY_TEXT,
+  permalink = `https://x.com/${VISIBLE_ONLY_HANDLE}/status/${VISIBLE_ONLY_ID}`,
+} = {}): string {
+  return `<!doctype html>
+    <html>
+      <head><title>${VISIBLE_ONLY_NAME} on X: "${titleText}" / X</title></head>
+      <body>
+        <article data-tweet-id="${VISIBLE_ONLY_ID}" itemtype="https://schema.org/SocialMediaPosting">
+          <meta itemprop="dateCreated" content="2026-08-13T23:42:00.000Z">
+          <meta itemprop="datePublished" content="2026-08-13T23:42:00.000Z">
+          <meta itemprop="url" content="${permalink}">
+          <div>
+            <a href="https://x.com/${VISIBLE_ONLY_HANDLE}">${VISIBLE_ONLY_NAME}</a>
+            <a href="https://x.com/${VISIBLE_ONLY_HANDLE}">@${VISIBLE_ONLY_HANDLE}</a>
+            <img src="https://pbs.twimg.com/profile_images/2077732264398782464/w2OVbwE6_normal.jpg" alt="user avatar">
+            <div dir="auto"><span>${visibleText}</span></div>
+            <div itemprop="image">
+              <img src="https://pbs.twimg.com/media/HPo8v-gaEAAHsFx?format=webp&amp;name=medium" alt="">
+            </div>
+          </div>
+        </article>
+      </body>
+    </html>`
+}
+
 describe('extractTweetId', () => {
   it('從永久連結取出 ID', () => {
     expect(extractTweetId('https://x.com/thsottiaux/status/2083053369351090254'))
@@ -191,6 +223,39 @@ describe('parseTweet 新版 X 公開頁面', () => {
 
   it('統計仍取自主推文自己的 microdata', () => {
     expect(t.metrics.find((m) => m.kind === 'reposts')?.value).toBe(3)
+  })
+})
+
+describe('parseTweet 2026-08 可見 SSR fallback', () => {
+  it('結構化 author/text 消失時，以 permalink、作者連結、title 與可見正文交叉驗證後解析', () => {
+    const t = parseTweet(visibleOnlyHtml(), VISIBLE_ONLY_ID)!
+
+    expect(t).not.toBeNull()
+    expect(t.id).toBe(VISIBLE_ONLY_ID)
+    expect(t.url).toBe(`https://x.com/${VISIBLE_ONLY_HANDLE}/status/${VISIBLE_ONLY_ID}`)
+    expect(t.author).toMatchObject({
+      name: VISIBLE_ONLY_NAME,
+      handle: VISIBLE_ONLY_HANDLE,
+      handleDisplay: `@${VISIBLE_ONLY_HANDLE}`,
+    })
+    expect(t.author.avatarUrl).toContain('pbs.twimg.com/profile_images/')
+    expect(t.rawText).toBe(VISIBLE_ONLY_TEXT)
+    expect(t.createdAt).toBe('2026-08-13T23:42:00.000Z')
+    expect(t.media).toEqual([
+      expect.objectContaining({ url: expect.stringContaining('pbs.twimg.com/media/HPo8v-gaEAAHsFx') }),
+    ])
+    expect(t.metrics.every((m) => m.value === null)).toBe(true)
+    expect(t.source).toBe('fetch')
+    expect(t.textComplete).toBe(true)
+  })
+
+  it('title 與可見正文對不上時 fail closed，不把其他 UI 文字當推文', () => {
+    expect(parseTweet(visibleOnlyHtml({ visibleText: '另一段文字' }), VISIBLE_ONLY_ID)).toBeNull()
+  })
+
+  it('article ID 與 permalink ID 不同時 fail closed', () => {
+    const wrong = `https://x.com/${VISIBLE_ONLY_HANDLE}/status/9999999999999999999`
+    expect(parseTweet(visibleOnlyHtml({ permalink: wrong }), VISIBLE_ONLY_ID)).toBeNull()
   })
 })
 

@@ -63,6 +63,12 @@ export function stripTrailingLink(s: string): string {
 /** `<title>` 的固定格式：`{顯示名稱} on X: "{完整內文}" / X` */
 const TITLE_SUFFIX = '" / X'
 
+function bodyFromTitle(title: string, authorName: string): string | null {
+  const prefix = `${authorName} on X: "`
+  if (!title.startsWith(prefix) || !title.endsWith(TITLE_SUFFIX)) return null
+  return stripTrailingLink(title.slice(prefix.length, -TITLE_SUFFIX.length))
+}
+
 /**
  * 從 `<title>` 取回完整內文。
  *
@@ -85,11 +91,8 @@ export function fullTextFromTitle(
   authorName: string,
   metaText: string,
 ): { text: string; fromTitle: boolean } {
-  const prefix = `${authorName} on X: "`
-  if (!title.startsWith(prefix) || !title.endsWith(TITLE_SUFFIX)) {
-    return { text: metaText, fromTitle: false }
-  }
-  const candidate = stripTrailingLink(title.slice(prefix.length, -TITLE_SUFFIX.length))
+  const candidate = bodyFromTitle(title, authorName)
+  if (candidate === null) return { text: metaText, fromTitle: false }
   return candidate.startsWith(metaText)
     ? { text: candidate, fromTitle: true }
     : { text: metaText, fromTitle: false }
@@ -222,6 +225,105 @@ function parseMedia(article: Element): Media[] {
     .filter((m) => m.url !== '')
 }
 
+const X_HOSTS = new Set(['x.com', 'www.x.com', 'twitter.com', 'www.twitter.com', 'mobile.twitter.com'])
+
+function parsePermalink(
+  rawUrl: string | null,
+  expectedId: string,
+): { url: string; handle: string } | null {
+  if (!rawUrl) return null
+  try {
+    const url = new URL(rawUrl)
+    if (!X_HOSTS.has(url.hostname)) return null
+    const match = url.pathname.match(/^\/([A-Za-z0-9_]{1,15})\/status\/(\d+)\/?$/)
+    if (!match || match[2] !== expectedId) return null
+    return { url: rawUrl, handle: match[1] }
+  } catch {
+    return null
+  }
+}
+
+function isProfileLink(rawHref: string | null, handle: string): boolean {
+  if (!rawHref) return false
+  try {
+    const url = new URL(rawHref, 'https://x.com')
+    return X_HOSTS.has(url.hostname) &&
+      url.pathname.toLowerCase() === `/${handle.toLowerCase()}` &&
+      url.search === '' &&
+      url.hash === ''
+  } catch {
+    return false
+  }
+}
+
+function parseVisibleAuthor(article: Element, handle: string): Author | null {
+  const names = new Set(
+    [...article.querySelectorAll('a[href]')]
+      .filter((link) => link.closest('article') === article)
+      .filter((link) => isProfileLink(link.getAttribute('href'), handle))
+      .map((link) => (link.textContent ?? '').trim())
+      .filter((text) => text !== '' && text.toLowerCase() !== `@${handle.toLowerCase()}`),
+  )
+  if (names.size !== 1) return null
+
+  const avatar = [...article.querySelectorAll('img[src*="pbs.twimg.com/profile_images/"]')]
+    .find((img) => img.closest('article') === article)
+
+  return {
+    name: [...names][0],
+    handle,
+    handleDisplay: '@' + handle,
+    avatarUrl: avatar?.getAttribute('src') ?? '',
+  }
+}
+
+function normalizeVisibleText(text: string): string {
+  return stripTrailingLink(text.replace(/\r\n?/g, '\n')).trim()
+}
+
+/**
+ * 2026-08-15 起 X 的未登入 SSR 仍保留 SocialMediaPosting article、permalink、
+ * 可見作者連結、title 與正文，但移除了 itemprop="author" / "text" /
+ * "identifier"。這條 fallback 只在數個獨立表面完全一致時採信：article ID 必須
+ * 等於 permalink ID，permalink handle 必須等於可見作者連結，title 正文必須
+ * 等於 article 內的可見正文。任一邊對不上就 fail closed。
+ */
+function parseVisibleArticle(
+  article: Element,
+  title: string,
+  expectedId: string,
+): Omit<Post, 'quoted' | 'media' | 'text' | 'textComplete'> | null {
+  const permalink = parsePermalink(metaOf(article, 'url'), expectedId)
+  if (!permalink) return null
+
+  const author = parseVisibleAuthor(article, permalink.handle)
+  if (!author) return null
+
+  const titleText = bodyFromTitle(title, author.name)
+  if (!titleText) return null
+  const normalizedTitle = normalizeVisibleText(titleText)
+  const visibleMatches = [...article.querySelectorAll('[dir="auto"]')]
+    .filter((el) => el.closest('article') === article)
+    .map((el) => {
+      const copy = el.cloneNode(true) as Element
+      for (const button of copy.querySelectorAll('button')) button.remove()
+      return normalizeVisibleText(copy.textContent ?? '')
+    })
+    .filter((text) => text !== '')
+  if (!visibleMatches.includes(normalizedTitle)) return null
+
+  return {
+    id: expectedId,
+    url: permalink.url,
+    platform: 'x',
+    author,
+    source: 'fetch',
+    rawText: normalizedTitle,
+    createdAt: metaOf(article, 'dateCreated') ?? metaOf(article, 'datePublished') ?? '',
+    metrics: parseMetrics(article),
+  }
+}
+
 /**
  * 解析單一 article 節點。不含引用推文與圖片。也不含 textComplete —— 這一層
  * 拿不到 title（截斷判斷需要它），由兩個呼叫點各自依自己的情境補上。
@@ -262,7 +364,8 @@ export function parseTweet(html: string, tweetId: string): Post | null {
   )
   if (!article) return null
 
-  const base = parseArticle(article)
+  const title = doc.querySelector('title')?.textContent ?? ''
+  const base = parseArticle(article) ?? parseVisibleArticle(article, title, tweetId)
   if (!base) return null
 
   // 先讀 article 自己的可見文字。新版 X 會同時截斷 meta 與 title，完整內文只在
@@ -270,7 +373,7 @@ export function parseTweet(html: string, tweetId: string): Post | null {
   // 「是可信 meta 的延長」檢查，不會把其他 UI 文字誤當成推文。
   const visibleText = fullTextFromArticle(article, base.rawText)
   const titleText = fullTextFromTitle(
-    doc.querySelector('title')?.textContent ?? '',
+    title,
     base.author.name,
     base.rawText,
   )
