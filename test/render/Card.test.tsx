@@ -245,18 +245,25 @@ describe('固定比例的媒體填滿版面', () => {
       expect(media.style.flex).toBe('1 1 0px')
       expect(media.style.minHeight).toBe('0px')
       expect(tile.style.overflow).toBe('hidden')
-      expect(image.style.height).toBe('100%')
+      expect(tile.style.display).toBe('flex')
+      expect(tile.style.alignItems).toBe('center')
+      expect(tile.style.justifyContent).toBe('center')
+      expect(tile.style.background).toBe('transparent')
+      expect(image.style.width).toBe('auto')
+      expect(image.style.height).toBe('auto')
+      expect(image.style.maxWidth).toBe('100%')
+      expect(image.style.maxHeight).toBe('100%')
       expect(image.style.objectFit).toBe('contain')
+      expect(image.style.objectPosition).toBe('center center')
+      expect(image.style.borderRadius).toBe('12px')
     },
   )
 
-  it('固定比例以同圖模糊背景填補比例差，不留下生硬空白邊', () => {
+  it('固定比例由卡片底板自然承接比例差，不畫出額外媒體底框', () => {
     const el = mount(mediaTweet(), { ...DEFAULT_SETTINGS, aspect: '4:5' })
-    const backdrop = el.querySelector('[data-part="media-backdrop"]') as HTMLElement
-    expect(backdrop).not.toBeNull()
-    expect(backdrop.getAttribute('aria-hidden')).toBe('true')
-    expect(backdrop.style.objectFit).toBe('cover')
-    expect(backdrop.style.filter).toContain('blur(20px)')
+    const tile = el.querySelector('[data-part="media-tile"]') as HTMLElement
+    expect(tile.style.background).toBe('transparent')
+    expect(el.querySelector('[data-part="media-backdrop"]')).toBeNull()
   })
 
   it('auto 維持原本的完整圖片與內容高度', () => {

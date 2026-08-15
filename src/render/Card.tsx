@@ -156,7 +156,13 @@ function Avatar({ author, size }: { author: Post['author']; size: number }) {
   )
 }
 
-function MediaGrid({ media, constrained = false }: { media: Media[]; constrained?: boolean }) {
+function MediaGrid({
+  media,
+  constrained = false,
+}: {
+  media: Media[]
+  constrained?: boolean
+}) {
   // 同 Avatar：抓取失敗（無 dataUrl）的圖位直接隱藏，不可退回跨域網址
   const usable = media.filter((m) => m.dataUrl)
   if (usable.length === 0) return null
@@ -186,34 +192,12 @@ function MediaGrid({ media, constrained = false }: { media: Media[]; constrained
             minWidth: 0,
             minHeight: 0,
             overflow: 'hidden',
-            background: 'rgba(0,0,0,.16)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'transparent',
           }}
         >
-          <img
-            data-part="media-backdrop"
-            src={m.dataUrl}
-            alt=""
-            aria-hidden="true"
-            style={{
-              position: 'absolute',
-              inset: '-8%',
-              width: '116%',
-              height: '116%',
-              display: 'block',
-              objectFit: 'cover',
-              filter: 'blur(20px) saturate(1.05) brightness(.88)',
-              transform: 'scale(1.08)',
-              opacity: 0.86,
-            }}
-          />
-          <div
-            aria-hidden="true"
-            style={{
-              position: 'absolute',
-              inset: 0,
-              background: 'linear-gradient(180deg,rgba(0,0,0,.03),rgba(0,0,0,.14))',
-            }}
-          />
           <img
             data-part="media-image"
             src={m.dataUrl}
@@ -221,12 +205,15 @@ function MediaGrid({ media, constrained = false }: { media: Media[]; constrained
             style={{
               position: 'relative',
               zIndex: 1,
-              width: '100%',
-              height: '100%',
+              width: 'auto',
+              height: 'auto',
+              maxWidth: '100%',
+              maxHeight: '100%',
               minHeight: 0,
               display: 'block',
               objectFit: 'contain',
-              filter: 'drop-shadow(0 8px 18px rgba(0,0,0,.18))',
+              objectPosition: 'center center',
+              borderRadius: 12,
             }}
           />
         </div>
@@ -302,7 +289,7 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
 
   // CSS aspect-ratio 會被 flex item 的 min-content 高度撐開，所以非 auto 模式
   // 直接由 offsetWidth 算固定 px height。有主圖時面板維持滿寬滿高，讓完整
-  // 原圖置中並以同圖柔焦背景填滿剩餘空間；沒有主圖時才等比縮小過高面板。
+  // 原圖置中並以底板純色承接剩餘空間；沒有主圖時才等比縮小過高面板。
   useLayoutEffect(() => {
     const el = canvasRef.current
     const panel = panelRef.current
@@ -460,7 +447,9 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
           </div>
         )}
 
-        {s.show.media && <MediaGrid media={post.media} constrained={constrainedMedia} />}
+        {s.show.media && (
+          <MediaGrid media={post.media} constrained={constrainedMedia} />
+        )}
 
         {post.quoted && (
           <div
