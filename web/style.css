@@ -45,7 +45,7 @@ button {
   font: inherit; padding: .7rem 1rem; border-radius: 10px; border: 1px solid var(--line);
   min-height: 44px; background: var(--card); color: var(--ink); cursor: pointer; touch-action: manipulation;
 }
-button:focus-visible, input:focus-visible, select:focus-visible {
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
   outline: 2px solid var(--ink); outline-offset: 2px;
 }
 button.primary { background: var(--accent); color: var(--ground); border-color: var(--accent); font-weight: 600; }
@@ -58,19 +58,55 @@ button:disabled { opacity: .45; }
 .result-actions > :only-child { grid-column: 1 / -1; }
 .result-actions button { width: 100%; }
 .translation-guide {
-  margin: 0 0 1rem; padding: .9rem 1rem; border: 1px solid var(--line);
-  border-radius: 12px; background: var(--card);
+  position: relative; z-index: 6;
+  margin: 0 0 1rem; padding: 1rem; border: 1px solid var(--line);
+  border-radius: 14px; background: var(--card);
 }
-.translation-guide strong { display: block; margin-bottom: .35rem; }
-.translation-guide ol { margin: .35rem 0 .75rem; padding-left: 1.35rem; color: var(--ink-soft); }
-.translation-guide > button { width: 100%; }
+.translation-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.translation-heading strong { display: block; font-size: 1rem; line-height: 1.3; }
+.translation-heading div > span { display: block; margin-top: .16rem; color: var(--ink-soft); font-size: .78rem; }
+.translation-state { flex: 0 0 auto; color: var(--ink-soft); font-size: .76rem; }
+.translation-instructions { margin: .75rem 0; color: var(--ink-soft); font-size: .84rem; line-height: 1.55; }
+.translation-source {
+  display: grid; gap: .65rem; padding: .8rem; border: 1px solid var(--line);
+  border-radius: 10px; background: color-mix(in srgb, var(--ground) 72%, var(--card));
+}
+.translation-source-part { min-width: 0; }
+.translation-source-part + .translation-source-part { padding-top: .65rem; border-top: 1px solid var(--line); }
+.translation-source-part [data-part] { margin-top: .2rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.translation-kicker { color: var(--ink-faint); font-size: .72rem; letter-spacing: .04em; }
+.translation-read { width: 100%; margin-top: .65rem; }
+.translation-guide button, .translation-guide textarea { scroll-margin-top: calc(52vh + 1rem); }
+.translation-editors { display: grid; gap: .65rem; margin-top: .8rem; }
+.translation-editors label { display: grid; gap: .3rem; color: var(--ink-soft); font-size: .8rem; }
+.translation-editors textarea {
+  width: 100%; min-height: 7rem; resize: vertical; padding: .75rem .8rem;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--ground); color: var(--ink);
+  font: inherit; line-height: 1.55;
+}
+.translation-guide .translation-apply { width: 100%; margin-top: .8rem; }
 .translation-note { margin: .65rem 0 0; color: var(--ink-faint); font-size: .78rem; line-height: 1.55; }
 .translation-note a { color: inherit; text-underline-offset: .18em; }
-.translation-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; margin-top: .75rem; }
+.translation-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; margin-top: .6rem; }
 .translation-actions button { width: 100%; }
+.translation-actions > :only-child { grid-column: 1 / -1; }
 .translation-actions button[aria-pressed="true"] { background: var(--accent); color: var(--ground); border-color: var(--accent); }
-.translation-guide .translation-restart { margin-top: .5rem; background: transparent; color: var(--ink-soft); }
-.translation-feedback { margin: -.35rem 0 1rem; }
+.translation-guide .translation-restore { background: transparent; color: var(--ink-soft); }
+.translation-feedback { margin: .65rem 0 0; color: var(--ink-soft); font-size: .8rem; }
+.translation-bridge {
+  width: min(44rem, 100%); min-height: 100vh; margin: 0 auto; padding: clamp(2rem, 7vw, 5rem) 1rem;
+}
+.translation-bridge-brand { margin: 0 0 1.5rem; color: var(--ink-faint); font-size: .76rem; font-weight: 300; letter-spacing: .035em; }
+.translation-bridge h1 { margin: 0 0 .65rem; font-size: clamp(1.6rem, 4vw, 2.3rem); line-height: 1.2; }
+.translation-bridge > p:not(.translation-bridge-brand) { color: var(--ink-soft); }
+.translation-bridge-source {
+  display: grid; gap: 1rem; margin: 1.5rem 0 1rem; padding: clamp(1rem, 4vw, 1.5rem);
+  border: 1px solid var(--line); border-radius: 14px; background: var(--card);
+}
+.translation-bridge-source section + section { padding-top: 1rem; border-top: 1px solid var(--line); }
+.translation-bridge-source section > span { color: var(--ink-faint); font-size: .72rem; letter-spacing: .04em; text-transform: uppercase; }
+.translation-bridge-source [data-part] { margin-top: .35rem; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 1.05rem; line-height: 1.7; }
+.translation-bridge > button { width: 100%; }
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;

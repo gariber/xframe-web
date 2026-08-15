@@ -47,10 +47,10 @@ describe('detectTextLanguage', () => {
   })
 
   it.each([
-    ['GPT-5 now supports longer posts.', 'und'],
+    ['GPT-5 now supports longer posts.', 'en'],
     ['新しいモデルが発表されました。', 'ja'],
     ['새로운 기능이 출시되었습니다.', 'ko'],
-    ['OpenAI launches 中文 support today.', 'und'],
+    ['OpenAI launches 中文 support today.', 'en'],
   ])('外文會提示 Safari 翻譯：%s', (text, tag) => {
     expect(detectTextLanguage(text)).toEqual({ kind: 'foreign', tag })
   })

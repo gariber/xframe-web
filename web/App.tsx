@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
-import type { CardSettings, Post } from '../src/types'
+import type { CardSettings, Post, Segment } from '../src/types'
 import { Card, DEFAULT_SETTINGS } from '../src/render/Card'
-import type { CardTranslationLanguages } from '../src/render/Card'
 import { PRESETS, generate, randomPreset } from '../src/render/backgrounds'
 import { exportPng, buildFilename, downloadBlob, EXPORT_WIDTH } from '../src/render/export'
 import { ASPECT_VALUE } from '../src/render/card.css'
@@ -15,10 +14,13 @@ import {
   observeSafariTranslation,
   readTranslationSnapshot,
   translationSignature,
+  type SafariTranslationPlan,
   type TranslationSnapshot,
 } from './safari-translation'
 
 const STORAGE_KEY = 'xframe.web.settings'
+const SAFARI_BRIDGE_REQUEST = 'xframe.web.safari-translation.request.'
+const SAFARI_BRIDGE_RESULT = 'xframe.web.safari-translation.result.'
 
 /** 網頁版預設精確 9:16 直式，適合限時動態；放不下時完整面板會等比縮小。
  *  留白改小：72 是桌面尺寸，在 390px 手機上會把內容寬度壓到剩約 166px。 */
@@ -47,7 +49,118 @@ type SafariVersion = {
   view: 'original' | 'translated'
 }
 
+type TranslationDraft = {
+  main: string
+  quoted: string
+}
+
+type TranslationBridgePart = {
+  original: string
+  segments: Segment[]
+  lang: string
+}
+
+type TranslationBridgePayload = {
+  main?: TranslationBridgePart
+  quoted?: TranslationBridgePart
+}
+
 const TEXT_CHANGED_DURING_EXPORT = '卡片文字剛更新，請再存一次。'
+
+function browserTranslation(value: 'yes' | 'no') {
+  return (element: HTMLElement | null): void => {
+    if (element) element.setAttribute('translate', value)
+  }
+}
+
+const enableBrowserTranslation = browserTranslation('yes')
+const disableBrowserTranslation = browserTranslation('no')
+
+function TranslationSourceText({ segments }: { segments: Segment[] }) {
+  return (
+    <>
+      {segments.map((segment, index) => (
+        segment.type === 'text'
+          ? <span key={index}>{segment.value}</span>
+          : <span key={index} ref={disableBrowserTranslation}>{segment.value}</span>
+      ))}
+    </>
+  )
+}
+
+function initialTranslationDraft(post: Post, plan: SafariTranslationPlan): TranslationDraft {
+  return {
+    main: plan.main.kind === 'foreign' ? post.rawText : '',
+    quoted: plan.quoted?.kind === 'foreign' ? post.quoted?.rawText ?? '' : '',
+  }
+}
+
+function SafariTranslationBridge({ token }: { token: string }) {
+  const [payload] = useState<TranslationBridgePayload | null>(() => {
+    try {
+      const raw = localStorage.getItem(SAFARI_BRIDGE_REQUEST + token)
+      return raw ? JSON.parse(raw) as TranslationBridgePayload : null
+    } catch {
+      return null
+    }
+  })
+  const sourceRef = useRef<HTMLDivElement>(null)
+  const [snapshot, setSnapshot] = useState<TranslationSnapshot>({ main: null, quoted: null })
+  const [feedback, setFeedback] = useState<string | null>(null)
+
+  useEffect(() => {
+    document.title = 'XFrame · Safari Translation'
+    const source = sourceRef.current
+    if (!source) return
+    setSnapshot(readTranslationSnapshot(source))
+    return observeSafariTranslation(source, setSnapshot)
+  }, [payload])
+
+  if (!payload) {
+    return <main class="translation-bridge"><h1>Translation source expired</h1><p>Return to XFrame and open this page again.</p></main>
+  }
+
+  const changed =
+    Boolean(payload.main && snapshot.main?.trim() && snapshot.main.trim() !== payload.main.original.trim()) ||
+    Boolean(payload.quoted && snapshot.quoted?.trim() && snapshot.quoted.trim() !== payload.quoted.original.trim())
+
+  function sendBack() {
+    if (!changed) {
+      setFeedback('Translate this page with Safari first, then try again.')
+      return
+    }
+    localStorage.setItem(SAFARI_BRIDGE_RESULT + token, JSON.stringify(snapshot))
+    setFeedback('Translation sent back. Return to the XFrame tab to review and edit it.')
+  }
+
+  return (
+    <main class="translation-bridge">
+      <p class="translation-bridge-brand">XFrame · Gariber Studio</p>
+      <h1>Translate with Safari</h1>
+      <p>Use Safari’s Translate menu to translate this page into Traditional Chinese. Then send the result back to XFrame.</p>
+      <div class="translation-bridge-source" ref={sourceRef}>
+        {payload.main && (
+          <section>
+            <span>Main post</span>
+            <div data-part="body" ref={enableBrowserTranslation} lang={payload.main.lang} dir="auto">
+              <TranslationSourceText segments={payload.main.segments} />
+            </div>
+          </section>
+        )}
+        {payload.quoted && (
+          <section>
+            <span>Quoted post</span>
+            <div data-part="quote-body" ref={enableBrowserTranslation} lang={payload.quoted.lang} dir="auto">
+              <TranslationSourceText segments={payload.quoted.segments} />
+            </div>
+          </section>
+        )}
+      </div>
+      <button class="primary" type="button" onClick={sendBack}>Send translation back to XFrame</button>
+      {feedback && <p role="status" aria-live="polite">{feedback}</p>}
+    </main>
+  )
+}
 
 /**
  * 已移除的比例（16:9）仍可能存在舊使用者的儲存資料裡。直接套用會得到一個不在
@@ -86,7 +199,7 @@ async function loadTweet(url: string): Promise<Post> {
   return hydrateAssets(tweet)
 }
 
-export function App() {
+function XFrameApp() {
   const [url, setUrl] = useState('')
   const [status, setStatus] = useState<Status>({ phase: 'idle' })
   const [settings, setSettings] = useState<CardSettings>(loadSettings)
@@ -96,6 +209,7 @@ export function App() {
   const [pngBlob, setPngBlob] = useState<Blob | null>(null)
   const [exportErr, setExportErr] = useState<string | null>(null)
   const [safariVersion, setSafariVersion] = useState<SafariVersion | null>(null)
+  const [translationDraft, setTranslationDraft] = useState<TranslationDraft | null>(null)
   const [translationFeedback, setTranslationFeedback] = useState<string | null>(null)
   const cardRef = useRef<HTMLDivElement>(null)
   const fitRef = useRef<HTMLDivElement>(null)
@@ -110,7 +224,7 @@ export function App() {
   // ref 永遠是「目前真正存活的那個 URL」，撤銷才不會漏掉或撤錯。
   const pngUrlRef = useRef<string | null>(null)
   const requestRef = useRef(0)
-  const latestSafariSnapshotRef = useRef<TranslationSnapshot | null>(null)
+  const bridgeTokenRef = useRef<string | null>(null)
   const translationRevisionRef = useRef(0)
 
   // status 永遠保留抓回來的原文；顯示版本另外管理，才可以在原文與譯文之間切換，
@@ -124,16 +238,6 @@ export function App() {
     () => status.phase === 'ready' ? buildSafariTranslationPlan(status.tweet) : null,
     [status],
   )
-  const sourceLanguages = useMemo<CardTranslationLanguages | undefined>(() => {
-    if (!translationPlan?.hasForeignText) return undefined
-    return {
-      main: translationPlan.main.kind === 'foreign' ? translationPlan.main.tag : undefined,
-      quoted: translationPlan.quoted?.kind === 'foreign' ? translationPlan.quoted.tag : undefined,
-    }
-  }, [translationPlan])
-  const visibleLanguages = safariVersion?.view === 'translated' ? undefined : sourceLanguages
-  const allowBrowserTranslation = Boolean(translationPlan?.hasForeignText && !safariVersion)
-
   // createObjectURL 產生的 URL 不會自動回收，整個分頁生命週期都會佔住記憶體，
   // 除非明確 revokeObjectURL —— 每次換圖前先撤銷舊的，卸載時再撤銷最後一個。
   const releasePng = () => {
@@ -145,32 +249,64 @@ export function App() {
 
   const resetSafariState = () => {
     setSafariVersion(null)
+    setTranslationDraft(null)
     setTranslationFeedback(null)
-    latestSafariSnapshotRef.current = null
     translationRevisionRef.current += 1
   }
 
   useEffect(() => () => { if (pngUrlRef.current) URL.revokeObjectURL(pngUrlRef.current) }, [])
 
-  // Safari 會依文件語言決定是否顯示翻譯選項。只有外文原文等待翻譯時才暫時
-  // 提供來源提示；#app 自己仍固定 lang=zh-Hant，中文介面的語意不會跟著變。
-  const pageLanguage = allowBrowserTranslation ? translationPlan?.pageLanguage ?? 'und' : 'zh-Hant'
   useEffect(() => {
-    document.documentElement.lang = pageLanguage
-    return () => { document.documentElement.lang = 'zh-Hant' }
-  }, [pageLanguage])
+    if (status.phase !== 'ready' || !translationPlan?.hasForeignText) {
+      setTranslationDraft(null)
+      return
+    }
+    setTranslationDraft(initialTranslationDraft(status.tweet, translationPlan))
+  }, [status, translationPlan])
 
-  // Safari 翻譯是瀏覽器在 Preact 之外做的 DOM 變更。保存最新可見文字，讓使用者
-  // 按「套用譯文」時即使中途發生重繪也能取回；同時讓任何舊 PNG 立即失效。
-  useEffect(() => {
-    const canvas = cardRef.current?.querySelector('[data-part="canvas"]')
-    if (!canvas || !displayedTweet) return
-    return observeSafariTranslation(canvas, (snapshot) => {
-      latestSafariSnapshotRef.current = snapshot
-      translationRevisionRef.current += 1
-      if (pngUrlRef.current) releasePng()
+  function acceptSafariSnapshot(snapshot: TranslationSnapshot, announce: boolean): boolean {
+    if (status.phase !== 'ready' || !translationPlan) return false
+    const translated = applyTranslationSnapshot(status.tweet, translationPlan, snapshot)
+    if (!translated) {
+      if (announce) setTranslationFeedback('尚未讀到譯文。請先用 Safari 翻譯頁面，或直接在下方編輯。')
+      return false
+    }
+    setTranslationDraft({
+      main: translationPlan.main.kind === 'foreign' ? translated.rawText : '',
+      quoted: translationPlan.quoted?.kind === 'foreign' ? translated.quoted?.rawText ?? '' : '',
     })
-  }, [displayedTweet])
+    setTranslationFeedback('已讀取 Safari 譯文；你可以先修改，再套用到卡片。')
+    return true
+  }
+
+  useEffect(() => {
+    function consumeSavedTranslation() {
+      const token = bridgeTokenRef.current
+      if (!token) return
+      const saved = localStorage.getItem(SAFARI_BRIDGE_RESULT + token)
+      if (!saved) return
+      try {
+        const snapshot = JSON.parse(saved) as TranslationSnapshot
+        acceptSafariSnapshot(snapshot, true)
+        localStorage.removeItem(SAFARI_BRIDGE_REQUEST + token)
+        localStorage.removeItem(SAFARI_BRIDGE_RESULT + token)
+      } catch {
+        setTranslationFeedback('無法讀取 Safari 譯文，請直接貼到下方編輯框。')
+      }
+    }
+
+    function receiveTranslation(event: StorageEvent) {
+      const token = bridgeTokenRef.current
+      if (!token || event.key !== SAFARI_BRIDGE_RESULT + token || !event.newValue) return
+      consumeSavedTranslation()
+    }
+    window.addEventListener('storage', receiveTranslation)
+    window.addEventListener('focus', consumeSavedTranslation)
+    return () => {
+      window.removeEventListener('storage', receiveTranslation)
+      window.removeEventListener('focus', consumeSavedTranslation)
+    }
+  }, [status, translationPlan])
 
   // 支援 ?u= 帶入，讓捷徑或書籤可以直接開啟並自動抓取
   useEffect(() => {
@@ -211,29 +347,47 @@ export function App() {
     }
   }
 
-  function applySafariTranslation() {
+  function openSafariTranslation() {
     if (status.phase !== 'ready' || !translationPlan) return
-    const canvas = cardRef.current?.querySelector('[data-part="canvas"]')
-    if (!canvas) return
+    const token = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const payload: TranslationBridgePayload = {
+      ...(translationPlan.main.kind === 'foreign'
+        ? { main: { original: status.tweet.rawText, segments: status.tweet.text, lang: translationPlan.main.tag } }
+        : {}),
+      ...(translationPlan.quoted?.kind === 'foreign' && status.tweet.quoted
+        ? { quoted: { original: status.tweet.quoted.rawText, segments: status.tweet.quoted.text, lang: translationPlan.quoted.tag } }
+        : {}),
+    }
+    try {
+      localStorage.setItem(SAFARI_BRIDGE_REQUEST + token, JSON.stringify(payload))
+      bridgeTokenRef.current = token
+      const bridgeUrl = new URL(location.href)
+      bridgeUrl.search = ''
+      bridgeUrl.hash = ''
+      bridgeUrl.searchParams.set('safari-translate', token)
+      if (!window.open(bridgeUrl, '_blank')) throw new Error('popup-blocked')
+      setTranslationFeedback('已開啟 Safari 翻譯分頁；翻譯後把結果送回 XFrame。')
+    } catch {
+      setTranslationFeedback('無法開啟翻譯分頁；請允許彈出視窗，或直接在下方編輯。')
+    }
+  }
 
-    // 優先讀現在畫面；若 Safari 翻譯後剛好有一次 Preact 重繪，再退回 observer
-    // 留下的最後快照，避免使用者明明翻完卻收到「尚未偵測到」。
-    const live = readTranslationSnapshot(canvas)
-    const translated =
-      applyTranslationSnapshot(status.tweet, translationPlan, live) ??
-      (latestSafariSnapshotRef.current
-        ? applyTranslationSnapshot(status.tweet, translationPlan, latestSafariSnapshotRef.current)
-        : null)
+  function applyDraftTranslation() {
+    if (status.phase !== 'ready' || !translationPlan || !translationDraft) return
+    const translated = applyTranslationSnapshot(status.tweet, translationPlan, {
+      main: translationPlan.main.kind === 'foreign' ? translationDraft.main : null,
+      quoted: translationPlan.quoted?.kind === 'foreign' ? translationDraft.quoted : null,
+    })
 
     if (!translated) {
-      setTranslationFeedback('尚未偵測到譯文，請先在 Safari 完成網頁翻譯。')
+      setTranslationFeedback('譯文仍和原文相同；請先翻譯或編輯，再套用到卡片。')
       return
     }
 
     releasePng()
     translationRevisionRef.current += 1
     setSafariVersion({ original: status.tweet, translated, view: 'translated' })
-    setTranslationFeedback(null)
+    setTranslationFeedback('譯文已套用到卡片。')
   }
 
   function showSafariVersion(view: SafariVersion['view']) {
@@ -244,9 +398,13 @@ export function App() {
     setTranslationFeedback(null)
   }
 
-  function restartSafariTranslation() {
+  function restoreOriginal() {
+    if (status.phase !== 'ready' || !translationPlan) return
     releasePng()
-    resetSafariState()
+    translationRevisionRef.current += 1
+    setSafariVersion(null)
+    setTranslationDraft(initialTranslationDraft(status.tweet, translationPlan))
+    setTranslationFeedback('已還原原文；翻譯草稿也已重設。')
   }
 
   // 量測卡片實際高度，算出塞進預覽框所需的縮放比例。
@@ -366,47 +524,104 @@ export function App() {
           </div>
         )}
         {status.phase === 'ready' && displayedTweet && (
-          <Card
-            post={displayedTweet}
-            settings={settings}
-            translationLanguages={visibleLanguages}
-            allowBrowserTranslation={allowBrowserTranslation}
-          />
+          <Card post={displayedTweet} settings={settings} />
         )}
         </div>
       </div>
 
-      {status.phase === 'ready' && translationPlan?.hasForeignText && !safariVersion && (
+      {status.phase === 'ready' && translationPlan?.hasForeignText && translationDraft && (
         <section class="translation-guide" aria-labelledby="safari-translation-title">
-          <strong id="safari-translation-title">用 Safari 翻成繁體中文</strong>
-          <ol>
-            <li>點 Safari 網址列的「頁面選單」→「翻譯成繁體中文」。</li>
-            <li>翻譯完成後，回到這裡套用譯文。</li>
-          </ol>
-          <button type="button" disabled={busy} onClick={applySafariTranslation}>
-            Safari 翻譯完成，套用譯文
+          <div class="translation-heading">
+            <div>
+              <strong id="safari-translation-title">翻譯</strong>
+              <span>Safari 輔助 · 可編輯後再套用</span>
+            </div>
+            {safariVersion && <span class="translation-state">已套用</span>}
+          </div>
+
+          <p class="translation-instructions">
+            在 Safari 開啟專用翻譯分頁，選「翻譯成繁體中文」，再把結果送回。非 Safari 也可以直接貼上或編輯。
+          </p>
+
+          <div class="translation-source" ref={disableBrowserTranslation} aria-label="Safari 待翻譯來源">
+            {translationPlan.main.kind === 'foreign' && (
+              <div class="translation-source-part">
+                <span class="translation-kicker">主文來源</span>
+                <div data-part="body" lang={translationPlan.main.tag} dir="auto">
+                  <TranslationSourceText segments={status.tweet.text} />
+                </div>
+              </div>
+            )}
+            {translationPlan.quoted?.kind === 'foreign' && status.tweet.quoted && (
+              <div class="translation-source-part">
+                <span class="translation-kicker">引用來源</span>
+                <div data-part="quote-body" lang={translationPlan.quoted.tag} dir="auto">
+                  <TranslationSourceText segments={status.tweet.quoted.text} />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <button class="translation-read" type="button" disabled={busy} onClick={openSafariTranslation}>
+            開啟 Safari 翻譯分頁
           </button>
+
+          <div class="translation-editors">
+            {translationPlan.main.kind === 'foreign' && (
+              <label for="translation-main">
+                主文譯文
+                <textarea
+                  id="translation-main"
+                  dir="auto"
+                  value={translationDraft.main}
+                  onInput={(event) => {
+                    setTranslationDraft({ ...translationDraft, main: event.currentTarget.value })
+                    setTranslationFeedback(null)
+                  }}
+                />
+              </label>
+            )}
+            {translationPlan.quoted?.kind === 'foreign' && (
+              <label for="translation-quoted">
+                引用譯文
+                <textarea
+                  id="translation-quoted"
+                  dir="auto"
+                  value={translationDraft.quoted}
+                  onInput={(event) => {
+                    setTranslationDraft({ ...translationDraft, quoted: event.currentTarget.value })
+                    setTranslationFeedback(null)
+                  }}
+                />
+              </label>
+            )}
+          </div>
+
+          <button class="primary translation-apply" type="button" disabled={busy} onClick={applyDraftTranslation}>
+            套用到卡片
+          </button>
+
+          <div class="translation-actions">
+            {safariVersion && (
+              <>
+                <button type="button" aria-pressed={safariVersion.view === 'translated'}
+                  onClick={() => showSafariVersion('translated')}>顯示譯文</button>
+                <button type="button" aria-pressed={safariVersion.view === 'original'}
+                  onClick={() => showSafariVersion('original')}>顯示原文</button>
+              </>
+            )}
+            <button class="translation-restore" type="button" onClick={restoreOriginal}>還原原文</button>
+          </div>
+
+          {translationFeedback && <p class="translation-feedback" role="status" aria-live="polite">{translationFeedback}</p>}
           <p class="translation-note">
-            看不到頁面選單時，請改用 Safari 分頁開啟。XFrame 不使用翻譯 API；
-            譯文只留在這個分頁供產圖。Apple 表示 Safari 網頁翻譯會把網頁文字傳送給 Apple。
+            XFrame 不使用翻譯 API；專用分頁只在同一個 XFrame 網址暫存原文與譯文，
+            卡片也只在你按下「套用到卡片」後才會被譯文取代。
+            Apple 表示 Safari 網頁翻譯會把網頁文字傳送給 Apple。
             {' '}<a href="https://www.apple.com/tw/legal/privacy/data/zh-tw/safari/" target="_blank" rel="noreferrer">了解隱私說明</a>
           </p>
         </section>
       )}
-
-      {status.phase === 'ready' && safariVersion && (
-        <section class="translation-guide translation-applied" aria-label="原文與 Safari 譯文">
-          <strong>已套用 Safari 譯文</strong>
-          <div class="translation-actions">
-            <button type="button" aria-pressed={safariVersion.view === 'translated'}
-              onClick={() => showSafariVersion('translated')}>顯示譯文</button>
-            <button type="button" aria-pressed={safariVersion.view === 'original'}
-              onClick={() => showSafariVersion('original')}>顯示原文</button>
-          </div>
-          <button class="translation-restart" type="button" onClick={restartSafariTranslation}>重新套用 Safari 翻譯</button>
-        </section>
-      )}
-      {translationFeedback && <div class="err translation-feedback" role="alert">{translationFeedback}</div>}
 
       {status.phase === 'ready' && (
         <button class="primary export-btn" type="button" disabled={busy} onClick={() => void doExport()}>
@@ -506,4 +721,9 @@ export function App() {
       </fieldset>
     </div>
   )
+}
+
+export function App() {
+  const bridgeToken = new URLSearchParams(location.search).get('safari-translate')
+  return bridgeToken ? <SafariTranslationBridge token={bridgeToken} /> : <XFrameApp />
 }

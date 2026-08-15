@@ -1,5 +1,6 @@
 import { Fragment } from 'preact'
 import { useLayoutEffect, useRef, useState } from 'preact/hooks'
+import { siX } from 'simple-icons'
 import type { Post, CardSettings, Segment, Media, Metric } from '../types'
 import { generate, GRAIN_DATA_URI } from './backgrounds'
 import {
@@ -13,12 +14,12 @@ import {
 import { METRIC_META } from './metrics'
 
 /**
- * Preact 的 JSX 型別把 HTMLElement.translate 視為 boolean，但 HTML 實際是
- * `yes` / `no` 列舉屬性。直接傳 boolean 會輸出 `translate="true"` 或把 false
- * 屬性移除，兩者都無法可靠覆寫父層。保留型別轉換在這一處，DOM 仍得到標準值。
+ * Preact 會把 translate prop 寫進 boolean DOM property；即使 JSX 傳入字串
+ * `"no"`，真瀏覽器也會把 truthy 字串反射成 translate="yes"。用 ref 直接寫
+ * HTML 列舉屬性，才能同時在 Safari 與其他瀏覽器可靠覆寫父層。
  */
-function htmlTranslate(enabled: boolean): boolean {
-  return (enabled ? 'yes' : 'no') as unknown as boolean
+function noBrowserTranslation(element: HTMLElement | null): void {
+  if (element) element.setAttribute('translate', 'no')
 }
 
 export const DEFAULT_SETTINGS: CardSettings = {
@@ -109,7 +110,7 @@ function Text({ segments, accent }: { segments: Segment[]; accent: string }) {
         ) : (
           // 帳號、hashtag 與網址是識別字串，不是自然語言。Safari 翻譯若改動它們，
           // 使用者套用譯文後就可能得到失效連結或錯誤帳號。
-          <span key={i} data-seg={s.type} translate={htmlTranslate(false)} style={{ color: accent }}>
+          <span key={i} data-seg={s.type} ref={noBrowserTranslation} style={{ color: accent }}>
             {s.value}
           </span>
         ),
@@ -146,7 +147,7 @@ function Avatar({ author, size }: { author: Post['author']; size: number }) {
   // 只用 data URL。退回原始跨域網址會污染 canvas 導致匯出整個失敗，
   // 寧可退化成首字母色塊也不能讓匯出爆掉。
   const src = author.avatarDataUrl
-  const style = { width: size, height: size, borderRadius: size * 0.28, flex: '0 0 auto' }
+  const style = { width: size, height: size, borderRadius: '50%', flex: '0 0 auto' }
   if (src) return <img src={src} alt="" style={{ ...style, objectFit: 'cover' }} />
   return (
     <div
@@ -164,6 +165,29 @@ function Avatar({ author, size }: { author: Post['author']; size: number }) {
     >
       {author.name.trim().charAt(0).toUpperCase()}
     </div>
+  )
+}
+
+/** 官方品牌圖示取自 Simple Icons；卡片內只作平台識別，不提供互動。 */
+function XMark({ size, top, right }: { size: number; top: number; right: number }) {
+  return (
+    <svg
+      data-part="x-mark"
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      style={{
+        position: 'absolute',
+        top,
+        right,
+        fill: 'currentColor',
+        opacity: 0.9,
+        pointerEvents: 'none',
+      }}
+    >
+      <path d={siX.path} />
+    </svg>
   )
 }
 
@@ -277,19 +301,7 @@ function fitFontSize(base: number, raw: string, aspect: CardSettings['aspect']):
   return Math.max(11, effectiveBase * 0.58)
 }
 
-export type CardTranslationLanguages = { main?: string; quoted?: string }
-
-export function Card({
-  post,
-  settings,
-  translationLanguages,
-  allowBrowserTranslation = false,
-}: {
-  post: Post
-  settings: CardSettings
-  translationLanguages?: CardTranslationLanguages
-  allowBrowserTranslation?: boolean
-}) {
+export function Card({ post, settings }: { post: Post; settings: CardSettings }) {
   const s = settings
   const accent = accentFrom(s.textColor)
   const panelBg = s.panelColor + Math.round(s.panelOpacity * 255).toString(16).padStart(2, '0')
@@ -349,9 +361,11 @@ export function Card({
 
   return (
     <div
-      ref={canvasRef}
+      ref={(element) => {
+        canvasRef.current = element
+        noBrowserTranslation(element)
+      }}
       data-part="canvas"
-      translate={htmlTranslate(false)}
       data-aspect={s.aspect}
       style={{
         position: 'relative',
@@ -399,13 +413,13 @@ export function Card({
           position: 'relative',
           width: '100%',
           background: panelBg,
-          backdropFilter: 'blur(28px) saturate(1.3)',
-          WebkitBackdropFilter: 'blur(28px) saturate(1.3)',
-          border: '1px solid rgba(255,255,255,.14)',
-          borderRadius: 18,
-          padding: constrainedMedia ? '12px 14px' : '20px 24px',
+          backdropFilter: 'blur(34px) saturate(1.22)',
+          WebkitBackdropFilter: 'blur(34px) saturate(1.22)',
+          border: '1px solid rgba(255,255,255,.16)',
+          borderRadius: 24,
+          padding: constrainedMedia ? '16px 18px' : '26px 30px',
           color: s.textColor,
-          boxShadow: '0 24px 60px rgba(0,0,0,.28)',
+          boxShadow: 'inset 0 0 0 1px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,.08), 0 28px 70px rgba(0,0,0,.34)',
           transform: panelScale < 1 ? `scale(${panelScale})` : undefined,
           transformOrigin: 'center center',
           flex: '0 0 auto',
@@ -417,8 +431,13 @@ export function Card({
           flexDirection: constrainedMedia ? 'column' : undefined,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: constrainedMedia ? 8 : 12, flex: '0 0 auto' }}>
-          {s.show.avatar && <Avatar author={author} size={constrainedMedia ? 36 : 44} />}
+        <XMark
+          size={constrainedMedia ? 23 : 28}
+          top={constrainedMedia ? 24.5 : 38}
+          right={constrainedMedia ? 18 : 30}
+        />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: constrainedMedia ? 12 : 22, paddingRight: constrainedMedia ? 34 : 44, flex: '0 0 auto' }}>
+          {s.show.avatar && <Avatar author={author} size={constrainedMedia ? 40 : 52} />}
           <div style={{ lineHeight: 1.2, minWidth: 0 }}>
             <div style={{ fontWeight: 700, fontSize: s.fontSize * 0.9 }}>{author.name}</div>
             <div style={{ opacity: 0.55, fontSize: s.fontSize * 0.8 }}>{author.handleDisplay}</div>
@@ -445,13 +464,12 @@ export function Card({
         </div>
 
         <div
+          ref={noBrowserTranslation}
           data-part="body"
-          translate={htmlTranslate(Boolean(allowBrowserTranslation && translationLanguages?.main))}
-          lang={translationLanguages?.main}
           dir="auto"
           style={{
             fontSize,
-            lineHeight: 1.55,
+            lineHeight: 1.62,
             whiteSpace: 'pre-wrap',
             position: 'relative',
             flex: '0 0 auto',
@@ -496,9 +514,8 @@ export function Card({
               <span style={{ opacity: 0.5 }}>{quotedAuthor!.handleDisplay}</span>
             </div>
             <div
+              ref={noBrowserTranslation}
               data-part="quote-body"
-              translate={htmlTranslate(Boolean(allowBrowserTranslation && translationLanguages?.quoted))}
-              lang={translationLanguages?.quoted}
               dir="auto"
               style={{ lineHeight: 1.5, whiteSpace: 'pre-wrap' }}
             >
@@ -542,31 +559,59 @@ export function Card({
           </div>
         )}
 
-        {s.show.stats && (
+        <div
+          data-part="footer-meta"
+          style={{
+            display: 'flex',
+            alignItems: 'baseline',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            columnGap: '1.2em',
+            rowGap: '0.45em',
+            marginTop: constrainedMedia ? 10 : 16,
+            flex: '0 0 auto',
+          }}
+        >
+          {s.show.stats && (
+            <div
+              data-part="stats"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                rowGap: '0.35em',
+                gap: '0.6em',
+                opacity: 0.55,
+                fontSize: s.fontSize * 0.72,
+                flex: '1 1 auto',
+              }}
+            >
+              {post.metrics.map((m, i) => (
+                <Fragment key={m.kind}>
+                  {i > 0 && <Sep />}
+                  <Stat metric={m} />
+                </Fragment>
+              ))}
+            </div>
+          )}
+
           <div
-            data-part="stats"
+            data-part="brand"
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              flexWrap: 'wrap',
-              rowGap: '0.35em',
-              gap: '0.6em',
-              marginTop: constrainedMedia ? 8 : 14,
-              paddingTop: constrainedMedia ? 8 : 12,
-              borderTop: '1px solid rgba(255,255,255,.1)',
-              opacity: 0.55,
-              fontSize: s.fontSize * 0.72,
+              marginLeft: 'auto',
+              opacity: 0.36,
+              fontSize: s.fontSize * 0.58,
+              fontWeight: 300,
+              letterSpacing: '0.035em',
+              lineHeight: 1.3,
+              textAlign: 'right',
+              whiteSpace: 'nowrap',
               flex: '0 0 auto',
             }}
           >
-            {post.metrics.map((m, i) => (
-              <Fragment key={m.kind}>
-                {i > 0 && <Sep />}
-                <Stat metric={m} />
-              </Fragment>
-            ))}
+            XFrame · Gariber Studio
           </div>
-        )}
+        </div>
       </div>
     </div>
   )

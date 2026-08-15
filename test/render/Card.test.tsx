@@ -10,18 +10,11 @@ const fx = (n: string) => readFileSync(`test/fixtures/${n}.html`, 'utf8')
 function mount(
   tweet = parseTweet(fx('plain'), '2083053369351090254')!,
   settings = DEFAULT_SETTINGS,
-  translationLanguages?: { main?: string; quoted?: string },
-  allowBrowserTranslation = false,
 ) {
   const host = document.createElement('div')
   document.body.appendChild(host)
   render(
-    <Card
-      post={tweet}
-      settings={settings}
-      translationLanguages={translationLanguages}
-      allowBrowserTranslation={allowBrowserTranslation}
-    />,
+    <Card post={tweet} settings={settings} />,
     host,
   )
   return host
@@ -61,6 +54,58 @@ describe('Card', () => {
     t.author.avatarUrl = ''
     const el = mount(t)
     expect(el.querySelector('[data-part="monogram"]')?.textContent).toBe('T')
+  })
+
+  it('作者頭像與首字母備援都使用正圓形', () => {
+    const t = parseTweet(fx('plain'), '2083053369351090254')!
+    const monogram = mount(t).querySelector('[data-part="monogram"]') as HTMLElement
+    expect(monogram.style.borderRadius).toBe('50%')
+    t.author.avatarDataUrl = 'data:image/png;base64,eA=='
+    const avatar = mount(t).querySelector('img') as HTMLElement
+    expect(avatar.style.borderRadius).toBe('50%')
+  })
+
+  it('X 官方圖示固定在右上角，並和作者頭像垂直置中對齊', () => {
+    const el = mount()
+    const mark = el.querySelector('[data-part="x-mark"]') as HTMLElement
+    expect(mark).not.toBeNull()
+    expect(mark.style.position).toBe('absolute')
+    expect(mark.style.top).toBe('38px')
+    expect(mark.style.right).toBe('30px')
+    expect(el.querySelector('[data-part="window-controls"]')).toBeNull()
+  })
+
+  it('品牌標識只有低對比小字，不加線或底框', () => {
+    const brand = mount().querySelector('[data-part="brand"]') as HTMLElement
+    expect(brand.textContent?.trim()).toBe('XFrame · Gariber Studio')
+    expect(brand.style.fontWeight).toBe('300')
+    expect(brand.style.opacity).toBe('0.36')
+    expect(brand.style.border).toBe('')
+    expect(brand.style.borderTop).toBe('')
+  })
+
+  it('品牌標識固定在右下，並與互動數據位於同一列', () => {
+    const el = mount()
+    const footer = el.querySelector('[data-part="footer-meta"]') as HTMLElement
+    const stats = el.querySelector('[data-part="stats"]') as HTMLElement
+    const brand = el.querySelector('[data-part="brand"]') as HTMLElement
+    expect(footer.contains(stats)).toBe(true)
+    expect(footer.contains(brand)).toBe(true)
+    expect(footer.style.alignItems).toBe('baseline')
+    expect(brand.style.marginLeft).toBe('auto')
+    expect(brand.style.textAlign).toBe('right')
+  })
+
+  it('絕對時間維持在貼文內容下方、互動數據與品牌列上方', () => {
+    const s = { ...DEFAULT_SETTINGS, timeFormat: 'absolute' as const }
+    const el = mount(undefined, s)
+    const panel = el.querySelector('[data-part="panel"]') as HTMLElement
+    const body = el.querySelector('[data-part="body"]') as HTMLElement
+    const time = el.querySelector('[data-part="time"]') as HTMLElement
+    const footer = el.querySelector('[data-part="footer-meta"]') as HTMLElement
+    const children = [...panel.children]
+    expect(children.indexOf(time)).toBeGreaterThan(children.indexOf(body))
+    expect(children.indexOf(time)).toBeLessThan(children.indexOf(footer))
   })
 
   it('引用推文渲染為巢狀區塊', () => {
@@ -154,21 +199,20 @@ describe('Safari 網頁翻譯邊界', () => {
     expect(el.querySelector('[data-part="body"]')?.getAttribute('translate')).toBe('no')
   })
 
-  it('網頁版只對指定的外文主文開放翻譯並提供來源語言提示', () => {
-    const body = mount(undefined, DEFAULT_SETTINGS, { main: 'und' }, true)
-      .querySelector('[data-part="body"]') as HTMLElement
-    expect(body.getAttribute('translate')).toBe('yes')
-    expect(body.lang).toBe('und')
+  it('正式卡片的外文主文仍禁止 Safari 直接翻譯', () => {
+    const body = mount().querySelector('[data-part="body"]') as HTMLElement
+    expect(body.getAttribute('translate')).toBe('no')
+    expect(body.lang).toBe('')
     expect(body.dir).toBe('auto')
   })
 
-  it('主文與引用可分開控制，只翻外文引用', () => {
+  it('正式卡片的主文與引用都禁止 Safari 直接翻譯', () => {
     const t = parseTweet(fx('quoted'), '2082883636177916306')!
-    const el = mount(t, DEFAULT_SETTINGS, { quoted: 'ja' }, true)
+    const el = mount(t)
     expect(el.querySelector('[data-part="body"]')?.getAttribute('translate')).toBe('no')
     const quoted = el.querySelector('[data-part="quote-body"]') as HTMLElement
-    expect(quoted.getAttribute('translate')).toBe('yes')
-    expect(quoted.lang).toBe('ja')
+    expect(quoted.getAttribute('translate')).toBe('no')
+    expect(quoted.lang).toBe('')
   })
 
   it('網址、帳號與 hashtag 永遠禁止翻譯', () => {
@@ -180,7 +224,7 @@ describe('Safari 網頁翻譯邊界', () => {
       { type: 'text', value: ' at ' },
       { type: 'link', value: 'https://example.com', href: 'https://example.com' },
     ]
-    const el = mount(t, DEFAULT_SETTINGS, { main: 'und' }, true)
+    const el = mount(t)
     for (const token of el.querySelectorAll('[data-seg]')) {
       expect(token.getAttribute('translate')).toBe('no')
     }

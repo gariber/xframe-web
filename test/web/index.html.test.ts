@@ -20,8 +20,11 @@ describe('web/index.html 的 theme-color', () => {
 })
 
 describe('Safari 翻譯的頁面邊界', () => {
-  it('介面根節點固定為正體中文且預設不翻，只有 Card 內指定正文能覆寫', () => {
+  it('一般頁面固定正體中文且不翻，只有專用分頁才在載入前切換成英文翻譯來源', () => {
     expect(html).toContain('<html lang="zh-Hant">')
     expect(html).toContain('<div id="app" lang="zh-Hant" translate="no"></div>')
+    expect(html).toContain("has('safari-translate')")
+    expect(html).toContain("document.documentElement.lang = 'en'")
+    expect(html).toContain("app.setAttribute('translate', 'yes')")
   })
 })

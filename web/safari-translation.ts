@@ -4,7 +4,7 @@ import { tokenize } from '../src/parse/tokenize'
 export type TextLanguage = {
   kind: 'chinese' | 'foreign' | 'none'
   /** `und` 代表交給 Safari 自行判斷來源語言。 */
-  tag: 'zh' | 'ja' | 'ko' | 'und'
+  tag: 'zh' | 'en' | 'ja' | 'ko' | 'und'
 }
 
 export type SafariTranslationPlan = {
@@ -47,14 +47,17 @@ export function detectTextLanguage(raw: string): TextLanguage {
     // 中文裡常見 OpenAI、GPT-5、XFrame；以「英文單字數」而非字母數比較，
     // 才不會讓一個產品名壓過整句中文。英文占明顯多數的混合句仍提示翻譯。
     if (latinWords.length >= 2 && han < latinWords.length * 2) {
-      return { kind: 'foreign', tag: 'und' }
+      return { kind: 'foreign', tag: 'en' }
     }
     return { kind: 'chinese', tag: 'zh' }
   }
 
   // 只有 emoji、數字、標點、網址、帳號或 hashtag，不值得顯示翻譯流程。
   if (letters < 2) return { kind: 'none', tag: 'und' }
-  return { kind: 'foreign', tag: 'und' }
+  // Safari 對 `und` 的網頁可能只顯示「可使用翻譯」，卻把使用者的偏好語言
+  // 選項停用。這裡已排除 Han/Kana/Hangul，剩餘可翻句子以拉丁文字為主；
+  // 明確標成英文，才能讓「翻譯成繁體中文」在 Safari 真的可選。
+  return { kind: 'foreign', tag: 'en' }
 }
 
 export function buildSafariTranslationPlan(post: Post): SafariTranslationPlan {
