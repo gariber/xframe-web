@@ -11,6 +11,9 @@ import {
   fitPanelScale,
   statsFitScale,
   accentFrom,
+  cardScale,
+  CARD_ALPHA,
+  STAT_ICON_EM,
 } from './card.css'
 import { METRIC_META } from './metrics'
 
@@ -88,7 +91,7 @@ function Stat({ metric }: { metric: Metric }) {
     // nowrap：數字與圖示是一個語意單位，窄卡片上不該被拆到兩行
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4em', whiteSpace: 'nowrap' }}>
       {/* 圖示尺寸綁 1em，跟著統計列的字級走，使用者拉「文字尺寸」時不會脫節 */}
-      <svg viewBox="0 0 24 24" width="1.15em" height="1.15em" role="img" aria-label={meta.label}
+      <svg viewBox="0 0 24 24" width={`${STAT_ICON_EM}em`} height={`${STAT_ICON_EM}em`} role="img" aria-label={meta.label}
            style={{ fill: 'currentColor', flex: '0 0 auto' }}>
         <path d={meta.icon} />
       </svg>
@@ -181,7 +184,9 @@ function XMark({ size }: { size: number }) {
       style={{
         display: 'block',
         fill: 'currentColor',
-        opacity: 0.9,
+        // 標誌是平台識別，不是主角。ThreadsFrame 同樣把它壓到半透明，讓標頭
+        // 那一列讀起來是「這是哪個平台」的註記，而不是與內文爭注意力的圖形。
+        opacity: CARD_ALPHA.logo,
         pointerEvents: 'none',
         flex: '0 0 auto',
       }}
@@ -319,6 +324,8 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
   const constrainedMedia = ratio !== undefined &&
     s.show.media &&
     post.media.some((media) => Boolean(media.dataUrl))
+  // 標誌、頭像、footer 小字與區塊間距一律由這裡推導，卡片內不再出現寫死的 px。
+  const scale = cardScale(s.fontSize, constrainedMedia)
   const [canvasHeight, setCanvasHeight] = useState<number | undefined>(undefined)
   const [canvasWidth, setCanvasWidth] = useState(0)
   const [panelScale, setPanelScale] = useState(1)
@@ -444,18 +451,36 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            marginBottom: constrainedMedia ? 10 : 16,
+            marginBottom: scale.logoGap,
             flex: '0 0 auto',
           }}
         >
-          <XMark size={constrainedMedia ? 23 : 28} />
+          <XMark size={scale.logo} />
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: constrainedMedia ? 12 : 22, flex: '0 0 auto' }}>
-          {s.show.avatar && <Avatar author={author} size={constrainedMedia ? 40 : 52} />}
-          <div style={{ lineHeight: 1.2, minWidth: 0 }}>
-            <div style={{ fontWeight: 700, fontSize: s.fontSize * 0.9 }}>{author.name}</div>
-            <div style={{ opacity: 0.55, fontSize: s.fontSize * 0.8 }}>{author.handleDisplay}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: scale.avatarGap, marginBottom: scale.gap, flex: '0 0 auto' }}>
+          {s.show.avatar && <Avatar author={author} size={scale.avatar} />}
+          {/*
+            作者列只有一行，而且只標帳號。
+            先前是「顯示名稱一行 ＋ @帳號一行」：兩行的作者區塊加上它正上方的
+            平台標誌，會讓整個標頭比內文還重，卡片的主角變成了作者而不是貼文。
+            帳號本身已經足以指認作者，顯示名稱是這裡可以省掉的那一項——
+            ThreadsFrame 也是走到同一個結論（見其提交「作者列改標帳號，
+            不再顯示暱稱」）。
+          */}
+          <div
+            data-part="handle"
+            style={{
+              fontWeight: 700,
+              fontSize: scale.name,
+              lineHeight: 1.2,
+              minWidth: 0,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {author.handleDisplay}
           </div>
           {s.show.timestamp && (
             // 只有相對時間放標頭右上角。絕對時間長 8 倍（'1h' vs
@@ -466,8 +491,8 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
                 data-part="time"
                 style={{
                   marginLeft: 'auto',
-                  opacity: 0.45,
-                  fontSize: s.fontSize * 0.75,
+                  opacity: CARD_ALPHA.time,
+                  fontSize: scale.time,
                   whiteSpace: 'nowrap',
                   flex: '0 0 auto',
                 }}
@@ -561,9 +586,9 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
           <div
             data-part="time"
             style={{
-              marginTop: constrainedMedia ? 8 : 14,
-              opacity: 0.45,
-              fontSize: s.fontSize * 0.72,
+              marginTop: scale.gap,
+              opacity: CARD_ALPHA.time,
+              fontSize: scale.time,
               whiteSpace: 'nowrap',
               fontVariantNumeric: 'tabular-nums',
               letterSpacing: '0.01em',
@@ -580,7 +605,7 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'stretch',
-            marginTop: constrainedMedia ? 10 : 16,
+            marginTop: scale.gap,
             flex: '0 0 auto',
             boxSizing: 'border-box',
           }}
@@ -592,8 +617,8 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
                 aria-hidden="true"
                 style={{
                   borderTop: '1px solid currentColor',
-                  opacity: 0.14,
-                  marginBottom: constrainedMedia ? 7 : 10,
+                  opacity: CARD_ALPHA.divider,
+                  marginBottom: scale.ruleGap,
                   flex: '0 0 auto',
                 }}
               />
@@ -604,8 +629,8 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
                   alignItems: 'center',
                   flexWrap: 'nowrap',
                   gap: '0.6em',
-                  opacity: 0.55,
-                  fontSize: s.fontSize * 0.72,
+                  opacity: CARD_ALPHA.stats,
+                  fontSize: scale.stat,
                   width: statsScale < 1 ? `${100 / statsScale}%` : '100%',
                   transform: statsScale < 1 ? `scale(${statsScale})` : undefined,
                   transformOrigin: 'left top',
@@ -626,18 +651,24 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
             data-part="brand"
             style={{
               marginLeft: 'auto',
-              marginTop: constrainedMedia ? 6 : 10,
-              opacity: 0.36,
-              fontSize: s.fontSize * 0.58,
-              fontWeight: 300,
-              letterSpacing: '0.035em',
+              marginTop: scale.ruleGap,
+              opacity: CARD_ALPHA.brand,
+              fontSize: scale.brand,
+              // weight 300 配上原本偏高的 0.36 透明度，讓品牌同時「細」又「亮」，
+              // 兩個訊號打架，反而比周圍的統計列更搶眼。改回一般字重、把透明度
+              // 壓到全卡最低，讓它安靜下來——要能看清，但不該被先看到。
+              fontWeight: 400,
               lineHeight: 1.3,
               textAlign: 'right',
               whiteSpace: 'nowrap',
               flex: '0 0 auto',
             }}
           >
-            XFrame · Gariber Studio
+            {/*
+              網域放在後面而不是「Gariber Studio」：對看到卡片的人來說，
+              「去哪裡找得到」比「誰做的」有用。與 ThreadsFrame 同格式。
+            */}
+            XFrame · gariber.studio
           </div>
         </div>
       </div>

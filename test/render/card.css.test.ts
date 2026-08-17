@@ -5,9 +5,63 @@ import {
   canvasSizeStyle,
   fitPanelScale,
   statsFitScale,
+  cardScale,
+  CARD_ALPHA,
+  STAT_ICON_EM,
   STORY_SAFE_PADDING_RATIO,
   ASPECT_VALUE,
 } from '../../src/render/card.css'
+
+describe('cardScale', () => {
+  it('每一項都是基準字級的倍數，與 ThreadsFrame 的係數一致', () => {
+    expect(cardScale(20, false)).toEqual({
+      logo: 30,
+      logoGap: 10,
+      avatar: 35,
+      avatarGap: 10,
+      name: 19,
+      time: 16,
+      stat: 16,
+      brand: 12.4,
+      gap: 14,
+      ruleGap: 10,
+    })
+  })
+
+  it('字級加倍時所有尺寸一起加倍', () => {
+    const a = cardScale(20, false)
+    const b = cardScale(40, false)
+    for (const key of Object.keys(a) as (keyof typeof a)[]) {
+      expect(b[key]).toBeCloseTo(a[key] * 2, 5)
+    }
+  })
+
+  it('compact 只收斂家具與間距，字級一律不動', () => {
+    const normal = cardScale(20, false)
+    const compact = cardScale(20, true)
+    // 讓出高度是為了給圖片，不該連帶讓文字變難讀。
+    expect(compact.name).toBe(normal.name)
+    expect(compact.time).toBe(normal.time)
+    expect(compact.stat).toBe(normal.stat)
+    expect(compact.brand).toBe(normal.brand)
+    expect(compact.logo).toBeLessThan(normal.logo)
+    expect(compact.avatar).toBeLessThan(normal.avatar)
+    expect(compact.gap).toBeLessThan(normal.gap)
+  })
+})
+
+describe('CARD_ALPHA', () => {
+  it('維持時間與統計同層、品牌最輕、分隔線又比品牌更輕的層次', () => {
+    expect(CARD_ALPHA.time).toBe(CARD_ALPHA.stats)
+    expect(CARD_ALPHA.brand).toBeLessThan(CARD_ALPHA.stats)
+    expect(CARD_ALPHA.divider).toBeLessThan(CARD_ALPHA.brand)
+    expect(CARD_ALPHA.logo).toBeLessThan(1)
+  })
+
+  it('統計圖示相對數字略大，與 ThreadsFrame 的 0.85／0.8 相同', () => {
+    expect(STAT_ICON_EM).toBeCloseTo(1.0625, 5)
+  })
+})
 
 describe('canvasSizeStyle', () => {
   it('量測到高度時設為固定高度', () => {

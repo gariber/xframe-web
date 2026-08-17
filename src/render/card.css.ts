@@ -62,6 +62,60 @@ export function statsFitScale(availableWidth: number, baseFontSize: number, hasS
 }
 
 /**
+ * 卡片版式比例 —— 與 ThreadsFrame 同一套規格。
+ *
+ * 每一項都由使用者的「文字尺寸」推導，而不是寫死 px。先前平台標誌固定 28px、
+ * 頭像固定 52px：使用者把字級拉大時這兩個元素不會跟著長，標頭的重量關係就
+ * 跑掉了——標誌相對內文顯得越來越小，頭像則在小字級下顯得突兀地大。綁上字級
+ * 之後，整張卡片在任何字級設定下都維持同一組比例。
+ *
+ * 係數取自 ThreadsFrame 的 `src/render.ts`。該版以 canvas 繪製，但數值同樣是
+ * 基準字級的倍數（`Math.round(size * 1.5)` 之類），所以可以逐項對應過來；
+ * 兩個產品輸出的卡片放在一起，會讀成同一套設計而不是兩套相似的設計。
+ *
+ * `compact` 是固定比例又有主圖時的收斂模式：只縮「家具」——標誌、頭像與區塊
+ * 間距，字級一律不動。讓出高度是為了給圖片，不該連帶讓文字變得難讀。
+ */
+export function cardScale(size: number, compact: boolean) {
+  const k = compact ? 0.8 : 1
+  return {
+    logo: Math.round(size * 1.5 * k),
+    logoGap: Math.round(size * 0.5 * k),
+    avatar: Math.round(size * 1.75 * k),
+    avatarGap: Math.round(size * 0.5 * k),
+    name: size * 0.95,
+    time: size * 0.8,
+    stat: size * 0.8,
+    brand: size * 0.62,
+    gap: Math.round(size * 0.7 * k),
+    ruleGap: Math.round(size * 0.5 * k),
+  }
+}
+
+/**
+ * 統計圖示相對於統計數字的字級。ThreadsFrame 是 `0.85 · size` 的圖示配
+ * `0.8 · size` 的數字，換算成 em 就是這個值。綁 em 而非固定 px，是為了讓圖示
+ * 跟著統計列一起縮放——包含窄卡片上整列等比縮小的那條路徑。
+ */
+export const STAT_ICON_EM = 0.85 / 0.8
+
+/**
+ * 次要元素的透明度，與 ThreadsFrame `softInk()` 的 alpha 一一對應。
+ *
+ * 集中成一份表而不是散在 JSX 裡，是因為這些值彼此之間是有關係的：時間與統計
+ * 必須相同（它們是同一個資訊層），品牌必須是全卡片最輕的一項，分隔線又要比
+ * 品牌更輕。分開寫時這些關係看不出來，改動其中一個就會悄悄破壞整體層次——
+ * 先前品牌 0.36 比分隔線 0.14 重得多，右下角就浮了出來。
+ */
+export const CARD_ALPHA = {
+  logo: 0.5,
+  time: 0.45,
+  divider: 0.13,
+  stats: 0.45,
+  brand: 0.3,
+} as const
+
+/**
  * IG 限動編輯器會在畫面上、下疊放返回／文字工具與說明文字控制列。9:16 的
  * 畫布本身仍是精確 1080×1920，只把內容安全區往內收；使用者若主動把留白拉得
  * 更大，仍尊重其設定。安全區使用畫布寬度的 15.625%，因此不論手機或桌面

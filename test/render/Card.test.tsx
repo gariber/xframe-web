@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { render } from 'preact'
 import { Card, DEFAULT_SETTINGS } from '../../src/render/Card'
 import { parseTweet } from '../../src/parse/microdata'
+import { CARD_ALPHA } from '../../src/render/card.css'
 import { readFileSync } from 'node:fs'
 import type { CardSettings } from '../../src/types'
 
@@ -21,10 +22,14 @@ function mount(
 }
 
 describe('Card', () => {
-  it('顯示作者名稱與帳號', () => {
+  it('作者列只標帳號，單行帶過，不顯示名稱', () => {
     const el = mount()
-    expect(el.textContent).toContain('Tibo')
-    expect(el.textContent).toContain('@thsottiaux')
+    const handle = el.querySelector('[data-part="handle"]') as HTMLElement
+    expect(handle.textContent?.trim()).toBe('@thsottiaux')
+    // 顯示名稱刻意不上卡片：帳號已足以指認作者，兩行的作者區塊會讓標頭比內文還重。
+    expect(el.textContent).not.toContain('Tibo')
+    expect(handle.style.whiteSpace).toBe('nowrap')
+    expect(handle.style.textOverflow).toBe('ellipsis')
   })
 
   it('作者帳號用 handleDisplay 原樣輸出，不由卡片加前綴', () => {
@@ -78,11 +83,37 @@ describe('Card', () => {
 
   it('品牌標識只有低對比小字，不加線或底框', () => {
     const brand = mount().querySelector('[data-part="brand"]') as HTMLElement
-    expect(brand.textContent?.trim()).toBe('XFrame · Gariber Studio')
-    expect(brand.style.fontWeight).toBe('300')
-    expect(brand.style.opacity).toBe('0.36')
+    expect(brand.textContent?.trim()).toBe('XFrame · gariber.studio')
+    // 一般字重配上全卡最低的透明度。細字重＋較高透明度會同時送出「細」與
+    // 「亮」兩個打架的訊號，右下角反而浮出來。
+    expect(brand.style.fontWeight).toBe('400')
+    expect(brand.style.opacity).toBe(String(CARD_ALPHA.brand))
+    expect(brand.style.letterSpacing).toBe('')
     expect(brand.style.border).toBe('')
     expect(brand.style.borderTop).toBe('')
+  })
+
+  it('品牌是卡片上最輕的一層，分隔線又比它更輕', () => {
+    const el = mount()
+    const brand = el.querySelector('[data-part="brand"]') as HTMLElement
+    const stats = el.querySelector('[data-part="stats"]') as HTMLElement
+    const divider = el.querySelector('[data-part="footer-divider"]') as HTMLElement
+    expect(Number(brand.style.opacity)).toBeLessThan(Number(stats.style.opacity))
+    expect(Number(divider.style.opacity)).toBeLessThan(Number(brand.style.opacity))
+  })
+
+  it('標誌、頭像與 footer 小字都綁字級，不寫死 px', () => {
+    const big = mount(undefined, { ...DEFAULT_SETTINGS, fontSize: 40 })
+    const small = mount(undefined, { ...DEFAULT_SETTINGS, fontSize: 20 })
+    const markOf = (el: HTMLElement) =>
+      Number((el.querySelector('[data-part="x-mark"]') as HTMLElement).getAttribute('width'))
+    const brandOf = (el: HTMLElement) =>
+      (el.querySelector('[data-part="brand"]') as HTMLElement).style.fontSize
+    // 字級加倍，平台標誌與品牌小字必須跟著加倍；先前兩者是固定 px，
+    // 使用者一拉字級，標頭與 footer 的比例關係就散掉了。
+    expect(markOf(big)).toBe(markOf(small) * 2)
+    expect(brandOf(big)).toBe(`${40 * 0.62}px`)
+    expect(brandOf(small)).toBe(`${20 * 0.62}px`)
   })
 
   it('底部依序排列分隔線、互動數與右下品牌', () => {
@@ -449,8 +480,10 @@ describe('身分遮蔽（隱私）', () => {
 
   it('關閉遮蔽時正常顯示真實身分', () => {
     const el = mount(undefined, { ...DEFAULT_SETTINGS, maskIdentity: false })
-    expect(el.textContent).toContain('Tibo')
+    // 作者列只標帳號，所以真實身分是由帳號呈現，不再包含顯示名稱。
     expect(el.textContent).toContain('thsottiaux')
+    // 頭像的首字母色塊仍取自真實名稱。
+    expect(el.querySelector('[data-part="monogram"]')?.textContent).toBe('T')
   })
 
   it('遮蔽不影響內文', () => {
