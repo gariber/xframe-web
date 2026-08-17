@@ -14,6 +14,7 @@ import {
   cardScale,
   CARD_ALPHA,
   STAT_ICON_EM,
+  mediaBoxHeight,
 } from './card.css'
 import { METRIC_META } from './metrics'
 import { translatedLabel, GROK_LOGO_PATH, GROK_LOGO_VIEWBOX } from './translated'
@@ -41,6 +42,8 @@ export const DEFAULT_SETTINGS: CardSettings = {
   maskIdentity: false,
   timeFormat: 'relative',
   aspect: 'auto',
+  // 偏上：照片主體通常在上半部，置中裁切最容易把臉切掉。
+  mediaFocusY: 30,
 }
 
 /**
@@ -220,9 +223,13 @@ function XMark({ size }: { size: number }) {
 function MediaGrid({
   media,
   constrained = false,
+  focusY = 50,
+  height,
 }: {
   media: Media[]
   constrained?: boolean
+  focusY?: number
+  height?: number
 }) {
   // 同 Avatar：抓取失敗（無 dataUrl）的圖位直接隱藏，不可退回跨域網址
   const usable = media.filter((m) => m.dataUrl)
@@ -240,8 +247,13 @@ function MediaGrid({
         marginTop: constrained ? 8 : 12,
         borderRadius: 12,
         overflow: 'hidden',
-        flex: constrained ? '1 1 0' : undefined,
-        minHeight: constrained ? 0 : undefined,
+        /*
+         * 固定份額，不是「拿剩下的」。舊版是 flex: 1 1 0——圖片只分到文字用剩的
+         * 空間，內容一多剩餘趨近零，整張圖就塌掉（實測 1:1 下高度為 0px）。
+         * 給定高度之後圖框不再參與搶空間，排版變成可預測的。
+         */
+        flex: constrained ? '0 0 auto' : undefined,
+        height: constrained && height ? `${Math.round(height)}px` : undefined,
       }}
     >
       {usable.slice(0, 4).map((m, i) => constrained ? (
@@ -253,6 +265,7 @@ function MediaGrid({
             minWidth: 0,
             minHeight: 0,
             overflow: 'hidden',
+            maxHeight: 'inherit',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -266,14 +279,14 @@ function MediaGrid({
             style={{
               position: 'relative',
               zIndex: 1,
-              width: 'auto',
-              height: 'auto',
-              maxWidth: '100%',
-              maxHeight: '100%',
-              minHeight: 0,
+              // cover：圖框比例幾乎不會等於原圖比例，一定要捨棄一部分。用 contain
+              // 塞進去的話卡片會出現大片空白、或反過來被迫整張縮小；cover 讓圖填滿
+              // 自己的區域，捨棄的部分由 objectPosition 決定。
+              width: '100%',
+              height: '100%',
               display: 'block',
-              objectFit: 'contain',
-              objectPosition: 'center center',
+              objectFit: 'cover',
+              objectPosition: `50% ${focusY}%`,
               borderRadius: 12,
             }}
           />
@@ -343,8 +356,19 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
   const footerRef = useRef<HTMLDivElement>(null)
   const statsRef = useRef<HTMLDivElement>(null)
   const [statsScale, setStatsScale] = useState(1)
+  /*
+   * 圖框高度用 px，不用百分比。面板為了「內容多就長高」改成 minHeight:100%，
+   * 高度因此是不確定的——CSS 的百分比高度在不確定容器裡會退回 auto，圖框就變成
+   * 原圖的自然高度（實測 670×1200 撐出 419px），內容整個暴增、面板被縮到 0.4。
+   * 由量到的可用高度直接算成 px，才是確定值。
+   */
+  const [mediaHeight, setMediaHeight] = useState<number | undefined>(undefined)
   const ratio = ASPECT_VALUE[s.aspect]
   const paddingY = canvasPaddingYStyle(s.aspect, s.padding)
+  /** 固定比例（非 auto 高度）。面板填滿與頁尾釘底都只在這個模式下成立。 */
+  const fixedAspect = ratio !== undefined
+  /** 絕對時間會獨立成行落在頁尾那一組的最上面，決定由誰承接剩餘空間。 */
+  const showsAbsoluteTime = s.show.timestamp && s.timeFormat === 'absolute'
   const constrainedMedia = ratio !== undefined &&
     s.show.media &&
     post.media.some((media) => Boolean(media.dataUrl))
@@ -371,20 +395,21 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
       if (ratio === undefined) {
         setCanvasHeight(undefined)
         setPanelScale(1)
+        setMediaHeight(undefined)
         return
       }
       if (width <= 0) {
         setCanvasWidth(0)
         setCanvasHeight(undefined)
         setPanelScale(1)
+        setMediaHeight(undefined)
         return
       }
       const height = width / ratio
       const measuredPaddingY = canvasPaddingY(s.aspect, s.padding, width)
       setCanvasHeight(height)
-      setPanelScale(constrainedMedia
-        ? 1
-        : panel ? fitPanelScale(height - measuredPaddingY * 2, panel.offsetHeight) : 1)
+      setMediaHeight(mediaBoxHeight(height - measuredPaddingY * 2))
+      setPanelScale(panel ? fitPanelScale(height - measuredPaddingY * 2, panel.offsetHeight) : 1)
     }
     measure()
     if (typeof ResizeObserver === 'undefined') return
@@ -483,11 +508,19 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
           transformOrigin: 'center center',
           flex: '0 0 auto',
           boxSizing: 'border-box',
-          height: constrainedMedia ? '100%' : undefined,
-          minHeight: constrainedMedia ? 0 : undefined,
-          overflow: constrainedMedia ? 'hidden' : undefined,
-          display: constrainedMedia ? 'flex' : undefined,
-          flexDirection: constrainedMedia ? 'column' : undefined,
+          /*
+           * minHeight 而不是 height，而且不設 overflow:hidden。
+           *
+           * 固定比例下面板要填滿整個框（內容少時才不會浮在中間一小塊），但內容
+           * 多時必須讓它長高——鎖 height:100% + overflow:hidden 的話超出部分會被
+           * 默默裁掉，實測 1:1 與 4:5 下分隔線、統計、品牌整組消失。改成 minHeight
+           * 之後：內容少就填滿，內容多就長高，長高之後由 fitPanelScale 等比縮小
+           * 整張。縮小只是變小，裁切會直接丟掉資訊。
+           */
+          minHeight: fixedAspect ? '100%' : undefined,
+          // flex 欄不只給有圖的情況：頁尾的 margin-top:auto 需要它才推得動。
+          display: fixedAspect ? 'flex' : undefined,
+          flexDirection: fixedAspect ? 'column' : undefined,
         }}
       >
         <div
@@ -591,7 +624,12 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
         )}
 
         {s.show.media && (
-          <MediaGrid media={post.media} constrained={constrainedMedia} />
+          <MediaGrid
+            media={post.media}
+            constrained={constrainedMedia}
+            focusY={s.mediaFocusY}
+            height={mediaHeight}
+          />
         )}
 
         {post.quoted && (
@@ -644,7 +682,12 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
           <div
             data-part="time"
             style={{
-              marginTop: scale.timeGap,
+              /*
+               * 固定比例下由時間這一行承接剩餘空間，讓「時間→分隔線→統計→品牌」
+               * 黏成一組沉到面板底部。把 auto 放在 footer-meta 上的話，空白會落在
+               * 時間與分隔線「之間」，等於把頁尾撕成兩半，中間夾一條空帶。
+               */
+              marginTop: fixedAspect ? 'auto' : scale.timeGap,
               opacity: CARD_ALPHA.time,
               fontSize: scale.time,
               whiteSpace: 'nowrap',
@@ -664,7 +707,18 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'stretch',
-            marginTop: scale.gap,
+            /*
+             * 固定比例下用 auto 把整個頁尾推到面板底部。面板是 flex 欄，內容不足
+             * 時剩餘空間會全部堆在最後一個元素「之後」——也就是品牌底下留一大片
+             * 空白，而品牌自己浮在中間。推到底部之後空白落在內容與頁尾之間，
+             * 品牌固定貼齊卡片下緣。
+             */
+            /*
+             * 沒顯示絕對時間時，由 footer 自己承接剩餘空間沉到底部；有絕對時間時
+             * 那個角色由時間那一行擔任（見上方），這裡就只留一般間距。auto 放錯
+             * 地方會把頁尾撕成兩半，中間夾一條空帶。
+             */
+            marginTop: fixedAspect && !showsAbsoluteTime ? 'auto' : scale.gap,
             flex: '0 0 auto',
             boxSizing: 'border-box',
           }}

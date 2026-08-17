@@ -95,11 +95,11 @@ export function cardScale(size: number, compact: boolean) {
      */
     logo: pick(0.95, 0.8),
     /*
-     * 標誌下方要留得比面板上緣的留白更多，標誌才會讀成「貼在卡片頂端的平台
-     * 標記」而不是壓在作者列頭上的一個東西。上下留白接近相等時（先前是上 26／
-     * 下 16）它會顯得被推下來，整個標頭跟著擠。
+     * 標誌下方留得比面板上緣的留白多一些，標誌才會讀成「貼在卡片頂端的平台
+     * 標記」而不是壓在作者列頭上的一個東西。曾經拉到 2.0em，但那在固定比例下
+     * 太奢侈——那些高度是要留給圖片與頁尾的，而且整張卡看起來鬆散。
      */
-    logoGap: pick(2.0, 1.2),
+    logoGap: pick(1.2, 0.8),
     /*
      * 作者列維持 X 的兩行排法：顯示名稱一行、@帳號一行。ThreadsFrame 收成單行
      * 只標帳號是跟著 Threads 的預設走，但 X 兩者都顯示，卡片照搬過去會不像 X。
@@ -107,20 +107,21 @@ export function cardScale(size: number, compact: boolean) {
      */
     avatar: pick(2.6, 2.0),
     avatarGap: pick(0.6, 0.6),
-    headGap: pick(1.1, 0.6),
+    headGap: pick(0.9, 0.5),
     name: size * 0.9,
     handle: size * 0.8,
     time: size * 0.8,
     stat: size * 0.8,
     brand: size * 0.62,
-    gap: pick(0.8, 0.5),
+    gap: pick(0.6, 0.4),
     timeGap: pick(0.7, 0.4),
     ruleGap: pick(0.5, 0.35),
     /*
-     * 品牌與統計列之間要比一般區塊間距更鬆。它是整張卡片的收尾，貼著上一列會
-     * 讀成統計列的一部分；留出比 ruleGap 大一截的空白，那一行才站得住。
+     * 品牌與統計列之間略鬆即可。它是整張卡片的收尾，貼著上一列會讀成統計列的
+     * 一部分；但固定比例下整個頁尾會被釘在面板底部（見 Card 的 footer-meta），
+     * 站得住靠的是那個定位，不需要在這裡再撐開一大塊。
      */
-    brandGap: pick(0.9, 0.6),
+    brandGap: pick(0.5, 0.35),
   }
 }
 
@@ -151,6 +152,31 @@ export const CARD_ALPHA = {
   stats: 0.45,
   brand: 0.3,
 } as const
+
+/**
+ * 固定比例卡片裡，圖框佔面板高度的固定份額。
+ *
+ * 先前圖片是 `flex: 1 1 0`——只拿文字用剩的空間。內容一多剩餘就趨近零，圖片
+ * 跟著塌掉：實測 1:1 下圖片高度是 **0px**，整張圖消失，而面板同時被撐破，
+ * 頁尾（時間、統計、品牌）整組被 overflow:hidden 裁掉。4:5 也只剩 44×79 的縮圖。
+ *
+ * 改成固定份額之後，圖框不再參與搶空間，排版變成可預測的：圖片永遠看得見、
+ * 也永遠不會吃掉文字的位置。圖框比例幾乎不會等於原圖比例，差額用 cover 裁掉，
+ * 捨棄哪一部分由 `CardSettings.mediaFocusY` 決定。
+ */
+export const MEDIA_SHARE = 0.45
+
+/**
+ * 圖框的高度，由量到的可用高度算出——回傳 px，不是百分比。
+ *
+ * 百分比在這裡行不通：面板為了「內容多就長高」用的是 minHeight 而非 height，
+ * 高度因此是不確定的，而 CSS 的百分比高度在不確定容器裡會退回 auto——圖框就
+ * 變成原圖的自然高度（實測一張 670×1200 的照片撐出 419px），內容整個暴增，
+ * 面板被 fitPanelScale 縮到 0.4。算成 px 才是確定值。
+ */
+export function mediaBoxHeight(availableHeight: number): number {
+  return availableHeight > 0 ? availableHeight * MEDIA_SHARE : 0
+}
 
 /**
  * IG 限動編輯器會在畫面上、下疊放返回／文字工具與說明文字控制列。9:16 的

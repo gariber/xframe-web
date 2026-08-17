@@ -576,6 +576,22 @@ function XFrameApp() {
               <option value="absolute">絕對（2026-08-01 05:54）</option>
             </select>
           </label>
+          {/*
+            只有固定比例且真的有圖時才出現：auto 高度不裁切圖片，這根滑桿在那裡
+            動了也不會有任何變化，擺著只會讓人以為壞了。
+          */}
+          {settings.aspect !== 'auto' && displayedTweet?.media.some((m) => m.dataUrl) && (
+            <label>圖片位置
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={settings.mediaFocusY}
+                onInput={(e) => patch({ mediaFocusY: Number(e.currentTarget.value) })}
+              />
+              <span class="hint-inline">{settings.mediaFocusY}%</span>
+            </label>
+          )}
           {downloadHeight !== null && (
             <p class="hint">
               下載尺寸固定 {EXPORT_WIDTH}×{downloadHeight} px，

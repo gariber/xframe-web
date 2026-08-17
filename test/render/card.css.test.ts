@@ -6,6 +6,7 @@ import {
   fitPanelScale,
   statsFitScale,
   cardScale,
+  mediaBoxHeight,
   CARD_ALPHA,
   STAT_ICON_EM,
   STORY_SAFE_PADDING_RATIO,
@@ -16,19 +17,19 @@ describe('cardScale', () => {
   it('每一項都是基準字級的倍數，與 ThreadsFrame 的係數一致', () => {
     expect(cardScale(20, false)).toEqual({
       logo: 19,
-      logoGap: 40,
+      logoGap: 24,
       avatar: 52,
       avatarGap: 12,
-      headGap: 22,
+      headGap: 18,
       name: 18,
       handle: 16,
       time: 16,
       stat: 16,
       brand: 12.4,
-      gap: 16,
+      gap: 12,
       timeGap: 14,
       ruleGap: 10,
-      brandGap: 18,
+      brandGap: 10,
     })
   })
 
@@ -56,16 +57,37 @@ describe('cardScale', () => {
     expect(compact.brandGap).toBeLessThan(normal.brandGap)
   })
 
-  it('品牌與上一列的間距比一般區塊間距更鬆', () => {
+  it('品牌與上一列之間留得比分隔線間距不少', () => {
     const s = cardScale(20, false)
-    // 它是整張卡片的收尾，貼著統計列會讀成統計列的一部分。
-    expect(s.brandGap).toBeGreaterThan(s.ruleGap)
+    /*
+     * 它是整張卡片的收尾，貼著統計列會讀成統計列的一部分。固定比例下整個頁尾
+     * 會被釘在面板底部，站得住主要靠那個定位，所以這裡只要求「不比 ruleGap 小」，
+     * 不再要求撐開一大塊——那會在矮比例裡吃掉圖片的高度。
+     */
+    expect(s.brandGap).toBeGreaterThanOrEqual(s.ruleGap)
   })
 
   it('標誌下方的留白比其他區塊間距都大，標誌才不會壓在作者列上', () => {
     const s = cardScale(20, false)
     expect(s.logoGap).toBeGreaterThan(s.headGap)
     expect(s.logoGap).toBeGreaterThan(s.gap)
+    // 但也不該奢侈到吃掉圖片與頁尾的高度：曾經是 2.0em，在矮比例下整張卡鬆散。
+    expect(s.logoGap).toBeLessThan(s.avatar)
+  })
+})
+
+describe('mediaBoxHeight', () => {
+  it('取可用高度的固定份額', () => {
+    expect(mediaBoxHeight(600)).toBeCloseTo(600 * 0.45)
+  })
+
+  it('回傳 px 數值而非百分比——面板高度不確定時百分比會退回原圖自然高度', () => {
+    expect(typeof mediaBoxHeight(600)).toBe('number')
+  })
+
+  it('量測無效時回 0，不會把原圖的自然高度當成版面高度', () => {
+    expect(mediaBoxHeight(0)).toBe(0)
+    expect(mediaBoxHeight(-10)).toBe(0)
   })
 })
 

@@ -66,6 +66,10 @@ function App() {
             <option value="9:16">9:16</option>
           </select>
         </label>
+        <label>圖片位置 {settings.mediaFocusY}%
+          <input type="range" min={0} max={100} value={settings.mediaFocusY}
+            onInput={(e) => patch({ mediaFocusY: +e.currentTarget.value })} />
+        </label>
         <label>譯文標示
           <select value={translatedFrom}
             onChange={(e) => setTranslatedFrom(e.currentTarget.value as TranslatedFrom | '')}>

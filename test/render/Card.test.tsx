@@ -360,38 +360,83 @@ describe('固定比例的媒體填滿版面', () => {
   }
 
   it.each(['1:1', '4:5', '9:16'] as const)(
-    '%s 有圖片時面板維持滿寬滿高，不再整張縮成小卡',
+    '%s 面板填滿固定比例框但不裁切，頁尾釘在底部',
     (aspect) => {
       const el = mount(mediaTweet(), { ...DEFAULT_SETTINGS, aspect, padding: 28 })
       const panel = el.querySelector('[data-part="panel"]') as HTMLElement
+      const footer = el.querySelector('[data-part="footer-meta"]') as HTMLElement
       expect(panel.style.width).toBe('100%')
-      expect(panel.style.height).toBe('100%')
-      expect(panel.style.transform).toBe('')
+      /*
+       * minHeight 而不是 height，而且不裁切：內容少時填滿框，內容多時長高再由
+       * fitPanelScale 等比縮小。鎖 height + overflow:hidden 會把超出的部分默默
+       * 吃掉——實測 1:1 與 4:5 下分隔線、統計、品牌整組消失。
+       */
+      expect(panel.style.minHeight).toBe('100%')
+      expect(panel.style.height).toBe('')
+      expect(panel.style.overflow).toBe('')
       expect(panel.style.display).toBe('flex')
-      expect(panel.style.overflow).toBe('hidden')
+      /*
+       * 剩餘空間落在內容與頁尾之間，不是堆在品牌底下。承接的元素是頁尾那一組的
+       * 第一項：有絕對時間時是時間那一行，否則是 footer-meta 自己——auto 放錯地方
+       * 會把頁尾撕成兩半，中間夾一條空帶。
+       */
+      const absolute = { ...DEFAULT_SETTINGS, aspect, padding: 28, timeFormat: 'absolute' as const }
+      const withTime = mount(mediaTweet(), absolute)
+      expect((withTime.querySelector('[data-part="time"]') as HTMLElement).style.marginTop)
+        .toBe('auto')
+      expect((withTime.querySelector('[data-part="footer-meta"]') as HTMLElement).style.marginTop)
+        .not.toBe('auto')
+      // 沒有絕對時間時改由 footer 自己沉底
+      expect(footer.style.marginTop).toBe('auto')
     },
   )
 
+  it('裁切位置預設偏上，並可由設定調整', () => {
+    const el = mount(mediaTweet(), { ...DEFAULT_SETTINGS, aspect: '1:1' })
+    const image = el.querySelector('[data-part="media-image"]') as HTMLElement
+    // 照片主體常在上半部，置中裁切最容易把臉切掉
+    expect(DEFAULT_SETTINGS.mediaFocusY).toBeLessThan(50)
+    expect(image.style.objectPosition).toBe(`50% ${DEFAULT_SETTINGS.mediaFocusY}%`)
+
+    const low = mount(mediaTweet(), { ...DEFAULT_SETTINGS, aspect: '1:1', mediaFocusY: 80 })
+    expect((low.querySelector('[data-part="media-image"]') as HTMLElement).style.objectPosition)
+      .toBe('50% 80%')
+  })
+
+  it('auto 高度不裁切圖片，維持原圖比例', () => {
+    const el = mount(mediaTweet(), { ...DEFAULT_SETTINGS, aspect: 'auto' })
+    const media = el.querySelector('[data-part="media"]') as HTMLElement
+    const image = el.querySelector('[data-part="media-image"]') as HTMLElement
+    expect(media.style.height).toBe('')
+    expect(image.style.width).toBe('100%')
+    expect(image.style.objectFit).toBe('')
+  })
+
   it.each(['1:1', '4:5', '9:16'] as const)(
-    '%s 讓圖片區吃滿剩餘高度，原圖以 contain 完整顯示',
+    '%s 圖框拿固定份額，原圖以 cover 填滿並依對焦位置裁切',
     (aspect) => {
       const el = mount(mediaTweet(), { ...DEFAULT_SETTINGS, aspect })
       const media = el.querySelector('[data-part="media"]') as HTMLElement
       const tile = media.querySelector('[data-part="media-tile"]') as HTMLElement
       const image = media.querySelector('[data-part="media-image"]') as HTMLElement
-      expect(media.style.flex).toBe('1 1 0px')
-      expect(media.style.minHeight).toBe('0px')
+      /*
+       * 固定份額，不是「吃滿剩餘」。舊版是 flex: 1 1 0——圖片只分到文字用剩的
+       * 空間，內容一多剩餘趨近零，圖片跟著塌掉（實測 1:1 下高度為 0px，整張圖
+       * 消失）。給定高度之後圖框不再參與搶空間，排版可預測。
+       */
+      expect(media.style.flex).toBe('0 0 auto')
+      /*
+       * 高度是量出來的 px，不是百分比——happy-dom 沒有版面引擎，量不到東西，
+       * 所以這裡是空字串。實際數值由 card.css.ts 的 mediaBoxHeight() 負責，
+       * 那是純函式，在那邊測得到。
+       */
+      expect(media.style.height).toBe('')
       expect(tile.style.overflow).toBe('hidden')
       expect(tile.style.display).toBe('flex')
-      expect(tile.style.alignItems).toBe('center')
-      expect(tile.style.justifyContent).toBe('center')
-      expect(tile.style.background).toBe('transparent')
-      expect(image.style.width).toBe('auto')
-      expect(image.style.height).toBe('auto')
-      expect(image.style.maxWidth).toBe('100%')
-      expect(image.style.maxHeight).toBe('100%')
-      expect(image.style.objectFit).toBe('contain')
-      expect(image.style.objectPosition).toBe('center center')
+      // 圖框比例幾乎不會等於原圖比例，差額用 cover 裁掉而不是留白或縮小整張卡片
+      expect(image.style.width).toBe('100%')
+      expect(image.style.height).toBe('100%')
+      expect(image.style.objectFit).toBe('cover')
       expect(image.style.borderRadius).toBe('12px')
     },
   )
