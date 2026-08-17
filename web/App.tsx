@@ -131,6 +131,15 @@ function SafariTranslationBridge({ token }: { token: string }) {
     }
     localStorage.setItem(SAFARI_BRIDGE_RESULT + token, JSON.stringify(snapshot))
     setFeedback('Translation sent back. Return to the XFrame tab to review and edit it.')
+    /*
+     * 這個分頁是 XFrame 自己用 window.open 開的，所以關得掉。關掉之後瀏覽器會
+     * 直接把使用者帶回原本那個分頁，省掉「翻完還得自己找回去」那一步——主分頁
+     * 監聽 storage 事件，譯文在它那邊已經到位了。
+     *
+     * 關不掉時（例如使用者是自己貼網址開的，不是被 window.open 開的）呼叫會被
+     * 瀏覽器忽略，上面那句提示仍然留著，流程不會斷。
+     */
+    window.close()
   }
 
   return (

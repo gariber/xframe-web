@@ -125,4 +125,34 @@ describe('Safari 可編輯翻譯面板', () => {
     expect(payload.main.original).toBe(original)
     expect((host.querySelector('.preview [data-part="body"]') as HTMLElement).textContent).toBe(original)
   })
+
+  it('譯文送回後自動關閉專用分頁，使用者不必自己找回原本的分頁', async () => {
+    const token = 'bridge-test-token'
+    localStorage.setItem(`xframe.web.safari-translation.request.${token}`, JSON.stringify({
+      main: {
+        original: 'Hello world',
+        lang: 'en',
+        segments: [{ type: 'text', value: 'Hello world' }],
+      },
+    }))
+    history.replaceState(null, '', `/?safari-translate=${token}`)
+    const close = vi.spyOn(window, 'close').mockImplementation(() => undefined)
+
+    render(null, host)
+    await act(async () => { render(<App />, host) })
+    await flush()
+
+    // 模擬 Safari 就地改寫頁面上的可見文字，這正是專用分頁在等的那個事件。
+    const body = host.querySelector('[data-part="body"]') as HTMLElement
+    await act(async () => { body.textContent = '你好，世界。' })
+    await flush()
+
+    await act(async () => { button('Send translation back to XFrame').click() })
+    await flush()
+
+    expect(localStorage.getItem(`xframe.web.safari-translation.result.${token}`))
+      .toContain('你好，世界。')
+    // 主分頁監聽 storage 事件，譯文已經到位，這個分頁沒有理由再佔著使用者的注意力。
+    expect(close).toHaveBeenCalled()
+  })
 })

@@ -184,8 +184,6 @@ function XMark({ size }: { size: number }) {
       style={{
         display: 'block',
         fill: 'currentColor',
-        // 標誌是平台識別，不是主角。ThreadsFrame 同樣把它壓到半透明，讓標頭
-        // 那一列讀起來是「這是哪個平台」的註記，而不是與內文爭注意力的圖形。
         opacity: CARD_ALPHA.logo,
         pointerEvents: 'none',
         flex: '0 0 auto',
@@ -319,6 +317,9 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
 
   const canvasRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
+  const footerRef = useRef<HTMLDivElement>(null)
+  const statsRef = useRef<HTMLDivElement>(null)
+  const [statsScale, setStatsScale] = useState(1)
   const ratio = ASPECT_VALUE[s.aspect]
   const paddingY = canvasPaddingYStyle(s.aspect, s.padding)
   const constrainedMedia = ratio !== undefined &&
@@ -370,8 +371,29 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
     return () => ro.disconnect()
   }, [ratio, s.aspect, s.padding, constrainedMedia, settings, post])
 
-  const statsAvailableWidth = canvasWidth - s.padding * 2 - (constrainedMedia ? 36 : 60) - 2
-  const statsScale = statsFitScale(statsAvailableWidth, s.fontSize, s.show.stats)
+  /*
+   * 統計列的自然寬度只能量，不能算。四個數字的長度、使用者的字級與留白都會變，
+   * 先前用一個估算係數去猜，猜低了整列就溢出容器右緣——畫面上的症狀就是統計列
+   * 比它上方那條分隔線還寬。改成量測後，縮放由事實決定。
+   *
+   * row 的寬度是 max-content 且 offsetWidth 不受 transform 影響，所以量到的
+   * 永遠是「未縮放時的自然寬度」，不會跟縮放結果互相追逐而震盪。
+   */
+  useLayoutEffect(() => {
+    const row = statsRef.current
+    const footer = footerRef.current
+    if (!row || !footer) {
+      setStatsScale(1)
+      return
+    }
+    const measure = () => setStatsScale(statsFitScale(footer.clientWidth, row.offsetWidth))
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(measure)
+    ro.observe(footer)
+    ro.observe(row)
+    return () => ro.disconnect()
+  }, [settings, post, canvasWidth, panelScale, constrainedMedia])
 
   return (
     <div
@@ -458,29 +480,18 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
           <XMark size={scale.logo} />
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: scale.avatarGap, marginBottom: scale.gap, flex: '0 0 auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: scale.avatarGap, marginBottom: scale.headGap, flex: '0 0 auto' }}>
           {s.show.avatar && <Avatar author={author} size={scale.avatar} />}
           {/*
-            作者列只有一行，而且只標帳號。
-            先前是「顯示名稱一行 ＋ @帳號一行」：兩行的作者區塊加上它正上方的
-            平台標誌，會讓整個標頭比內文還重，卡片的主角變成了作者而不是貼文。
-            帳號本身已經足以指認作者，顯示名稱是這裡可以省掉的那一項——
-            ThreadsFrame 也是走到同一個結論（見其提交「作者列改標帳號，
-            不再顯示暱稱」）。
+            兩行：顯示名稱一行、@帳號一行。這是 X 自己的排法——X 預設同時顯示
+            名稱與帳號，Threads 預設只顯示帳號。卡片要像它取材的那個平台，所以
+            這一項照 X 走，不跟 ThreadsFrame。
           */}
-          <div
-            data-part="handle"
-            style={{
-              fontWeight: 700,
-              fontSize: scale.name,
-              lineHeight: 1.2,
-              minWidth: 0,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {author.handleDisplay}
+          <div style={{ lineHeight: 1.2, minWidth: 0 }}>
+            <div data-part="name" style={{ fontWeight: 700, fontSize: scale.name }}>{author.name}</div>
+            <div data-part="handle" style={{ opacity: CARD_ALPHA.handle, fontSize: scale.handle }}>
+              {author.handleDisplay}
+            </div>
           </div>
           {s.show.timestamp && (
             // 只有相對時間放標頭右上角。絕對時間長 8 倍（'1h' vs
@@ -586,7 +597,7 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
           <div
             data-part="time"
             style={{
-              marginTop: scale.gap,
+              marginTop: scale.timeGap,
               opacity: CARD_ALPHA.time,
               fontSize: scale.time,
               whiteSpace: 'nowrap',
@@ -600,6 +611,7 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
         )}
 
         <div
+          ref={footerRef}
           data-part="footer-meta"
           style={{
             display: 'flex',
@@ -623,6 +635,7 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
                 }}
               />
               <div
+                ref={statsRef}
                 data-part="stats"
                 style={{
                   display: 'flex',
@@ -631,7 +644,8 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
                   gap: '0.6em',
                   opacity: CARD_ALPHA.stats,
                   fontSize: scale.stat,
-                  width: statsScale < 1 ? `${100 / statsScale}%` : '100%',
+                  // max-content 讓量到的寬度永遠是自然寬度，與下面的縮放無關。
+                  width: 'max-content',
                   transform: statsScale < 1 ? `scale(${statsScale})` : undefined,
                   transformOrigin: 'left top',
                   flex: '0 0 auto',
@@ -651,7 +665,7 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
             data-part="brand"
             style={{
               marginLeft: 'auto',
-              marginTop: scale.ruleGap,
+              marginTop: scale.brandGap,
               opacity: CARD_ALPHA.brand,
               fontSize: scale.brand,
               // weight 300 配上原本偏高的 0.36 透明度，讓品牌同時「細」又「亮」，

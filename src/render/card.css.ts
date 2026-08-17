@@ -53,12 +53,20 @@ export function fitPanelScale(availableHeight: number, panelHeight: number): num
 }
 
 /**
- * 小畫布仍要讓四組互動數維持單列。這個估算包含四組圖示／短數字、三個
- * 分隔點與列間距；實際列寬不足時只縮小統計列，品牌則留在自己的右對齊行。
+ * 小畫布仍要讓四組互動數維持單列。
+ *
+ * 這裡吃的是**實際量到的**自然列寬，不是估算值。先前用 `baseFontSize * 14`
+ * 猜一個寬度，那個係數是配著當時的統計字級調出來的：字級一改、或四個數字
+ * 同時很長時，估算就會低估真實寬度，縮放不啟動，整列於是溢出容器右緣——
+ * 畫面上的症狀是統計列比它上方那條分隔線還寬，右下角看起來破了一角。
+ *
+ * 改吃量測值之後，這條線由「量得到的事實」決定，不再由一個需要人工維護的
+ * 係數決定。分隔線本身永遠是容器滿寬，所以只要統計列不溢出，線就不會比
+ * 數字短。
  */
-export function statsFitScale(availableWidth: number, baseFontSize: number, hasStats: boolean): number {
-  if (!hasStats || availableWidth <= 0 || baseFontSize <= 0) return 1
-  return Math.min(1, availableWidth / (baseFontSize * 14))
+export function statsFitScale(availableWidth: number, naturalWidth: number): number {
+  if (availableWidth <= 0 || naturalWidth <= 0) return 1
+  return Math.min(1, availableWidth / naturalWidth)
 }
 
 /**
@@ -77,18 +85,31 @@ export function statsFitScale(availableWidth: number, baseFontSize: number, hasS
  * 間距，字級一律不動。讓出高度是為了給圖片，不該連帶讓文字變得難讀。
  */
 export function cardScale(size: number, compact: boolean) {
-  const k = compact ? 0.8 : 1
+  const pick = (normal: number, tight: number) => Math.round(size * (compact ? tight : normal))
   return {
-    logo: Math.round(size * 1.5 * k),
-    logoGap: Math.round(size * 0.5 * k),
-    avatar: Math.round(size * 1.75 * k),
-    avatarGap: Math.round(size * 0.5 * k),
-    name: size * 0.95,
+    logo: pick(1.5, 1.2),
+    logoGap: pick(0.8, 0.5),
+    /*
+     * 作者列維持 X 的兩行排法：顯示名稱一行、@帳號一行。ThreadsFrame 收成單行
+     * 只標帳號是跟著 Threads 的預設走，但 X 兩者都顯示，卡片照搬過去會不像 X。
+     * 頭像因此要夠高，才壓得住兩行文字。
+     */
+    avatar: pick(2.6, 2.0),
+    avatarGap: pick(0.6, 0.6),
+    headGap: pick(1.1, 0.6),
+    name: size * 0.9,
+    handle: size * 0.8,
     time: size * 0.8,
     stat: size * 0.8,
     brand: size * 0.62,
-    gap: Math.round(size * 0.7 * k),
-    ruleGap: Math.round(size * 0.5 * k),
+    gap: pick(0.8, 0.5),
+    timeGap: pick(0.7, 0.4),
+    ruleGap: pick(0.5, 0.35),
+    /*
+     * 品牌與統計列之間要比一般區塊間距更鬆。它是整張卡片的收尾，貼著上一列會
+     * 讀成統計列的一部分；留出比 ruleGap 大一截的空白，那一行才站得住。
+     */
+    brandGap: pick(0.9, 0.6),
   }
 }
 
@@ -108,7 +129,12 @@ export const STAT_ICON_EM = 0.85 / 0.8
  * 先前品牌 0.36 比分隔線 0.14 重得多，右下角就浮了出來。
  */
 export const CARD_ALPHA = {
-  logo: 0.5,
+  /*
+   * 標誌維持實心亮白。ThreadsFrame 把它壓到半透明，但 X 的標誌本身就是一個
+   * 高對比的實心字符，淡化之後會顯得髒而不是安靜——這一項刻意不跟 ThreadsFrame。
+   */
+  logo: 0.9,
+  handle: 0.55,
   time: 0.45,
   divider: 0.13,
   stats: 0.45,

@@ -22,14 +22,16 @@ function mount(
 }
 
 describe('Card', () => {
-  it('作者列只標帳號，單行帶過，不顯示名稱', () => {
+  it('作者列照 X 的排法，名稱與帳號各一行', () => {
     const el = mount()
+    const name = el.querySelector('[data-part="name"]') as HTMLElement
     const handle = el.querySelector('[data-part="handle"]') as HTMLElement
+    expect(name.textContent?.trim()).toBe('Tibo')
     expect(handle.textContent?.trim()).toBe('@thsottiaux')
-    // 顯示名稱刻意不上卡片：帳號已足以指認作者，兩行的作者區塊會讓標頭比內文還重。
-    expect(el.textContent).not.toContain('Tibo')
-    expect(handle.style.whiteSpace).toBe('nowrap')
-    expect(handle.style.textOverflow).toBe('ellipsis')
+    // X 預設同時顯示名稱與帳號，Threads 預設只顯示帳號。卡片跟取材的平台走。
+    expect(name.parentElement).toBe(handle.parentElement)
+    expect(Number(handle.style.opacity)).toBeLessThan(1)
+    expect(name.style.fontWeight).toBe('700')
   })
 
   it('作者帳號用 handleDisplay 原樣輸出，不由卡片加前綴', () => {

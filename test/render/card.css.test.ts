@@ -16,15 +16,19 @@ describe('cardScale', () => {
   it('每一項都是基準字級的倍數，與 ThreadsFrame 的係數一致', () => {
     expect(cardScale(20, false)).toEqual({
       logo: 30,
-      logoGap: 10,
-      avatar: 35,
-      avatarGap: 10,
-      name: 19,
+      logoGap: 16,
+      avatar: 52,
+      avatarGap: 12,
+      headGap: 22,
+      name: 18,
+      handle: 16,
       time: 16,
       stat: 16,
       brand: 12.4,
-      gap: 14,
+      gap: 16,
+      timeGap: 14,
       ruleGap: 10,
+      brandGap: 18,
     })
   })
 
@@ -44,9 +48,18 @@ describe('cardScale', () => {
     expect(compact.time).toBe(normal.time)
     expect(compact.stat).toBe(normal.stat)
     expect(compact.brand).toBe(normal.brand)
+    expect(compact.handle).toBe(normal.handle)
     expect(compact.logo).toBeLessThan(normal.logo)
     expect(compact.avatar).toBeLessThan(normal.avatar)
     expect(compact.gap).toBeLessThan(normal.gap)
+    expect(compact.headGap).toBeLessThan(normal.headGap)
+    expect(compact.brandGap).toBeLessThan(normal.brandGap)
+  })
+
+  it('品牌與上一列的間距比一般區塊間距更鬆', () => {
+    const s = cardScale(20, false)
+    // 它是整張卡片的收尾，貼著統計列會讀成統計列的一部分。
+    expect(s.brandGap).toBeGreaterThan(s.ruleGap)
   })
 })
 
@@ -93,14 +106,23 @@ describe('fitPanelScale', () => {
 })
 
 describe('statsFitScale', () => {
-  it('窄畫布等比縮小互動數，讓四組數據維持單列', () => {
-    expect(statsFitScale(240, 20, true)).toBeCloseTo(240 / 280)
+  it('量到的自然寬度超出可用寬度時等比縮小，讓四組數據維持單列', () => {
+    expect(statsFitScale(240, 280)).toBeCloseTo(240 / 280)
   })
 
-  it('空間足夠、未顯示統計或量測無效時不放大也不縮小', () => {
-    expect(statsFitScale(554, 20, true)).toBe(1)
-    expect(statsFitScale(240, 20, false)).toBe(1)
-    expect(statsFitScale(0, 20, true)).toBe(1)
+  it('放得下就不縮，也永遠不放大', () => {
+    expect(statsFitScale(554, 280)).toBe(1)
+  })
+
+  it('量測無效時維持原尺寸，不把內容縮成 0', () => {
+    expect(statsFitScale(0, 280)).toBe(1)
+    expect(statsFitScale(240, 0)).toBe(1)
+  })
+
+  it('縮放後的實際寬度不超過可用寬度——分隔線因此不會比統計列短', () => {
+    for (const [available, natural] of [[240, 280], [120, 400], [554, 280], [300, 300]]) {
+      expect(natural * statsFitScale(available, natural)).toBeLessThanOrEqual(available + 1e-9)
+    }
   })
 })
 

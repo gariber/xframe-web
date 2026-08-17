@@ -36,20 +36,33 @@ takes the numbers themselves from ThreadsFrame's `src/render.ts`.
   in `src/render/card.css.ts`. The platform mark was a fixed `28px` and the
   avatar a fixed `52px`, so neither grew when the user raised the text size and
   the header's weight relationship drifted apart at both extremes.
-- Platform mark: `1.5 × size`, opacity `0.5`. It was fixed-size at opacity
-  `0.9`, which made a platform annotation compete with the post body.
-- Author row: collapsed to a single line carrying the handle only, matching
-  ThreadsFrame's `作者列改標帳號，不再顯示暱稱`. Avatar is now `1.75 × size`
-  (≈35px at the default) rather than `52px`. The two-line author block plus the
-  logo row above it had made the header heavier than the content it introduced.
+- Platform mark: `1.5 × size`, kept at opacity `0.9`. ThreadsFrame dims its logo
+  to `0.5`, but the X mark is already a high-contrast solid glyph and dimming it
+  reads as dirty rather than quiet. This is a deliberate divergence.
+- Author row: kept on two lines, display name above `@handle`. ThreadsFrame
+  collapsed to the handle alone because Threads shows only the handle by
+  default; X shows both, and a card should look like the platform it came from.
+  Avatar stays at `2.6 × size` (52px at the default) so it can anchor two lines.
 - Absolute and relative time: `0.8 × size` at opacity `0.45`.
 - Divider: opacity `0.13`. Metrics: `0.8 × size` at opacity `0.45`, with icons
   at `0.85/0.8 em` so they scale with the row including the narrow-card path.
+- Metrics no longer overrun the divider above them. `statsFitScale()` used to
+  divide the available width by an estimated natural width of
+  `baseFontSize × 14`; that coefficient was tuned against the old metric type
+  size, so once the row grew the estimate under-read the real width, the
+  down-scale never engaged, and the row overflowed its container to the right —
+  visibly wider than the rule above it. It now takes a **measured** natural
+  width (the row is laid out at `max-content`, and `offsetWidth` ignores the
+  transform, so the measurement cannot chase its own result). Measured in
+  Chromium at text sizes 20/28/34/40: the previous build overflowed by
+  15–65px, the current one by at most 0.2px.
 - Brand: `0.62 × size`, weight `400`, opacity `0.3`, letter-spacing removed, and
   the copy is now `XFrame · gariber.studio`. Weight `300` at opacity `0.36` sent
   two conflicting signals — thin but bright — so the corner floated out; it is
   now the lightest layer on the card. The domain-suffixed form matches
-  ThreadsFrame so cards from both products read as one brand.
+  ThreadsFrame so cards from both products read as one brand. Its gap above is
+  `0.9 × size` rather than the `0.5 × size` rule gap: as the card's sign-off it
+  was sitting close enough to the metrics row to read as part of it.
 - The opacity relationships are pinned in `CARD_ALPHA` and asserted as
   relationships, not just values: time equals metrics, brand is below metrics,
   divider is below brand.
@@ -84,19 +97,41 @@ takes the numbers themselves from ThreadsFrame's `src/render.ts`.
   weights, and opacities from ThreadsFrame's renderer. See the second-pass
   section above.
 
-## Verification for the second pass
+## Safari translation: why the dedicated tab still exists
 
-- `npm test` — 382 passed / 382. The three assertions that encoded the old
-  header and brand were updated to the new spec rather than deleted, and new
-  tests cover `cardScale()`, the `CARD_ALPHA` ordering, and the rule that the
-  logo and brand track the text size.
+Safari's page translation translates the **whole page**, and it only offers the
+"Translate to Traditional Chinese" action when it detects the page as being in
+another language. The XFrame UI is in Chinese, so the app's own page is detected
+as Chinese and the action is never offered — which is why the foreign post text
+is isolated on a dedicated page whose language is set to the post's language.
+Doing it inside the app page is not a layout problem that can be tidied away; it
+is what Safari's translation is scoped to.
+
+What was removed is the manual return trip: the bridge tab now calls
+`window.close()` after a successful send. It was opened by `window.open`, so it
+can close itself, and the browser drops the user back on the XFrame tab with the
+translation already delivered (the main tab listens for the `storage` event). If
+the call is ignored — a tab the user opened themselves rather than one XFrame
+opened — the existing on-screen instruction stays and nothing breaks.
+
+## Verification
+
+- `npm test` — 386 passed / 386. Assertions that encoded superseded header and
+  brand values were rewritten to the current spec rather than deleted; new tests
+  cover `cardScale()`, the `CARD_ALPHA` ordering, the rule that the logo and
+  brand track the text size, the guarantee that a fitted metrics row never
+  exceeds its available width, and the bridge tab closing itself.
 - `npm run build` and `npm run build:web` both clean, including `tsc --noEmit`.
-- Rendered in headless Chromium against the `plain` and `media` fixtures at
-  absolute-time settings, and compared before/after side by side.
-- Not verified visually this pass: the constrained-media path needs images from
-  `pbs.twimg.com`, which the build sandbox cannot reach, so the media fixture
-  degraded to its text-only layout. That path is covered by component tests and
-  by the `compact` branch of `cardScale()`, but it has not been re-checked in a
-  real browser with images present.
+- Geometry measured in headless Chromium against a **static build** of the
+  preview harness. The dev server's HMR served stale modules during this pass
+  and produced two misleading readings before that was caught; measurements
+  taken against a running dev server should not be trusted here.
+- Not verified visually: the constrained-media path needs images from
+  `pbs.twimg.com`, which the sandbox cannot reach, so the media fixture degrades
+  to its text-only layout. Covered by component tests and the `compact` branch
+  of `cardScale()`, but not re-checked in a real browser with images present.
+- Not verified: the Safari behaviour itself. There is no Safari in the build
+  environment, so the `window.close()` return path is covered only by a unit
+  test asserting the call.
 
 final result: passed
