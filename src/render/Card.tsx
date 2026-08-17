@@ -9,6 +9,7 @@ import {
   canvasPaddingYStyle,
   canvasSizeStyle,
   fitPanelScale,
+  footerFitScale,
   accentFrom,
 } from './card.css'
 import { METRIC_META } from './metrics'
@@ -320,6 +321,7 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
     s.show.media &&
     post.media.some((media) => Boolean(media.dataUrl))
   const [canvasHeight, setCanvasHeight] = useState<number | undefined>(undefined)
+  const [canvasWidth, setCanvasWidth] = useState(0)
   const [panelScale, setPanelScale] = useState(1)
 
   // CSS aspect-ratio 會被 flex item 的 min-content 高度撐開，所以非 auto 模式
@@ -328,18 +330,21 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
   useLayoutEffect(() => {
     const el = canvasRef.current
     const panel = panelRef.current
-    if (!el || ratio === undefined) {
-      setCanvasHeight(undefined)
-      setPanelScale(1)
-      return
-    }
+    if (!el) return
     const measure = () => {
       // offsetWidth 而非 getBoundingClientRect().width：後者會被祖先的 transform
       // 縮放。行動網頁版把卡片包在 .preview-fit 的 scale() 裡塞進預覽框，量到的
       // 是縮放後的寬度，算出的高度就跟著縮。offsetWidth 是版面寬度，同樣是
       // border-box，不受任何 transform 影響。
       const width = el.offsetWidth
+      setCanvasWidth(width)
+      if (ratio === undefined) {
+        setCanvasHeight(undefined)
+        setPanelScale(1)
+        return
+      }
       if (width <= 0) {
+        setCanvasWidth(0)
         setCanvasHeight(undefined)
         setPanelScale(1)
         return
@@ -358,6 +363,9 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
     if (panel) ro.observe(panel)
     return () => ro.disconnect()
   }, [ratio, s.aspect, s.padding, constrainedMedia, settings, post])
+
+  const footerAvailableWidth = canvasWidth - s.padding * 2 - (constrainedMedia ? 36 : 60) - 2
+  const footerScale = footerFitScale(footerAvailableWidth, s.fontSize, s.show.stats)
 
   return (
     <div
@@ -565,11 +573,14 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
             display: 'flex',
             alignItems: 'baseline',
             justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            columnGap: '1.2em',
-            rowGap: '0.45em',
+            flexWrap: 'nowrap',
+            columnGap: '0.8em',
             marginTop: constrainedMedia ? 10 : 16,
             flex: '0 0 auto',
+            width: footerScale < 1 ? `${100 / footerScale}%` : '100%',
+            transform: footerScale < 1 ? `scale(${footerScale})` : undefined,
+            transformOrigin: 'left bottom',
+            boxSizing: 'border-box',
           }}
         >
           {s.show.stats && (
@@ -578,7 +589,7 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                flexWrap: 'wrap',
+                flexWrap: 'nowrap',
                 rowGap: '0.35em',
                 gap: '0.6em',
                 opacity: 0.55,

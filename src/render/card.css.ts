@@ -53,6 +53,16 @@ export function fitPanelScale(availableHeight: number, panelHeight: number): num
 }
 
 /**
+ * 小畫布仍要讓四組互動數與品牌留在同一列。這個估算包含四組圖示／短數字、
+ * 三個分隔點、列間距與品牌字樣；實際列寬不足時整列等比縮小，避免品牌掉到
+ * 第二行或把任一組數據裁掉。
+ */
+export function footerFitScale(availableWidth: number, baseFontSize: number, hasStats: boolean): number {
+  if (!hasStats || availableWidth <= 0 || baseFontSize <= 0) return 1
+  return Math.min(1, availableWidth / (baseFontSize * 22))
+}
+
+/**
  * IG 限動編輯器會在畫面上、下疊放返回／文字工具與說明文字控制列。9:16 的
  * 畫布本身仍是精確 1080×1920，只把內容安全區往內收；使用者若主動把留白拉得
  * 更大，仍尊重其設定。安全區使用畫布寬度的 15.625%，因此不論手機或桌面

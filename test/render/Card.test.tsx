@@ -92,6 +92,8 @@ describe('Card', () => {
     expect(footer.contains(stats)).toBe(true)
     expect(footer.contains(brand)).toBe(true)
     expect(footer.style.alignItems).toBe('baseline')
+    expect(footer.style.flexWrap).toBe('nowrap')
+    expect(stats.style.flexWrap).toBe('nowrap')
     expect(brand.style.marginLeft).toBe('auto')
     expect(brand.style.textAlign).toBe('right')
   })

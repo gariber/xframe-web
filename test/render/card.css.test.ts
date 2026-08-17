@@ -4,6 +4,7 @@ import {
   canvasPaddingYStyle,
   canvasSizeStyle,
   fitPanelScale,
+  footerFitScale,
   STORY_SAFE_PADDING_RATIO,
   ASPECT_VALUE,
 } from '../../src/render/card.css'
@@ -34,6 +35,18 @@ describe('fitPanelScale', () => {
   it('無效量測維持原尺寸', () => {
     expect(fitPanelScale(0, 400)).toBe(1)
     expect(fitPanelScale(400, 0)).toBe(1)
+  })
+})
+
+describe('footerFitScale', () => {
+  it('窄畫布等比縮小整列，讓互動數與品牌維持同列', () => {
+    expect(footerFitScale(240, 20, true)).toBeCloseTo(240 / 440)
+  })
+
+  it('空間足夠、未顯示統計或量測無效時不放大也不縮小', () => {
+    expect(footerFitScale(554, 20, true)).toBe(1)
+    expect(footerFitScale(240, 20, false)).toBe(1)
+    expect(footerFitScale(0, 20, true)).toBe(1)
   })
 })
 
