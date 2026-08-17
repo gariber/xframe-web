@@ -93,7 +93,7 @@ export function cardScale(size: number, compact: boolean) {
      * 比較窄（以 em 計）的卡片上就是會顯得大。改看「佔內容寬度的比例」才對得
      * 起來，1.1em 在並排比較時最接近 ThreadsFrame 的視覺重量。
      */
-    logo: pick(1.1, 0.9),
+    logo: pick(0.95, 0.8),
     /*
      * 標誌下方要留得比面板上緣的留白更多，標誌才會讀成「貼在卡片頂端的平台
      * 標記」而不是壓在作者列頭上的一個東西。上下留白接近相等時（先前是上 26／
