@@ -39,6 +39,14 @@ takes the numbers themselves from ThreadsFrame's `src/render.ts`.
 - Platform mark: `1.5 × size`, kept at opacity `0.9`. ThreadsFrame dims its logo
   to `0.5`, but the X mark is already a high-contrast solid glyph and dimming it
   reads as dirty rather than quiet. This is a deliberate divergence.
+- The gap below the mark is `2.0 × size` (40px at the default) against 27px of
+  panel padding above it. With near-equal space on both sides — it was 26 above
+  and 16 below — the mark reads as pushed down onto the author row rather than
+  sitting at the top of the card. There is no single derived value here: against
+  a reference card, normalising by logo height suggests ~72px and normalising by
+  panel width suggests ~33px, because that reference panel is far wider. 40px
+  sits between the two and held up best when the candidates were rendered and
+  compared directly.
 - Author row: kept on two lines, display name above `@handle`. ThreadsFrame
   collapsed to the handle alone because Threads shows only the handle by
   default; X shows both, and a card should look like the platform it came from.
@@ -116,7 +124,7 @@ opened — the existing on-screen instruction stays and nothing breaks.
 
 ## Verification
 
-- `npm test` — 386 passed / 386. Assertions that encoded superseded header and
+- `npm test` — 387 passed / 387. Assertions that encoded superseded header and
   brand values were rewritten to the current spec rather than deleted; new tests
   cover `cardScale()`, the `CARD_ALPHA` ordering, the rule that the logo and
   brand track the text size, the guarantee that a fitted metrics row never

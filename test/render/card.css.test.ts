@@ -16,7 +16,7 @@ describe('cardScale', () => {
   it('每一項都是基準字級的倍數，與 ThreadsFrame 的係數一致', () => {
     expect(cardScale(20, false)).toEqual({
       logo: 30,
-      logoGap: 16,
+      logoGap: 40,
       avatar: 52,
       avatarGap: 12,
       headGap: 22,
@@ -60,6 +60,12 @@ describe('cardScale', () => {
     const s = cardScale(20, false)
     // 它是整張卡片的收尾，貼著統計列會讀成統計列的一部分。
     expect(s.brandGap).toBeGreaterThan(s.ruleGap)
+  })
+
+  it('標誌下方的留白比其他區塊間距都大，標誌才不會壓在作者列上', () => {
+    const s = cardScale(20, false)
+    expect(s.logoGap).toBeGreaterThan(s.headGap)
+    expect(s.logoGap).toBeGreaterThan(s.gap)
   })
 })
 

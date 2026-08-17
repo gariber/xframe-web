@@ -88,7 +88,12 @@ export function cardScale(size: number, compact: boolean) {
   const pick = (normal: number, tight: number) => Math.round(size * (compact ? tight : normal))
   return {
     logo: pick(1.5, 1.2),
-    logoGap: pick(0.8, 0.5),
+    /*
+     * 標誌下方要留得比面板上緣的留白更多，標誌才會讀成「貼在卡片頂端的平台
+     * 標記」而不是壓在作者列頭上的一個東西。上下留白接近相等時（先前是上 26／
+     * 下 16）它會顯得被推下來，整個標頭跟著擠。
+     */
+    logoGap: pick(2.0, 1.2),
     /*
      * 作者列維持 X 的兩行排法：顯示名稱一行、@帳號一行。ThreadsFrame 收成單行
      * 只標帳號是跟著 Threads 的預設走，但 X 兩者都顯示，卡片照搬過去會不像 X。
