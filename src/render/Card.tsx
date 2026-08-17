@@ -30,7 +30,7 @@ function noBrowserTranslation(element: HTMLElement | null): void {
 
 export const DEFAULT_SETTINGS: CardSettings = {
   background: { kind: 'mesh', palette: 'sunset', seed: 1 },
-  padding: 72,
+  padding: 44,
   fontSize: 20,
   panelColor: '#1c1816',
   panelOpacity: 0.5,
@@ -501,7 +501,11 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
           WebkitBackdropFilter: 'blur(34px) saturate(1.22)',
           border: '1px solid rgba(255,255,255,.16)',
           borderRadius: 24,
-          padding: constrainedMedia ? '16px 18px' : '26px 30px',
+          /*
+           * 下緣比上緣薄一點。頁尾（尤其品牌那一行）本身已經是低對比小字，
+           * 底下再留一大塊等寬留白，整張卡看起來會像沒收尾。
+           */
+          padding: constrainedMedia ? '14px 16px 12px' : '22px 26px 16px',
           color: s.textColor,
           boxShadow: 'inset 0 0 0 1px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,.08), 0 28px 70px rgba(0,0,0,.34)',
           transform: panelScale < 1 ? `scale(${panelScale})` : undefined,

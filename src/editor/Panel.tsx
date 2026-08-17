@@ -261,6 +261,18 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
           </select>
         </label>
         {/*
+          固定比例會把圖片裁成圖框的比例，捨棄哪一部分要由使用者決定——照片主體
+          常在上半部，預設偏上只是個好猜測，不是答案。auto 高度不裁切，這根滑桿
+          在那裡動了也不會有變化，所以只在固定比例且真的有圖時出現。
+        */}
+        {settings.aspect !== 'auto' && status.phase === 'ready'
+          && status.tweet.media.some((m) => m.dataUrl) && (
+          <label>圖片位置 {settings.mediaFocusY}%
+            <input type="range" min={0} max={100} value={settings.mediaFocusY}
+              onInput={(e) => patch({ mediaFocusY: +e.currentTarget.value })} />
+          </label>
+        )}
+        {/*
           「顯示項目」裡也有一個叫「時間」的核取方塊（控制顯不顯示）。兩個
           控制項同名會讓人找不到，所以這裡明確叫「時間格式」。
         */}

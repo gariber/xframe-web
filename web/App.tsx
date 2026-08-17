@@ -19,8 +19,8 @@ import {
 const STORAGE_KEY = 'xframe.web.settings'
 
 /** 網頁版預設精確 9:16 直式，適合限時動態；放不下時完整面板會等比縮小。
- *  留白改小：72 是桌面尺寸，在 390px 手機上會把內容寬度壓到剩約 166px。 */
-const WEB_DEFAULTS: CardSettings = { ...DEFAULT_SETTINGS, aspect: '9:16', padding: 28 }
+ *  留白比桌面小：手機畫布本來就窄，留白一大就把內容寬度整個吃掉。 */
+const WEB_DEFAULTS: CardSettings = { ...DEFAULT_SETTINGS, aspect: '9:16', padding: 18 }
 
 const ERROR_TEXT: Record<string, string> = {
   'not-found': '這則推文已不存在',
