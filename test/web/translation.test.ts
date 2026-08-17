@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { Post } from '../../src/types'
 import {
-  applyTranslationSnapshot,
-  buildSafariTranslationPlan,
+  applyPastedTranslation,
+  buildTranslationPlan,
   detectTextLanguage,
-  observeSafariTranslation,
-  readTranslationSnapshot,
-} from '../../web/safari-translation'
+  toTranslatedFrom,
+} from '../../web/translation'
+import { translatedLabel } from '../../src/render/translated'
 
 function makePost(rawText: string, quotedText?: string): Post {
   const base = {
@@ -68,67 +68,87 @@ describe('detectTextLanguage', () => {
   })
 })
 
-describe('buildSafariTranslationPlan', () => {
-  it('主文中文、引用英文時只開放引用文字給 Safari', () => {
-    const plan = buildSafariTranslationPlan(makePost('這是一則中文推文。', 'This quote is in English.'))
+describe('buildTranslationPlan', () => {
+  it('主文中文、引用英文時仍提供貼上框，來源語言取第一個外文欄位', () => {
+    const plan = buildTranslationPlan(makePost('這是一則中文推文。', 'English quoted text here.'))
     expect(plan.main.kind).toBe('chinese')
     expect(plan.quoted?.kind).toBe('foreign')
     expect(plan.hasForeignText).toBe(true)
+    expect(plan.from).toBe('en')
   })
 
-  it('主文英文、引用中文時只開放主文', () => {
-    const plan = buildSafariTranslationPlan(makePost('This post is in English.', '這是中文引用。'))
-    expect(plan.main.kind).toBe('foreign')
-    expect(plan.quoted?.kind).toBe('chinese')
+  it('主文日文時來源語言判定為日文', () => {
+    const plan = buildTranslationPlan(makePost('充電中です。満タンになるまで動きません。'))
+    expect(plan.from).toBe('ja')
+  })
+
+  it('整則都是中文時不提供貼上框', () => {
+    expect(buildTranslationPlan(makePost('這是一則中文推文。')).hasForeignText).toBe(false)
   })
 })
 
-describe('Safari 可見譯文快照', () => {
-  it('只讀主文與引用正文，不混入作者或統計', () => {
-    const canvas = document.createElement('div')
-    canvas.innerHTML = `
-      <div class="author">Do not include me</div>
-      <div data-part="body">主文譯文</div>
-      <div data-part="quote-body">引用譯文</div>
-      <div data-part="stats">999</div>
-    `
-    expect(readTranslationSnapshot(canvas)).toEqual({ main: '主文譯文', quoted: '引用譯文' })
+describe('toTranslatedFrom', () => {
+  it('偵測不出語言時落回英文，卡片不會標成「翻譯自未知語言」', () => {
+    expect(toTranslatedFrom('und')).toBe('en')
+    expect(toTranslatedFrom('ja')).toBe('ja')
   })
+})
 
+describe('translatedLabel', () => {
+  it('比照 X 的說法', () => {
+    expect(translatedLabel('ja')).toBe('翻譯自日文')
+    expect(translatedLabel('en')).toBe('翻譯自英文')
+  })
+})
+
+describe('applyPastedTranslation', () => {
   it('只更新外文欄位，rawText 與 tokenize 後的 segments 同步', () => {
     const original = makePost('Read @openai at https://example.com', '這是中文引用。')
-    const plan = buildSafariTranslationPlan(original)
-    const next = applyTranslationSnapshot(original, plan, {
-      main: '請閱讀 @openai 的內容：https://example.com',
-      quoted: '不應採用的中文改寫',
-    })!
+    const plan = buildTranslationPlan(original)
+    const next = applyPastedTranslation(
+      original,
+      plan,
+      { main: '請閱讀 @openai 的內容：https://example.com', quoted: '不應採用的中文改寫' },
+      'en',
+    )!
 
     expect(next.rawText).toBe('請閱讀 @openai 的內容：https://example.com')
     expect(next.text.map((part) => part.value).join('')).toBe(next.rawText)
     expect(next.text.some((part) => part.type === 'mention')).toBe(true)
     expect(next.text.some((part) => part.type === 'link')).toBe(true)
+    // 引用是中文，不在翻譯範圍內，貼什麼都不採用
     expect(next.quoted?.rawText).toBe('這是中文引用。')
     expect(next.author).toBe(original.author)
   })
 
-  it('Safari 尚未翻譯時不製造一份假譯文', () => {
-    const original = makePost('This is still English.')
-    const plan = buildSafariTranslationPlan(original)
-    expect(applyTranslationSnapshot(original, plan, { main: original.rawText, quoted: null })).toBeNull()
+  it('記下來源語言，卡片才畫得出「翻譯自◯文」', () => {
+    const original = makePost('充電中です。満タンになるまで動きません。')
+    const next = applyPastedTranslation(
+      original,
+      buildTranslationPlan(original),
+      { main: '充電中。充飽之前不會動。', quoted: '' },
+      'ja',
+    )!
+    expect(next.translatedFrom).toBe('ja')
+    expect(translatedLabel(next.translatedFrom!)).toBe('翻譯自日文')
   })
 
-  it('正文真的變動才通知，停止 observer 後不再通知', async () => {
-    const canvas = document.createElement('div')
-    canvas.innerHTML = '<div data-part="body">English text</div>'
-    let calls = 0
-    const stop = observeSafariTranslation(canvas, () => { calls += 1 })
-    canvas.querySelector('[data-part="body"]')!.textContent = '繁體中文譯文'
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(calls).toBe(1)
+  it('貼上框留空時不套用，也不把卡片標成譯文', () => {
+    const original = makePost('This is still English.')
+    const plan = buildTranslationPlan(original)
+    expect(applyPastedTranslation(original, plan, { main: '', quoted: '' }, 'en')).toBeNull()
+  })
 
-    stop()
-    canvas.querySelector('[data-part="body"]')!.textContent = '另一份譯文'
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(calls).toBe(1)
+  it('把原文原封不動貼回來時不算譯文——標示不能說謊', () => {
+    const original = makePost('This is still English.')
+    const plan = buildTranslationPlan(original)
+    expect(
+      applyPastedTranslation(original, plan, { main: original.rawText, quoted: '' }, 'en'),
+    ).toBeNull()
+  })
+
+  it('原文未被取代時不會殘留 translatedFrom', () => {
+    const original = makePost('This is still English.')
+    expect(original.translatedFrom).toBeUndefined()
   })
 })

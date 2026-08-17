@@ -58,6 +58,15 @@ export type Platform = 'x'
  */
 export type PostSource = 'fetch' | 'dom' | 'manual'
 
+/**
+ * 譯文的來源語言，用來在卡片上標示「翻譯自◯文」。
+ *
+ * 只有這四個值：卡片標示是給人看的一句話，不是語言資料庫。粒度對齊
+ * `detectTextLanguage()` 實際分得出來的四類，多列一堆分不出來的語言只會讓
+ * 手動覆蓋的下拉變長而不會更準。
+ */
+export type TranslatedFrom = 'ja' | 'ko' | 'en' | 'zh'
+
 export type Post = {
   id: string
   url: string
@@ -82,6 +91,14 @@ export type Post = {
    * 這個旗標 —— 正好對上「主推文完整、引用推文截斷」這個 X 實際會出現的組合。
    */
   textComplete: boolean
+  /**
+   * 內文已被譯文取代時，記錄**原文**的語言；未取代時是 undefined。
+   *
+   * 放在 Post 而不是 CardSettings，因為它描述的是「這段文字是什麼」，不是
+   * 「使用者想怎麼顯示」——還原原文時整個 Post 換回去，這個標示自然跟著消失，
+   * 不會殘留成一個要另外清掉的顯示開關。
+   */
+  translatedFrom?: TranslatedFrom
 }
 
 export type BgKind = 'mesh' | 'aurora' | 'wave' | 'split' | 'grid'

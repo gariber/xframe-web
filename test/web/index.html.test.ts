@@ -19,12 +19,16 @@ describe('web/index.html 的 theme-color', () => {
   })
 })
 
-describe('Safari 翻譯的頁面邊界', () => {
-  it('一般頁面固定正體中文且不翻，只有專用分頁才在載入前切換成英文翻譯來源', () => {
+describe('頁面的翻譯邊界', () => {
+  it('整頁固定正體中文且不交給瀏覽器翻譯', () => {
     expect(html).toContain('<html lang="zh-Hant">')
     expect(html).toContain('<div id="app" lang="zh-Hant" translate="no"></div>')
-    expect(html).toContain("has('safari-translate')")
-    expect(html).toContain("document.documentElement.lang = 'en'")
-    expect(html).toContain("app.setAttribute('translate', 'yes')")
+  })
+
+  it('不再有 Safari 專用分頁的載入前腳本', () => {
+    // 譯文改由使用者從 X 貼上，頁面不再需要為了讓 Safari 提供翻譯選項而
+    // 在載入前把自己的語言謊報成英文。
+    expect(html).not.toContain('safari-translate')
+    expect(html).not.toContain("documentElement.lang = 'en'")
   })
 })

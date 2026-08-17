@@ -57,8 +57,11 @@ button:disabled { opacity: .45; }
 .result-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; margin-top: .75rem; }
 .result-actions > :only-child { grid-column: 1 / -1; }
 .result-actions button { width: 100%; }
+/* 不設 z-index。這一塊曾經是 z-index: 6，比 .preview 的 5 高一級，於是捲動時
+   它蓋在黏在頂端的卡片預覽「上面」，而不是從底下經過——調卡片樣式時整張卡被
+   這個面板遮掉一大塊。.preview 自己的註解就寫著內容應該從它底下穿過，那個
+   z-index 直接違反了它。position: relative 也一併拿掉，沒有東西需要它定位。 */
 .translation-guide {
-  position: relative; z-index: 6;
   margin: 0 0 1rem; padding: 1rem; border: 1px solid var(--line);
   border-radius: 14px; background: var(--card);
 }
@@ -75,14 +78,19 @@ button:disabled { opacity: .45; }
 .translation-source-part + .translation-source-part { padding-top: .65rem; border-top: 1px solid var(--line); }
 .translation-source-part [data-part] { margin-top: .2rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 .translation-kicker { color: var(--ink-faint); font-size: .72rem; letter-spacing: .04em; }
-.translation-read { width: 100%; margin-top: .65rem; }
-.translation-guide button, .translation-guide textarea { scroll-margin-top: calc(52vh + 1rem); }
+.translation-guide button, .translation-guide textarea, .translation-guide select { scroll-margin-top: calc(52vh + 1rem); }
 .translation-editors { display: grid; gap: .65rem; margin-top: .8rem; }
 .translation-editors label { display: grid; gap: .3rem; color: var(--ink-soft); font-size: .8rem; }
 .translation-editors textarea {
   width: 100%; min-height: 7rem; resize: vertical; padding: .75rem .8rem;
   border: 1px solid var(--line); border-radius: 10px; background: var(--ground); color: var(--ink);
   font: inherit; line-height: 1.55;
+}
+/* 語言下拉和譯文框視覺上同一組控制項，樣式跟著對齊 */
+.translation-editors select {
+  width: 100%; padding: .7rem .8rem; font: inherit;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--ground); color: var(--ink); min-height: 44px;
 }
 .translation-guide .translation-apply { width: 100%; margin-top: .8rem; }
 .translation-note { margin: .65rem 0 0; color: var(--ink-faint); font-size: .78rem; line-height: 1.55; }
@@ -93,20 +101,6 @@ button:disabled { opacity: .45; }
 .translation-actions button[aria-pressed="true"] { background: var(--accent); color: var(--ground); border-color: var(--accent); }
 .translation-guide .translation-restore { background: transparent; color: var(--ink-soft); }
 .translation-feedback { margin: .65rem 0 0; color: var(--ink-soft); font-size: .8rem; }
-.translation-bridge {
-  width: min(44rem, 100%); min-height: 100vh; margin: 0 auto; padding: clamp(2rem, 7vw, 5rem) 1rem;
-}
-.translation-bridge-brand { margin: 0 0 1.5rem; color: var(--ink-faint); font-size: .76rem; font-weight: 300; letter-spacing: .035em; }
-.translation-bridge h1 { margin: 0 0 .65rem; font-size: clamp(1.6rem, 4vw, 2.3rem); line-height: 1.2; }
-.translation-bridge > p:not(.translation-bridge-brand) { color: var(--ink-soft); }
-.translation-bridge-source {
-  display: grid; gap: 1rem; margin: 1.5rem 0 1rem; padding: clamp(1rem, 4vw, 1.5rem);
-  border: 1px solid var(--line); border-radius: 14px; background: var(--card);
-}
-.translation-bridge-source section + section { padding-top: 1rem; border-top: 1px solid var(--line); }
-.translation-bridge-source section > span { color: var(--ink-faint); font-size: .72rem; letter-spacing: .04em; text-transform: uppercase; }
-.translation-bridge-source [data-part] { margin-top: .35rem; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 1.05rem; line-height: 1.7; }
-.translation-bridge > button { width: 100%; }
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;

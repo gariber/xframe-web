@@ -15,14 +15,6 @@
   </head>
   <body>
     <div id="app" lang="zh-Hant" translate="no"></div>
-    <script>
-      if (new URLSearchParams(location.search).has('safari-translate')) {
-        document.documentElement.lang = 'en'
-        const app = document.getElementById('app')
-        app.lang = 'en'
-        app.setAttribute('translate', 'yes')
-      }
-    </script>
     <script type="module" src="./main.tsx"></script>
   </body>
 </html>

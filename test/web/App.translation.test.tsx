@@ -55,8 +55,8 @@ afterEach(() => {
   history.replaceState(null, '', '/')
 })
 
-describe('Safari 可編輯翻譯面板', () => {
-  it('正式卡片與主頁來源都不交給 Safari 直接翻譯，譯文仍可編輯', async () => {
+describe('貼上 X 譯文的面板', () => {
+  it('卡片與原文區塊都不交給瀏覽器翻譯，貼上框是空的', async () => {
     await loadEnglishPost()
 
     const cardBody = host.querySelector('.preview [data-part="body"]') as HTMLElement
@@ -64,95 +64,84 @@ describe('Safari 可編輯翻譯面板', () => {
     expect(cardBody.getAttribute('translate')).toBe('no')
     expect(sourceBody.closest('.translation-source')?.getAttribute('translate')).toBe('no')
     expect(sourceBody.lang).toBe('en')
-    expect(host.querySelector('#translation-main')).not.toBeNull()
+    // 貼上框預設空白：預填原文的話使用者得先刪掉才能貼
+    expect((host.querySelector('#translation-main') as HTMLTextAreaElement).value).toBe('')
   })
 
-  it('編輯草稿不會即時改卡片，按套用後才替換，並可還原原文', async () => {
+  it('打字不會即時改卡片，按套用後才替換，並可還原原文', async () => {
     await loadEnglishPost()
     const cardBody = () => host.querySelector('.preview [data-part="body"]') as HTMLElement
     const original = cardBody().textContent
     const textarea = host.querySelector('#translation-main') as HTMLTextAreaElement
 
-    textarea.value = '這是使用者編輯過的繁體中文譯文。'
+    textarea.value = '這是貼上的譯文。'
     await act(async () => { textarea.dispatchEvent(new Event('input', { bubbles: true })) })
     await flush()
     expect(cardBody().textContent).toBe(original)
 
-    button('套用到卡片').click()
+    await act(async () => { button('套用到卡片').click() })
     await flush()
-    expect(cardBody().textContent).toBe('這是使用者編輯過的繁體中文譯文。')
-    expect(host.textContent).toContain('譯文已套用到卡片。')
+    expect(cardBody().textContent).toBe('這是貼上的譯文。')
 
-    button('還原原文').click()
+    await act(async () => { button('還原原文').click() })
     await flush()
     expect(cardBody().textContent).toBe(original)
-    expect((host.querySelector('#translation-main') as HTMLTextAreaElement).value).toBe(original)
+    expect((host.querySelector('#translation-main') as HTMLTextAreaElement).value).toBe('')
   })
 
-  it('Safari 專用分頁送回譯文後，先進入編輯框而不直接改卡片', async () => {
+  it('套用後卡片標出「翻譯自◯文」，還原後標示消失', async () => {
     await loadEnglishPost()
-    const cardBody = host.querySelector('.preview [data-part="body"]') as HTMLElement
-    const original = cardBody.textContent
-    button('開啟 Safari 翻譯分頁').click()
+    const marker = () => host.querySelector('.preview [data-part="translated-from"]')
+    expect(marker()).toBeNull()
+
+    const textarea = host.querySelector('#translation-main') as HTMLTextAreaElement
+    textarea.value = '這是貼上的譯文。'
+    await act(async () => { textarea.dispatchEvent(new Event('input', { bubbles: true })) })
+    await act(async () => { button('套用到卡片').click() })
     await flush()
 
-    const openedUrl = vi.mocked(window.open).mock.calls[0]?.[0] as URL
-    const token = openedUrl.searchParams.get('safari-translate')!
-    const key = `xframe.web.safari-translation.result.${token}`
-    const result = JSON.stringify({ main: 'Safari 產生的繁體中文譯文。', quoted: null })
-    localStorage.setItem(key, result)
+    expect(marker()?.textContent).toBe('翻譯自英文')
 
-    window.dispatchEvent(new StorageEvent('storage', { key, newValue: result }))
+    await act(async () => { button('還原原文').click() })
     await flush()
-
-    expect((host.querySelector('#translation-main') as HTMLTextAreaElement).value)
-      .toBe('Safari 產生的繁體中文譯文。')
-    expect(cardBody.textContent).toBe(original)
-    expect(host.textContent).toContain('可以先修改，再套用到卡片')
+    expect(marker()).toBeNull()
   })
 
-  it('開啟專用分頁時只傳外文原文與分段，不直接改卡片', async () => {
+  it('來源語言可手動覆蓋——偵測分不出全漢字日文與中文', async () => {
     await loadEnglishPost()
-    const original = (host.querySelector('.preview [data-part="body"]') as HTMLElement).textContent
+    const select = host.querySelector('#translation-from') as HTMLSelectElement
+    expect(select.value).toBe('en')
 
-    button('開啟 Safari 翻譯分頁').click()
+    select.value = 'ja'
+    await act(async () => { select.dispatchEvent(new Event('change', { bubbles: true })) })
+
+    const textarea = host.querySelector('#translation-main') as HTMLTextAreaElement
+    textarea.value = '這是貼上的譯文。'
+    await act(async () => { textarea.dispatchEvent(new Event('input', { bubbles: true })) })
+    await act(async () => { button('套用到卡片').click() })
     await flush()
 
-    const openedUrl = vi.mocked(window.open).mock.calls[0]?.[0] as URL
-    expect(openedUrl.searchParams.get('safari-translate')).toBeTruthy()
-    const token = openedUrl.searchParams.get('safari-translate')!
-    const payload = JSON.parse(localStorage.getItem(`xframe.web.safari-translation.request.${token}`)!)
-    expect(payload.main.original).toBe(original)
-    expect((host.querySelector('.preview [data-part="body"]') as HTMLElement).textContent).toBe(original)
+    expect(host.querySelector('.preview [data-part="translated-from"]')?.textContent)
+      .toBe('翻譯自日文')
   })
 
-  it('譯文送回後自動關閉專用分頁，使用者不必自己找回原本的分頁', async () => {
-    const token = 'bridge-test-token'
-    localStorage.setItem(`xframe.web.safari-translation.request.${token}`, JSON.stringify({
-      main: {
-        original: 'Hello world',
-        lang: 'en',
-        segments: [{ type: 'text', value: 'Hello world' }],
-      },
-    }))
-    history.replaceState(null, '', `/?safari-translate=${token}`)
-    const close = vi.spyOn(window, 'close').mockImplementation(() => undefined)
+  it('貼上框留空時給提示，不會把卡片標成譯文', async () => {
+    await loadEnglishPost()
+    const cardBody = () => host.querySelector('.preview [data-part="body"]') as HTMLElement
+    const original = cardBody().textContent
 
-    render(null, host)
-    await act(async () => { render(<App />, host) })
+    await act(async () => { button('套用到卡片').click() })
     await flush()
 
-    // 模擬 Safari 就地改寫頁面上的可見文字，這正是專用分頁在等的那個事件。
-    const body = host.querySelector('[data-part="body"]') as HTMLElement
-    await act(async () => { body.textContent = '你好，世界。' })
-    await flush()
+    expect(cardBody().textContent).toBe(original)
+    expect(host.querySelector('.preview [data-part="translated-from"]')).toBeNull()
+    expect(host.textContent).toContain('貼上框是空的')
+  })
 
-    await act(async () => { button('Send translation back to XFrame').click() })
-    await flush()
-
-    expect(localStorage.getItem(`xframe.web.safari-translation.result.${token}`))
-      .toContain('你好，世界。')
-    // 主分頁監聽 storage 事件，譯文已經到位，這個分頁沒有理由再佔著使用者的注意力。
-    expect(close).toHaveBeenCalled()
+  it('不再有 Safari 專用分頁的入口', async () => {
+    await loadEnglishPost()
+    const labels = [...host.querySelectorAll('button')].map((b) => b.textContent?.trim())
+    expect(labels).not.toContain('開啟 Safari 翻譯分頁')
+    expect(vi.mocked(window.open)).not.toHaveBeenCalled()
   })
 })

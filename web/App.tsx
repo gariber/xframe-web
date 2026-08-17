@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
-import type { CardSettings, Post, Segment } from '../src/types'
+import type { CardSettings, Post, Segment, TranslatedFrom } from '../src/types'
 import { Card, DEFAULT_SETTINGS } from '../src/render/Card'
 import { PRESETS, generate, randomPreset } from '../src/render/backgrounds'
 import { exportPng, buildFilename, downloadBlob, EXPORT_WIDTH } from '../src/render/export'
@@ -9,18 +9,14 @@ import { fetchTweetHtml, hydrateAssets } from './fetch'
 import { Sheet } from './Sheet'
 import { canShareImageFile, createPngFile, shareImageFile } from './share'
 import {
-  applyTranslationSnapshot,
-  buildSafariTranslationPlan,
-  observeSafariTranslation,
-  readTranslationSnapshot,
-  translationSignature,
-  type SafariTranslationPlan,
-  type TranslationSnapshot,
-} from './safari-translation'
+  applyPastedTranslation,
+  buildTranslationPlan,
+  TRANSLATED_FROM_LABEL,
+  TRANSLATED_FROM_OPTIONS,
+  type TranslationDraft,
+} from './translation'
 
 const STORAGE_KEY = 'xframe.web.settings'
-const SAFARI_BRIDGE_REQUEST = 'xframe.web.safari-translation.request.'
-const SAFARI_BRIDGE_RESULT = 'xframe.web.safari-translation.result.'
 
 /** 網頁版預設精確 9:16 直式，適合限時動態；放不下時完整面板會等比縮小。
  *  留白改小：72 是桌面尺寸，在 390px 手機上會把內容寬度壓到剩約 166px。 */
@@ -43,37 +39,25 @@ type Status =
   | { phase: 'ready'; tweet: Post }
   | { phase: 'error'; message: string }
 
-type SafariVersion = {
+type TranslatedVersion = {
   original: Post
   translated: Post
   view: 'original' | 'translated'
 }
 
-type TranslationDraft = {
-  main: string
-  quoted: string
-}
-
-type TranslationBridgePart = {
-  original: string
-  segments: Segment[]
-  lang: string
-}
-
-type TranslationBridgePayload = {
-  main?: TranslationBridgePart
-  quoted?: TranslationBridgePart
-}
-
 const TEXT_CHANGED_DURING_EXPORT = '卡片文字剛更新，請再存一次。'
 
+/*
+ * 原文區塊仍然標成 translate="no"。譯文現在由使用者從 X 貼進來，不再經過瀏覽器
+ * 翻譯，但使用者自己對整頁下翻譯指令時，不該讓瀏覽器去動我們拿來當比對基準的
+ * 原文——那會讓「貼上的內容和原文一不一樣」這個判斷失去意義。
+ */
 function browserTranslation(value: 'yes' | 'no') {
   return (element: HTMLElement | null): void => {
     if (element) element.setAttribute('translate', value)
   }
 }
 
-const enableBrowserTranslation = browserTranslation('yes')
 const disableBrowserTranslation = browserTranslation('no')
 
 function TranslationSourceText({ segments }: { segments: Segment[] }) {
@@ -88,88 +72,30 @@ function TranslationSourceText({ segments }: { segments: Segment[] }) {
   )
 }
 
-function initialTranslationDraft(post: Post, plan: SafariTranslationPlan): TranslationDraft {
-  return {
-    main: plan.main.kind === 'foreign' ? post.rawText : '',
-    quoted: plan.quoted?.kind === 'foreign' ? post.quoted?.rawText ?? '' : '',
-  }
+/*
+ * 貼上框一開始是空的，不預先填入原文。
+ *
+ * 這是個「把 X 翻好的字貼進來」的框：預填原文的話使用者得先全選刪掉才能貼，
+ * 而且畫面上會同時出現兩份一模一樣的原文（上面的來源區塊已經有一份），看起來
+ * 像是哪裡出錯了。空框配 placeholder 才讀得出它在等什麼。
+ */
+function emptyTranslationDraft(): TranslationDraft {
+  return { main: '', quoted: '' }
 }
 
-function SafariTranslationBridge({ token }: { token: string }) {
-  const [payload] = useState<TranslationBridgePayload | null>(() => {
-    try {
-      const raw = localStorage.getItem(SAFARI_BRIDGE_REQUEST + token)
-      return raw ? JSON.parse(raw) as TranslationBridgePayload : null
-    } catch {
-      return null
-    }
-  })
-  const sourceRef = useRef<HTMLDivElement>(null)
-  const [snapshot, setSnapshot] = useState<TranslationSnapshot>({ main: null, quoted: null })
-  const [feedback, setFeedback] = useState<string | null>(null)
-
-  useEffect(() => {
-    document.title = 'XFrame · Safari Translation'
-    const source = sourceRef.current
-    if (!source) return
-    setSnapshot(readTranslationSnapshot(source))
-    return observeSafariTranslation(source, setSnapshot)
-  }, [payload])
-
-  if (!payload) {
-    return <main class="translation-bridge"><h1>Translation source expired</h1><p>Return to XFrame and open this page again.</p></main>
-  }
-
-  const changed =
-    Boolean(payload.main && snapshot.main?.trim() && snapshot.main.trim() !== payload.main.original.trim()) ||
-    Boolean(payload.quoted && snapshot.quoted?.trim() && snapshot.quoted.trim() !== payload.quoted.original.trim())
-
-  function sendBack() {
-    if (!changed) {
-      setFeedback('Translate this page with Safari first, then try again.')
-      return
-    }
-    localStorage.setItem(SAFARI_BRIDGE_RESULT + token, JSON.stringify(snapshot))
-    setFeedback('Translation sent back. Return to the XFrame tab to review and edit it.')
-    /*
-     * 這個分頁是 XFrame 自己用 window.open 開的，所以關得掉。關掉之後瀏覽器會
-     * 直接把使用者帶回原本那個分頁，省掉「翻完還得自己找回去」那一步——主分頁
-     * 監聽 storage 事件，譯文在它那邊已經到位了。
-     *
-     * 關不掉時（例如使用者是自己貼網址開的，不是被 window.open 開的）呼叫會被
-     * 瀏覽器忽略，上面那句提示仍然留著，流程不會斷。
-     */
-    window.close()
-  }
-
-  return (
-    <main class="translation-bridge">
-      <p class="translation-bridge-brand">XFrame · gariber.studio</p>
-      <h1>Translate with Safari</h1>
-      <p>Use Safari’s Translate menu to translate this page into Traditional Chinese. Then send the result back to XFrame.</p>
-      <div class="translation-bridge-source" ref={sourceRef}>
-        {payload.main && (
-          <section>
-            <span>Main post</span>
-            <div data-part="body" ref={enableBrowserTranslation} lang={payload.main.lang} dir="auto">
-              <TranslationSourceText segments={payload.main.segments} />
-            </div>
-          </section>
-        )}
-        {payload.quoted && (
-          <section>
-            <span>Quoted post</span>
-            <div data-part="quote-body" ref={enableBrowserTranslation} lang={payload.quoted.lang} dir="auto">
-              <TranslationSourceText segments={payload.quoted.segments} />
-            </div>
-          </section>
-        )}
-      </div>
-      <button class="primary" type="button" onClick={sendBack}>Send translation back to XFrame</button>
-      {feedback && <p role="status" aria-live="polite">{feedback}</p>}
-    </main>
-  )
+/**
+ * 卡片上可見文字的指紋，用來在匯出前後比對內容有沒有被換掉。
+ *
+ * 譯文流程改成貼上之後，卡片文字只會因為我們自己的狀態改變而變（那由
+ * translationRevisionRef 顧），但使用者仍可能自己對整頁下瀏覽器翻譯指令——
+ * 卡片雖然標了 translate="no"，這個保險還是留著：預覽是一種文字、分享出去
+ * 卻是另一種，是最不該發生的結果。
+ */
+function cardTextSignature(root: ParentNode): string {
+  const read = (selector: string) => root.querySelector(selector)?.textContent ?? ''
+  return JSON.stringify([read('[data-part="body"]'), read('[data-part="quote-body"]')])
 }
+
 
 /**
  * 已移除的比例（16:9）仍可能存在舊使用者的儲存資料裡。直接套用會得到一個不在
@@ -217,9 +143,12 @@ function XFrameApp() {
   // 桌面下載需要原始 blob；只留 objectURL 是拿不回 blob 的
   const [pngBlob, setPngBlob] = useState<Blob | null>(null)
   const [exportErr, setExportErr] = useState<string | null>(null)
-  const [safariVersion, setSafariVersion] = useState<SafariVersion | null>(null)
+  const [translatedVersion, setTranslatedVersion] = useState<TranslatedVersion | null>(null)
   const [translationDraft, setTranslationDraft] = useState<TranslationDraft | null>(null)
   const [translationFeedback, setTranslationFeedback] = useState<string | null>(null)
+  /* 卡片標示用的來源語言。偵測結果只是預設值——全漢字日文無法可靠地和中文
+     區分（見 detectTextLanguage 的註解），所以留一個下拉讓使用者改。 */
+  const [translatedFrom, setTranslatedFrom] = useState<TranslatedFrom>('en')
   const cardRef = useRef<HTMLDivElement>(null)
   const fitRef = useRef<HTMLDivElement>(null)
   // 卡片縮到預覽框內的比例。整張看得到才叫「即時看到效果」——
@@ -233,18 +162,17 @@ function XFrameApp() {
   // ref 永遠是「目前真正存活的那個 URL」，撤銷才不會漏掉或撤錯。
   const pngUrlRef = useRef<string | null>(null)
   const requestRef = useRef(0)
-  const bridgeTokenRef = useRef<string | null>(null)
   const translationRevisionRef = useRef(0)
 
   // status 永遠保留抓回來的原文；顯示版本另外管理，才可以在原文與譯文之間切換，
-  // 也不會因調整背景或字級而把 Safari 譯文沖掉。
+  // 也不會因調整背景或字級而把貼上的譯文沖掉。
   const displayedTweet = status.phase === 'ready'
-    ? safariVersion?.view === 'translated'
-      ? safariVersion.translated
-      : safariVersion?.original ?? status.tweet
+    ? translatedVersion?.view === 'translated'
+      ? translatedVersion.translated
+      : translatedVersion?.original ?? status.tweet
     : null
   const translationPlan = useMemo(
-    () => status.phase === 'ready' ? buildSafariTranslationPlan(status.tweet) : null,
+    () => status.phase === 'ready' ? buildTranslationPlan(status.tweet) : null,
     [status],
   )
   // createObjectURL 產生的 URL 不會自動回收，整個分頁生命週期都會佔住記憶體，
@@ -256,8 +184,8 @@ function XFrameApp() {
     setPngBlob(null)
   }
 
-  const resetSafariState = () => {
-    setSafariVersion(null)
+  const resetTranslationState = () => {
+    setTranslatedVersion(null)
     setTranslationDraft(null)
     setTranslationFeedback(null)
     translationRevisionRef.current += 1
@@ -270,51 +198,8 @@ function XFrameApp() {
       setTranslationDraft(null)
       return
     }
-    setTranslationDraft(initialTranslationDraft(status.tweet, translationPlan))
-  }, [status, translationPlan])
-
-  function acceptSafariSnapshot(snapshot: TranslationSnapshot, announce: boolean): boolean {
-    if (status.phase !== 'ready' || !translationPlan) return false
-    const translated = applyTranslationSnapshot(status.tweet, translationPlan, snapshot)
-    if (!translated) {
-      if (announce) setTranslationFeedback('尚未讀到譯文。請先用 Safari 翻譯頁面，或直接在下方編輯。')
-      return false
-    }
-    setTranslationDraft({
-      main: translationPlan.main.kind === 'foreign' ? translated.rawText : '',
-      quoted: translationPlan.quoted?.kind === 'foreign' ? translated.quoted?.rawText ?? '' : '',
-    })
-    setTranslationFeedback('已讀取 Safari 譯文；你可以先修改，再套用到卡片。')
-    return true
-  }
-
-  useEffect(() => {
-    function consumeSavedTranslation() {
-      const token = bridgeTokenRef.current
-      if (!token) return
-      const saved = localStorage.getItem(SAFARI_BRIDGE_RESULT + token)
-      if (!saved) return
-      try {
-        const snapshot = JSON.parse(saved) as TranslationSnapshot
-        acceptSafariSnapshot(snapshot, true)
-        localStorage.removeItem(SAFARI_BRIDGE_REQUEST + token)
-        localStorage.removeItem(SAFARI_BRIDGE_RESULT + token)
-      } catch {
-        setTranslationFeedback('無法讀取 Safari 譯文，請直接貼到下方編輯框。')
-      }
-    }
-
-    function receiveTranslation(event: StorageEvent) {
-      const token = bridgeTokenRef.current
-      if (!token || event.key !== SAFARI_BRIDGE_RESULT + token || !event.newValue) return
-      consumeSavedTranslation()
-    }
-    window.addEventListener('storage', receiveTranslation)
-    window.addEventListener('focus', consumeSavedTranslation)
-    return () => {
-      window.removeEventListener('storage', receiveTranslation)
-      window.removeEventListener('focus', consumeSavedTranslation)
-    }
+    setTranslationDraft(emptyTranslationDraft())
+    setTranslatedFrom(translationPlan.from)
   }, [status, translationPlan])
 
   // 支援 ?u= 帶入，讓捷徑或書籤可以直接開啟並自動抓取
@@ -336,7 +221,7 @@ function XFrameApp() {
     const request = ++requestRef.current
     setStatus({ phase: 'loading' })
     releasePng()
-    resetSafariState()
+    resetTranslationState()
     try {
       const tweet = await loadTweet(target.trim())
       if (request === requestRef.current) setStatus({ phase: 'ready', tweet })
@@ -356,54 +241,31 @@ function XFrameApp() {
     }
   }
 
-  function openSafariTranslation() {
-    if (status.phase !== 'ready' || !translationPlan) return
-    const token = `${Date.now()}-${Math.random().toString(36).slice(2)}`
-    const payload: TranslationBridgePayload = {
-      ...(translationPlan.main.kind === 'foreign'
-        ? { main: { original: status.tweet.rawText, segments: status.tweet.text, lang: translationPlan.main.tag } }
-        : {}),
-      ...(translationPlan.quoted?.kind === 'foreign' && status.tweet.quoted
-        ? { quoted: { original: status.tweet.quoted.rawText, segments: status.tweet.quoted.text, lang: translationPlan.quoted.tag } }
-        : {}),
-    }
-    try {
-      localStorage.setItem(SAFARI_BRIDGE_REQUEST + token, JSON.stringify(payload))
-      bridgeTokenRef.current = token
-      const bridgeUrl = new URL(location.href)
-      bridgeUrl.search = ''
-      bridgeUrl.hash = ''
-      bridgeUrl.searchParams.set('safari-translate', token)
-      if (!window.open(bridgeUrl, '_blank')) throw new Error('popup-blocked')
-      setTranslationFeedback('已開啟 Safari 翻譯分頁；翻譯後把結果送回 XFrame。')
-    } catch {
-      setTranslationFeedback('無法開啟翻譯分頁；請允許彈出視窗，或直接在下方編輯。')
-    }
-  }
-
   function applyDraftTranslation() {
     if (status.phase !== 'ready' || !translationPlan || !translationDraft) return
-    const translated = applyTranslationSnapshot(status.tweet, translationPlan, {
-      main: translationPlan.main.kind === 'foreign' ? translationDraft.main : null,
-      quoted: translationPlan.quoted?.kind === 'foreign' ? translationDraft.quoted : null,
-    })
+    const translated = applyPastedTranslation(
+      status.tweet,
+      translationPlan,
+      translationDraft,
+      translatedFrom,
+    )
 
     if (!translated) {
-      setTranslationFeedback('譯文仍和原文相同；請先翻譯或編輯，再套用到卡片。')
+      setTranslationFeedback('貼上框是空的，或內容和原文相同。請貼上 X 翻好的譯文。')
       return
     }
 
     releasePng()
     translationRevisionRef.current += 1
-    setSafariVersion({ original: status.tweet, translated, view: 'translated' })
+    setTranslatedVersion({ original: status.tweet, translated, view: 'translated' })
     setTranslationFeedback('譯文已套用到卡片。')
   }
 
-  function showSafariVersion(view: SafariVersion['view']) {
-    if (!safariVersion || safariVersion.view === view) return
+  function showTranslatedVersion(view: TranslatedVersion['view']) {
+    if (!translatedVersion || translatedVersion.view === view) return
     releasePng()
     translationRevisionRef.current += 1
-    setSafariVersion({ ...safariVersion, view })
+    setTranslatedVersion({ ...translatedVersion, view })
     setTranslationFeedback(null)
   }
 
@@ -411,9 +273,10 @@ function XFrameApp() {
     if (status.phase !== 'ready' || !translationPlan) return
     releasePng()
     translationRevisionRef.current += 1
-    setSafariVersion(null)
-    setTranslationDraft(initialTranslationDraft(status.tweet, translationPlan))
-    setTranslationFeedback('已還原原文；翻譯草稿也已重設。')
+    setTranslatedVersion(null)
+    setTranslationDraft(emptyTranslationDraft())
+    setTranslatedFrom(translationPlan.from)
+    setTranslationFeedback('已還原原文；貼上框也已清空。')
   }
 
   // 量測卡片實際高度，算出塞進預覽框所需的縮放比例。
@@ -444,7 +307,7 @@ function XFrameApp() {
     const node = cardRef.current?.querySelector('[data-part="canvas"]') as HTMLElement | null
     if (!node || status.phase !== 'ready' || !displayedTweet) return
     const revision = translationRevisionRef.current
-    const signature = translationSignature(node)
+    const signature = cardTextSignature(node)
     setBusy(true)
     setExportErr(null)
     try {
@@ -453,7 +316,7 @@ function XFrameApp() {
       // 寧可丟棄並請使用者重按，也不能讓預覽是譯文、分享出去卻仍是原文。
       if (
         revision !== translationRevisionRef.current ||
-        signature !== translationSignature(node)
+        signature !== cardTextSignature(node)
       ) {
         setExportErr(TEXT_CHANGED_DURING_EXPORT)
         return
@@ -511,7 +374,7 @@ function XFrameApp() {
             setUrl(e.currentTarget.value)
             setStatus({ phase: 'idle' })
             releasePng()
-            resetSafariState()
+            resetTranslationState()
             setExportErr(null)
           }}
           onKeyDown={(e) => { if (e.key === 'Enter') void go() }}
@@ -539,23 +402,23 @@ function XFrameApp() {
       </div>
 
       {status.phase === 'ready' && translationPlan?.hasForeignText && translationDraft && (
-        <section class="translation-guide" aria-labelledby="safari-translation-title">
+        <section class="translation-guide" aria-labelledby="translation-title">
           <div class="translation-heading">
             <div>
-              <strong id="safari-translation-title">翻譯</strong>
-              <span>Safari 輔助 · 可編輯後再套用</span>
+              <strong id="translation-title">翻譯</strong>
+              <span>貼上 X 翻好的譯文</span>
             </div>
-            {safariVersion && <span class="translation-state">已套用</span>}
+            {translatedVersion && <span class="translation-state">已套用</span>}
           </div>
 
           <p class="translation-instructions">
-            在 Safari 開啟專用翻譯分頁，選「翻譯成繁體中文」，再把結果送回。非 Safari 也可以直接貼上或編輯。
+            在 X 上點推文的「翻譯貼文」，把翻好的文字複製後貼到下面，再套用到卡片。
           </p>
 
-          <div class="translation-source" ref={disableBrowserTranslation} aria-label="Safari 待翻譯來源">
+          <div class="translation-source" ref={disableBrowserTranslation} aria-label="原文">
             {translationPlan.main.kind === 'foreign' && (
               <div class="translation-source-part">
-                <span class="translation-kicker">主文來源</span>
+                <span class="translation-kicker">主文原文</span>
                 <div data-part="body" lang={translationPlan.main.tag} dir="auto">
                   <TranslationSourceText segments={status.tweet.text} />
                 </div>
@@ -563,17 +426,13 @@ function XFrameApp() {
             )}
             {translationPlan.quoted?.kind === 'foreign' && status.tweet.quoted && (
               <div class="translation-source-part">
-                <span class="translation-kicker">引用來源</span>
+                <span class="translation-kicker">引用原文</span>
                 <div data-part="quote-body" lang={translationPlan.quoted.tag} dir="auto">
                   <TranslationSourceText segments={status.tweet.quoted.text} />
                 </div>
               </div>
             )}
           </div>
-
-          <button class="translation-read" type="button" disabled={busy} onClick={openSafariTranslation}>
-            開啟 Safari 翻譯分頁
-          </button>
 
           <div class="translation-editors">
             {translationPlan.main.kind === 'foreign' && (
@@ -582,6 +441,7 @@ function XFrameApp() {
                 <textarea
                   id="translation-main"
                   dir="auto"
+                  placeholder="貼上 X 翻好的譯文"
                   value={translationDraft.main}
                   onInput={(event) => {
                     setTranslationDraft({ ...translationDraft, main: event.currentTarget.value })
@@ -596,6 +456,7 @@ function XFrameApp() {
                 <textarea
                   id="translation-quoted"
                   dir="auto"
+                  placeholder="貼上 X 翻好的譯文"
                   value={translationDraft.quoted}
                   onInput={(event) => {
                     setTranslationDraft({ ...translationDraft, quoted: event.currentTarget.value })
@@ -604,6 +465,26 @@ function XFrameApp() {
                 />
               </label>
             )}
+            {/*
+              卡片標示要說「翻譯自◯文」，語言由原文自動判定。判定會錯——全漢字
+              日文和中文分不出來——所以給一個下拉讓使用者改，而不是把錯的標示
+              硬印在卡片上。
+            */}
+            <label for="translation-from">
+              翻譯自
+              <select
+                id="translation-from"
+                value={translatedFrom}
+                onChange={(event) => {
+                  setTranslatedFrom(event.currentTarget.value as TranslatedFrom)
+                  setTranslationFeedback(null)
+                }}
+              >
+                {TRANSLATED_FROM_OPTIONS.map((tag) => (
+                  <option key={tag} value={tag}>{TRANSLATED_FROM_LABEL[tag]}</option>
+                ))}
+              </select>
+            </label>
           </div>
 
           <button class="primary translation-apply" type="button" disabled={busy} onClick={applyDraftTranslation}>
@@ -611,12 +492,12 @@ function XFrameApp() {
           </button>
 
           <div class="translation-actions">
-            {safariVersion && (
+            {translatedVersion && (
               <>
-                <button type="button" aria-pressed={safariVersion.view === 'translated'}
-                  onClick={() => showSafariVersion('translated')}>顯示譯文</button>
-                <button type="button" aria-pressed={safariVersion.view === 'original'}
-                  onClick={() => showSafariVersion('original')}>顯示原文</button>
+                <button type="button" aria-pressed={translatedVersion.view === 'translated'}
+                  onClick={() => showTranslatedVersion('translated')}>顯示譯文</button>
+                <button type="button" aria-pressed={translatedVersion.view === 'original'}
+                  onClick={() => showTranslatedVersion('original')}>顯示原文</button>
               </>
             )}
             <button class="translation-restore" type="button" onClick={restoreOriginal}>還原原文</button>
@@ -624,10 +505,8 @@ function XFrameApp() {
 
           {translationFeedback && <p class="translation-feedback" role="status" aria-live="polite">{translationFeedback}</p>}
           <p class="translation-note">
-            XFrame 不使用翻譯 API；專用分頁只在同一個 XFrame 網址暫存原文與譯文，
-            卡片也只在你按下「套用到卡片」後才會被譯文取代。
-            Apple 表示 Safari 網頁翻譯會把網頁文字傳送給 Apple。
-            {' '}<a href="https://www.apple.com/tw/legal/privacy/data/zh-tw/safari/" target="_blank" rel="noreferrer">了解隱私說明</a>
+            譯文由你自己貼上，XFrame 不使用翻譯 API，也不會把原文或譯文送到任何伺服器——
+            全部只留在這個瀏覽器分頁裡。卡片也只在你按下「套用到卡片」後才會被譯文取代。
           </p>
         </section>
       )}
@@ -733,6 +612,5 @@ function XFrameApp() {
 }
 
 export function App() {
-  const bridgeToken = new URLSearchParams(location.search).get('safari-translate')
-  return bridgeToken ? <SafariTranslationBridge token={bridgeToken} /> : <XFrameApp />
+  return <XFrameApp />
 }
