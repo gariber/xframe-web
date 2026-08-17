@@ -1,10 +1,11 @@
 import { render } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
-import type { Post, CardSettings } from '../src/types'
+import type { Post, CardSettings, TranslatedFrom } from '../src/types'
 import { Card, DEFAULT_SETTINGS } from '../src/render/Card'
 import { PRESETS, generate, randomPreset } from '../src/render/backgrounds'
 import { exportPng, buildFilename, downloadBlob } from '../src/render/export'
 import { loadFixture, FIXTURES } from './fixture'
+import { TRANSLATED_FROM_LABEL, TRANSLATED_FROM_OPTIONS } from '../src/render/translated'
 
 type Name = keyof typeof FIXTURES
 
@@ -12,6 +13,9 @@ function App() {
   const [name, setName] = useState<Name>('plain')
   const [tweet, setTweet] = useState<Post | null>(null)
   const [settings, setSettings] = useState<CardSettings>(DEFAULT_SETTINGS)
+  /* 譯文標示只有在使用者貼上譯文後才會出現，開發頁沒有那條流程。這個開關直接
+     在 Post 上蓋一個 translatedFrom，讓卡片上那一行看得到、調得動。 */
+  const [translatedFrom, setTranslatedFrom] = useState<TranslatedFrom | ''>('')
 
   useEffect(() => {
     setTweet(null)
@@ -34,7 +38,9 @@ function App() {
             <button key={n} type="button" aria-pressed={n === name} onClick={() => setName(n)}>{n}</button>
           ))}
         </div>
-        {tweet ? <Card post={tweet} settings={settings} /> : <p style="text-align:center">載入中…</p>}
+        {tweet
+          ? <Card post={translatedFrom ? { ...tweet, translatedFrom } : tweet} settings={settings} />
+          : <p style="text-align:center">載入中…</p>}
       </div>
       <div class="xf-panel" style="padding:16px;background:#faf7f2;overflow:auto">
         <button type="button" onClick={doExport} style="width:100%;padding:12px;margin-bottom:16px">下載 PNG</button>
@@ -58,6 +64,15 @@ function App() {
             <option value="4:5">4:5</option>
             <option value="16:9">16:9</option>
             <option value="9:16">9:16</option>
+          </select>
+        </label>
+        <label>譯文標示
+          <select value={translatedFrom}
+            onChange={(e) => setTranslatedFrom(e.currentTarget.value as TranslatedFrom | '')}>
+            <option value="">無</option>
+            {TRANSLATED_FROM_OPTIONS.map((tag) => (
+              <option key={tag} value={tag}>{`翻譯自${TRANSLATED_FROM_LABEL[tag]}`}</option>
+            ))}
           </select>
         </label>
         <label>時間格式

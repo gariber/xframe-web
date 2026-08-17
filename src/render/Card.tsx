@@ -16,7 +16,7 @@ import {
   STAT_ICON_EM,
 } from './card.css'
 import { METRIC_META } from './metrics'
-import { translatedLabel } from './translated'
+import { translatedLabel, GROK_LOGO_PATH, GROK_LOGO_VIEWBOX } from './translated'
 
 /**
  * Preact 會把 translate prop 寫進 boolean DOM property；即使 JSX 傳入字串
@@ -174,34 +174,23 @@ function Avatar({ author, size }: { author: Post['author']; size: number }) {
 }
 
 /**
- * 譯文標示的圖示：一個地球儀。
+ * 譯文標示的圖示：Grok 標誌。
  *
- * 刻意不用任何翻譯服務的商標。X 站上那個標記是 Grok 的，但 Grok 的圖示沒有
- * 可靠的授權來源（專案用的 simple-icons 沒有收），憑印象描一個近似的商標既
- * 不會準、也不該做。地球儀是「語言」的通用符號，用基本圖形畫得出來，沒有
- * 歸屬問題。
+ * X 站上的譯文標記用的就是這個，卡片跟著用，讀者才認得出是同一件事。路徑由
+ * 專案擁有者提供（見 translated.ts）——simple-icons 沒有收 Grok，而憑印象描一個
+ * 近似的商標既不會準也不該做。
  */
-function GlobeMark({ size }: { size: number }) {
+function GrokMark({ size }: { size: number }) {
   return (
     <svg
       data-part="translated-mark"
       aria-hidden="true"
-      viewBox="0 0 24 24"
+      viewBox={GROK_LOGO_VIEWBOX}
       width={size}
       height={size}
-      style={{
-        display: 'block',
-        fill: 'none',
-        stroke: 'currentColor',
-        strokeWidth: 1.8,
-        strokeLinecap: 'round',
-        flex: '0 0 auto',
-      }}
+      style={{ display: 'block', fill: 'currentColor', flex: '0 0 auto' }}
     >
-      <circle cx="12" cy="12" r="9" />
-      <path d="M3 12h18" />
-      {/* 經線：一個縱向的橢圓，兩段弧接起來 */}
-      <path d="M12 3a4.5 9 0 0 1 0 18a4.5 9 0 0 1 0-18" />
+      <path d={GROK_LOGO_PATH} />
     </svg>
   )
 }
@@ -567,7 +556,7 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
               flex: '0 0 auto',
             }}
           >
-            <GlobeMark size={Math.round(scale.time * 1.05)} />
+            <GrokMark size={Math.round(scale.time * 0.95)} />
             <span>{translatedLabel(post.translatedFrom)}</span>
           </div>
         )}
