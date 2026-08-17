@@ -1,5 +1,5 @@
 import type { Post } from '../src/types'
-import { TweetFetchError } from '../src/background/fetch-tweet'
+import { SSR_LANGUAGE, TweetFetchError } from '../src/background/fetch-tweet'
 import { upgradeAvatarUrl, upgradeMediaUrl } from '../src/background/asset-proxy'
 
 /**
@@ -34,7 +34,15 @@ export async function fetchTweetHtml(url: string): Promise<string> {
   }
   let res: Response
   try {
-    res = await fetch(url, { credentials: 'omit' })
+    // Accept-Language 與擴充功能版同理且同等重要：X 的未登入 SSR 會連 `<title>`
+    // 樣板與操作列 aria-label 一起在地化，而新版頁面的內文與互動數只剩這兩個
+    // 錨點。不固定語系的話，瀏覽器語言不是 en/zh 的使用者會整個解析不到 ——
+    // 網頁版還沒有 DOM 降級路徑，結果是直接報「無法讀取這則推文」。
+    // 這個值維持在 CORS-safelist 允許的字元內，不會觸發 preflight。
+    res = await fetch(url, {
+      credentials: 'omit',
+      headers: { 'Accept-Language': SSR_LANGUAGE },
+    })
   } catch (e) {
     // TypeError: Failed to fetch 是瀏覽器的通用網路失敗症狀 —— 跨來源被擋、
     // 離線、DNS 失敗都長這樣，光看例外分不出來。離線是唯一能可靠判斷的，

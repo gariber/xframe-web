@@ -24,6 +24,16 @@ describe('fetchTweetHtml', () => {
     expect(seen?.credentials).toBe('omit')
   })
 
+  // X 的未登入 SSR 會依 Accept-Language 在地化 `<title>` 樣板與操作列 aria-label，
+  // 而新版頁面的內文與互動數只剩這兩個錨點。不固定語系，非 en/zh 的使用者就整個
+  // 解析不到。
+  it('固定送英文 Accept-Language —— 否則非英文瀏覽器拿到在地化的 title 與 aria-label', async () => {
+    let seen: RequestInit | undefined
+    stubFetch(async (_i, init) => { seen = init; return new Response('x', { status: 200 }) })
+    await fetchTweetHtml(URL_)
+    expect(new Headers(seen?.headers).get('Accept-Language')).toBe('en-US,en;q=0.9')
+  })
+
   it.each([
     [404, 'not-found'],
     [429, 'rate-limited'],

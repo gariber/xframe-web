@@ -286,6 +286,75 @@ describe('parseTweet 2026-08 可見 SSR fallback', () => {
       { kind: 'likes', value: null },
     ])
   })
+
+  // 回覆推文的 title 內文帶著被回覆對象的帳號，可見正文不帶。這個差異曾讓每一則
+  // 回覆都解析失敗、無聲退化成 DOM 路徑（作者被遮蔽、圖片與互動數全空）。
+  it('回覆推文：title 多出開頭的 @提及時仍解析成功，且內文與 X 一致不含該提及', () => {
+    const t = parseTweet(
+      visibleOnlyHtml({ titleText: `@someone ${VISIBLE_ONLY_TEXT}` }),
+      VISIBLE_ONLY_ID,
+    )!
+
+    expect(t).not.toBeNull()
+    expect(t.rawText).toBe(VISIBLE_ONLY_TEXT)
+  })
+
+  it('回覆推文：連續多個 @提及也剝得乾淨', () => {
+    const t = parseTweet(
+      visibleOnlyHtml({ titleText: `@a_one @b_two @c_three ${VISIBLE_ONLY_TEXT}` }),
+      VISIBLE_ONLY_ID,
+    )!
+
+    expect(t.rawText).toBe(VISIBLE_ONLY_TEXT)
+  })
+
+  // 剝除只是「對不上時」的第二順位。內文本身就以 @ 開頭的非回覆推文，第一輪的
+  // 完全相等就會命中，開頭不該被吃掉。
+  it('內文真的以 @提及開頭時不剝除（先比完全相等，後比剝除版）', () => {
+    const withMention = `@someone ${VISIBLE_ONLY_TEXT}`
+    const t = parseTweet(
+      visibleOnlyHtml({ titleText: withMention, visibleText: withMention }),
+      VISIBLE_ONLY_ID,
+    )!
+
+    expect(t.rawText).toBe(withMention)
+  })
+
+  it('剝掉 @提及後仍對不上時維持 fail closed', () => {
+    expect(parseTweet(
+      visibleOnlyHtml({ titleText: '@someone 完全不同的文字' }),
+      VISIBLE_ONLY_ID,
+    )).toBeNull()
+  })
+})
+
+// 這兩份是 2026-08 從 x.com 實抓的新版未登入 SSR，不是合成的。合成 HTML 只驗證
+// 我們以為的形狀，真實頁面才驗證 X 實際給的形狀 —— 上一次退化正是因為所有
+// fixture 都還是舊格式，測試全綠卻沒人發現公開抓取早就整條壞了。
+describe('parseTweet 真實新版 SSR 頁面', () => {
+  it('一般推文：作者、內文、互動數與圖片都解析得到，不需要降級', () => {
+    const t = parseTweet(fx('visible-ssr-media'), '2088868860346937579')!
+
+    expect(t).not.toBeNull()
+    expect(t.source).toBe('fetch')
+    expect(t.author.handle).toBe('basarafire')
+    expect(t.author.avatarUrl).toContain('pbs.twimg.com/profile_images/')
+    expect(t.rawText).toContain('お盆休み最終日。')
+    expect(t.media).toHaveLength(1)
+    expect(t.media[0].url).toContain('pbs.twimg.com/media/')
+    // 全部四項都要有值 —— 降級路徑的特徵就是這四項全是 null
+    for (const m of t.metrics) expect(m.value).not.toBeNull()
+  })
+
+  it('回覆推文：不再退化，內文不含被回覆對象的帳號', () => {
+    const t = parseTweet(fx('visible-ssr-reply'), '2089153024648425811')!
+
+    expect(t).not.toBeNull()
+    expect(t.source).toBe('fetch')
+    expect(t.author.handle).toBe('uki_neko')
+    expect(t.rawText).toBe('そのふくよかなぽんぽんに、顔を埋めたいです🤣🤣🤣😘😘😽')
+    expect(t.rawText.startsWith('@')).toBe(false)
+  })
 })
 
 describe('parseTweet 文字分段', () => {

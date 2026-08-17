@@ -67,6 +67,21 @@ export function stripTrailingLink(s: string): string {
   return s.replace(/\s*https:\/\/t\.co\/\w+\s*$/, '')
 }
 
+/**
+ * 去掉開頭連續的 @提及。
+ *
+ * 回覆推文的 `<title>` 內文帶著被回覆對象的帳號（`@basarafire これが良い`），但
+ * article 裡實際顯示的內文不帶 —— X 自己把它另外呈現成「回覆給 @xxx」，不算在
+ * 內文裡。兩邊因此永遠不相等，嚴格比對會讓每一則回覆都解析失敗。
+ *
+ * 只吃開頭、且只吃合法帳號字元（X 的帳號是 1–15 個 [A-Za-z0-9_]），所以內文中間
+ * 的提及與作者本人打出的 @ 字樣都不受影響。呼叫端一律先試原字串再試這個版本，
+ * 真的以 @ 開頭的非回覆內文會在第一輪就命中，不會被誤剝。
+ */
+export function stripLeadingMentions(s: string): string {
+  return s.replace(/^(?:@[A-Za-z0-9_]{1,15}[ 　]+)+/, '')
+}
+
 /** `<title>` 的固定格式：`{顯示名稱} on X: "{完整內文}" / X` */
 const TITLE_SUFFIX = '" / X'
 
@@ -100,8 +115,12 @@ export function fullTextFromTitle(
 ): { text: string; fromTitle: boolean } {
   const candidate = bodyFromTitle(title, authorName)
   if (candidate === null) return { text: metaText, fromTitle: false }
-  return candidate.startsWith(metaText)
-    ? { text: candidate, fromTitle: true }
+  if (candidate.startsWith(metaText)) return { text: candidate, fromTitle: true }
+  // 回覆推文的 title 比可信來源多了開頭的 @提及。剝掉之後仍是延長關係的話，
+  // title 一樣是完整內文的可信來源 —— 少了這一步，長回覆會被誤標成「可能不完整」。
+  const stripped = stripLeadingMentions(candidate)
+  return stripped !== candidate && stripped.startsWith(metaText)
+    ? { text: stripped, fromTitle: true }
     : { text: metaText, fromTitle: false }
 }
 
@@ -384,7 +403,13 @@ function parseVisibleArticle(
       return normalizeVisibleText(copy.textContent ?? '')
     })
     .filter((text) => text !== '')
-  if (!visibleMatches.includes(normalizedTitle)) return null
+  // 先要求完全相等；對不上時才允許「title 多了開頭的 @提及」這一種已知差異
+  // （回覆推文）。順序不能反 —— 先剝的話，內文真的以 @ 開頭的非回覆推文會被
+  // 剝掉開頭。兩種都對不上就維持 fail closed。
+  const rawText = visibleMatches.includes(normalizedTitle)
+    ? normalizedTitle
+    : visibleMatches.find((text) => text === stripLeadingMentions(normalizedTitle))
+  if (rawText === undefined) return null
 
   return {
     id: expectedId,
@@ -392,7 +417,7 @@ function parseVisibleArticle(
     platform: 'x',
     author,
     source: 'fetch',
-    rawText: normalizedTitle,
+    rawText,
     createdAt: metaOf(article, 'dateCreated') ?? metaOf(article, 'datePublished') ?? '',
     metrics: parseVisibleMetrics(article),
   }

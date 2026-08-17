@@ -23,3 +23,43 @@ describe('fixtures', () => {
     expect(html).toContain('pbs.twimg.com/media/')
   })
 })
+
+/**
+ * 上面那批 fixture 全是舊版格式（itemprop="author"/"text"/"interactionStatistic"）。
+ * X 在 2026-08 把公開頁面換成新版 SSR 之後，那些欄位都不見了，但所有測試依然全綠
+ * —— 公開抓取整條壞掉、無聲退化成 DOM 路徑，卻沒有任何一個測試察覺。
+ *
+ * 這組 fixture 存在的意義就是不讓同樣的事再發生一次：它們必須維持新版的形狀，
+ * 也就是「沒有 itemprop=text，只能靠 permalink + 可見作者連結 + title + 可見正文
+ * 交叉驗證」。
+ */
+const VISIBLE_SSR = ['visible-ssr-media', 'visible-ssr-reply']
+
+describe('新版 SSR fixtures（2026-08 實抓）', () => {
+  it.each(VISIBLE_SSR)('%s 是新版形狀：有 article 但沒有結構化 text/author', (name) => {
+    const path = `test/fixtures/${name}.html`
+    expect(existsSync(path)).toBe(true)
+    const html = readFileSync(path, 'utf8')
+
+    expect(html).toContain('itemType="https://schema.org/SocialMediaPosting"')
+    expect(html).toContain('data-tweet-id')
+    // 這三個正是新版拿掉的東西。哪天又出現了，代表 X 改回來了，該回頭確認
+    // parseVisibleArticle 這條 fallback 是不是還有必要。
+    expect(html).not.toMatch(/itemProp="text"/i)
+    expect(html).not.toMatch(/itemProp="author"/i)
+    expect(html).not.toMatch(/itemProp="interactionStatistic"/i)
+  })
+
+  it('抓取時固定送英文，所以 fixture 必須是英文版的 title 與 aria-label', () => {
+    for (const name of VISIBLE_SSR) {
+      const html = readFileSync(`test/fixtures/${name}.html`, 'utf8')
+      expect(html).toContain(' on X: &quot;')
+      expect(html).toContain('aria-label="Reply"')
+    }
+  })
+
+  it('reply fixture 的 title 帶著被回覆對象的帳號，可見正文不帶（這正是退化成因）', () => {
+    const html = readFileSync('test/fixtures/visible-ssr-reply.html', 'utf8')
+    expect(html).toMatch(/<title>[^<]*on X: &quot;@basarafire /)
+  })
+})
