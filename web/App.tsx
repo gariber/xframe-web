@@ -6,7 +6,7 @@ import { exportPng, buildFilename, downloadBlob, EXPORT_WIDTH } from '../src/ren
 import { ASPECT_VALUE } from '../src/render/card.css'
 import { parseTweet, extractTweetId } from '../src/parse/microdata'
 import { fetchTweetHtml, hydrateAssets } from './fetch'
-import { Sheet } from './Sheet'
+import { Sheet } from '../src/ui/Sheet'
 import { canShareImageFile, createPngFile, shareImageFile } from './share'
 import {
   applyPastedTranslation,

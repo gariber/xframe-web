@@ -1,14 +1,10 @@
-:root {
-  --ink: #16130f; --ink-soft: #7a736a; --ink-faint: #918980; --line: #e2ddd4;
-  --ground: #f3efe8; --card: #fff; --accent: #16130f;
-}
-@media (prefers-color-scheme: dark) {
-  :root { --ink: #f2ece6; --ink-soft: #a89b91; --ink-faint: #958a82; --line: #362b24; --ground: #17120f; --card: #211a16; --accent: #f2ece6; }
-}
-* { box-sizing: border-box; }
+/* 顏色、圓角、觸控尺寸與共用控制項都在共用的設計語彙裡，擴充功能面板 import
+   同一份。這裡只留網頁版自己的版面。 */
+@import '../src/ui/theme.css';
+
 body {
   margin: 0; background: var(--ground); color: var(--ink);
-  font: 15px/1.6 -apple-system, BlinkMacSystemFont, "PingFang TC", system-ui, sans-serif;
+  font: var(--font);
   -webkit-font-smoothing: antialiased;
   /* iOS 主畫面模式下避開瀏海與底部指示條 */
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
@@ -26,7 +22,7 @@ h1 { font-size: 1.1rem; margin: 0 0 1rem; }
   /* 貼齊安全區，瀏海機型不會被切到 */
   top: env(safe-area-inset-top, 0px);
   z-index: 5;
-  border-radius: 14px; margin-bottom: 1rem; background: var(--ground);
+  border-radius: var(--radius-lg); margin-bottom: 1rem; background: var(--ground);
   max-height: 52vh; overflow: hidden; overscroll-behavior: contain;
   /* 下緣做一點陰影，讓捲動的設定內容從它底下經過時看得出層次 */
   box-shadow: 0 8px 16px -12px rgba(0,0,0,.5);
@@ -34,25 +30,12 @@ h1 { font-size: 1.1rem; margin: 0 0 1rem; }
 /* 縮放包裝層：整張卡片縮到預覽框裡，而不是把下半部裁掉。
    transform-origin 靠上置中，縮放時卡片不會往上飄離視野。 */
 .preview-fit { transform-origin: top center; }
-.msg { padding: 3rem 1rem; text-align: center; color: var(--ink-soft); }
 .msg button { margin-top: .75rem; }
 .urlbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem; min-width: 0; margin-bottom: .75rem; }
-.urlbar input {
-  flex: 1; min-width: 0; font: inherit; padding: .7rem .8rem;
-  border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink);
-}
-button {
-  font: inherit; padding: .7rem 1rem; border-radius: 10px; border: 1px solid var(--line);
-  min-height: 44px; background: var(--card); color: var(--ink); cursor: pointer; touch-action: manipulation;
-}
-button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
-  outline: 2px solid var(--ink); outline-offset: 2px;
-}
-button.primary { background: var(--accent); color: var(--ground); border-color: var(--accent); font-weight: 600; }
-button:disabled { opacity: .45; }
+.urlbar input { flex: 1; min-width: 0; }
 .export-btn { width: 100%; margin-bottom: 1rem; }
 .result { margin-bottom: 1rem; }
-.result img { width: 100%; display: block; border-radius: 12px; }
+.result img { width: 100%; display: block; border-radius: var(--radius); }
 .result p { font-size: .85rem; color: var(--ink-soft); margin: .5rem 0 0; }
 .result-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; margin-top: .75rem; }
 .result-actions > :only-child { grid-column: 1 / -1; }
@@ -63,7 +46,7 @@ button:disabled { opacity: .45; }
    z-index 直接違反了它。position: relative 也一併拿掉，沒有東西需要它定位。 */
 .translation-guide {
   margin: 0 0 1rem; padding: 1rem; border: 1px solid var(--line);
-  border-radius: 14px; background: var(--card);
+  border-radius: var(--radius-lg); background: var(--card);
 }
 .translation-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
 .translation-heading strong { display: block; font-size: 1rem; line-height: 1.3; }
@@ -72,7 +55,7 @@ button:disabled { opacity: .45; }
 .translation-instructions { margin: .75rem 0; color: var(--ink-soft); font-size: .84rem; line-height: 1.55; }
 .translation-source {
   display: grid; gap: .65rem; padding: .8rem; border: 1px solid var(--line);
-  border-radius: 10px; background: color-mix(in srgb, var(--ground) 72%, var(--card));
+  border-radius: var(--radius-sm); background: color-mix(in srgb, var(--ground) 72%, var(--card));
 }
 .translation-source-part { min-width: 0; }
 .translation-source-part + .translation-source-part { padding-top: .65rem; border-top: 1px solid var(--line); }
@@ -81,17 +64,9 @@ button:disabled { opacity: .45; }
 .translation-guide button, .translation-guide textarea, .translation-guide select { scroll-margin-top: calc(52vh + 1rem); }
 .translation-editors { display: grid; gap: .65rem; margin-top: .8rem; }
 .translation-editors label { display: grid; gap: .3rem; color: var(--ink-soft); font-size: .8rem; }
-.translation-editors textarea {
-  width: 100%; min-height: 7rem; resize: vertical; padding: .75rem .8rem;
-  border: 1px solid var(--line); border-radius: 10px; background: var(--ground); color: var(--ink);
-  font: inherit; line-height: 1.55;
-}
+.translation-editors textarea { min-height: 7rem; padding: .75rem .8rem; background: var(--ground); }
 /* 語言下拉和譯文框視覺上同一組控制項，樣式跟著對齊 */
-.translation-editors select {
-  width: 100%; padding: .7rem .8rem; font: inherit;
-  border: 1px solid var(--line); border-radius: 10px;
-  background: var(--ground); color: var(--ink); min-height: 44px;
-}
+.translation-editors select { background: var(--ground); }
 .translation-guide .translation-apply { width: 100%; margin-top: .8rem; }
 .translation-note { margin: .65rem 0 0; color: var(--ink-faint); font-size: .78rem; line-height: 1.55; }
 .translation-note a { color: inherit; text-underline-offset: .18em; }
@@ -101,28 +76,3 @@ button:disabled { opacity: .45; }
 .translation-actions button[aria-pressed="true"] { background: var(--accent); color: var(--ground); border-color: var(--accent); }
 .translation-guide .translation-restore { background: transparent; color: var(--ink-soft); }
 .translation-feedback { margin: .65rem 0 0; color: var(--ink-soft); font-size: .8rem; }
-.sr-only {
-  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
-}
-.sheet { border: 1px solid var(--line); border-radius: 12px; background: var(--card); margin-bottom: .6rem; }
-.sheet-head { padding: .8rem 1rem; font-weight: 600; cursor: pointer; list-style: none; }
-.sheet-head::-webkit-details-marker { display: none; }
-.sheet-head::after { content: '＋'; float: right; color: var(--ink-soft); }
-.sheet[open] .sheet-head::after { content: '−'; }
-.sheet-body { padding: 0 1rem 1rem; }
-.sheet-body label { display: flex; align-items: center; gap: .6rem; margin-bottom: .7rem; font-size: .9rem; }
-.sheet-body input[type="range"] { flex: 1; min-width: 0; }
-/* 40 張色票在手機上改橫向捲動，否則佔滿整個畫面 */
-/* fieldset 的 min-width 預設是 min-content —— 40 張色票的最小寬度會把它撐開，
-   再把整個頁面推寬，讓 .swatches 的 overflow-x 完全沒機會生效。這是 fieldset
-   特有的怪癖，一般 div 不會這樣。 */
-fieldset { min-width: 0; }
-.swatches { display: flex; gap: .4rem; max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; padding-bottom: .4rem; -webkit-overflow-scrolling: touch; }
-.swatches button { flex: 0 0 auto; width: 44px; height: 58px; border-radius: 8px; padding: 0; }
-.swatches button[aria-pressed="true"] { outline: 2px solid var(--ink); outline-offset: 1px; }
-.err { color: #b3341c; font-size: .9rem; }
-
-.hint-inline { margin-left: auto; font-size: .8rem; color: var(--ink-faint);
-  font-variant-numeric: tabular-nums; white-space: nowrap; }
-.hint { margin: -.2rem 0 .8rem; font-size: .78rem; line-height: 1.5; color: var(--ink-faint); }

@@ -79,7 +79,7 @@ function mountReady() {
 
 /**
  * happy-dom 沒有版面引擎，offsetWidth/offsetHeight 恆為 0，沒辦法靠真實幾何
- * 分辨「量到的是 loading 佔位符（.xf-msg）還是 Card 的畫布（[data-part=canvas]）」。
+ * 分辨「量到的是 loading 佔位符（.msg）還是 Card 的畫布（[data-part=canvas]）」。
  * 改成依元素身分覆寫這兩個 getter：loading 佔位符給一個正常尺寸（不會觸發
  * 提示），Card 畫布給一個會撞上 MAX_EXPORT_PIXELS 的尺寸（會觸發提示）。這樣
  * 不管程式碼在哪個時間點讀到哪個節點，測到的就是「讀到了誰」，而不是「讀到
@@ -94,7 +94,7 @@ function mockOffsetsByElementIdentity() {
   Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
     configurable: true,
     get(this: HTMLElement) {
-      if (this.classList?.contains('xf-msg')) return 1080
+      if (this.classList?.contains('msg')) return 1080
       if (this.dataset?.part === 'canvas') return CANVAS_WIDTH
       return 0
     },
@@ -102,7 +102,7 @@ function mockOffsetsByElementIdentity() {
   Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
     configurable: true,
     get(this: HTMLElement) {
-      if (this.classList?.contains('xf-msg')) return 100
+      if (this.classList?.contains('msg')) return 100
       if (this.dataset?.part === 'canvas') return CANVAS_HEIGHT
       return 0
     },

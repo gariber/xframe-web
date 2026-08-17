@@ -1,56 +1,54 @@
+/* 顏色、圓角、觸控尺寸、按鈕與可收合分區都來自共用的設計語彙，網頁版 import
+   同一份。這裡只留側邊面板自己的版面。 */
+@import '../ui/theme.css';
+
+/* all: initial 隔絕 x.com 的樣式。它不會清掉 theme.css 定義的自訂屬性 ——
+   `all` 這個簡寫依規格不含自訂屬性。 */
 :host { all: initial; }
+
 .xf-panel {
   position: fixed; top: 0; right: 0; bottom: 0; width: 420px; overflow-y: auto;
-  z-index: 2147483647; background: #faf7f2; color: #16130f; padding: 16px;
-  font: 14px/1.5 -apple-system, "PingFang TC", "Noto Sans TC", system-ui, sans-serif;
+  z-index: 2147483647; background: var(--ground); color: var(--ink); padding: 16px;
+  font: var(--font);
+  -webkit-font-smoothing: antialiased;
   box-shadow: -8px 0 32px rgba(0,0,0,.18);
 }
 .xf-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-.xf-head button { border: none; background: none; cursor: pointer; font-size: 16px; }
-.xf-preview { border: 1px solid #e2ddd4; border-radius: 12px; overflow: hidden; margin-bottom: 12px; }
-.xf-msg { padding: 48px 16px; text-align: center; color: #7a736a; }
-.xf-retry {
-  margin-top: 12px; padding: 8px 20px; border: 1px solid #d9d3c9; border-radius: 8px;
-  background: #fff; color: #16130f; font-size: 13px; font-weight: 600; cursor: pointer;
+.xf-head strong { font-size: 1.1rem; }
+/* 關閉鍵是圖示鍵，不套共用按鈕的內距與邊框，但保留可觸及的點擊面積 */
+.xf-head button {
+  border: none; background: none; cursor: pointer; font-size: 16px;
+  min-height: var(--tap); min-width: var(--tap); color: var(--ink-soft);
+  border-radius: var(--radius-xs); padding: 0;
 }
-.xf-export {
-  width: 100%; padding: 12px; margin-bottom: 16px; border: none; border-radius: 10px;
-  background: #16130f; color: #fff; font-size: 15px; font-weight: 600; cursor: pointer;
+.xf-preview {
+  border: 1px solid var(--line); border-radius: var(--radius-lg);
+  overflow: hidden; margin-bottom: 1rem; background: var(--ground);
 }
-.xf-export:disabled { opacity: .45; cursor: default; }
-.xf-export-error { margin: -8px 0 12px; font-size: 13px; text-align: center; color: #b3261e; }
-.xf-fieldset { border: none; margin: 0; padding: 0; min-width: 0; }
-.xf-group { border: 1px solid #e2ddd4; border-radius: 12px; padding: 12px; margin-bottom: 12px; background: #fff; }
-.xf-group h3 { margin: 0 0 10px; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: #7a736a; }
-.xf-group label { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 13px; }
-.xf-group label b { margin-left: auto; font-variant-numeric: tabular-nums; }
-.xf-group input[type="range"] { flex: 1 1 120px; }
-.xf-swatches { display: grid; grid-template-columns: repeat(8, 1fr); gap: 5px; margin-top: 10px; }
-.xf-sw { aspect-ratio: 3/4; border-radius: 6px; border: 1px solid #d9d3c9; cursor: pointer; padding: 0; }
-.xf-sw[aria-pressed="true"] { outline: 2px solid #16130f; outline-offset: 1px; }
+.xf-msg-actions { display: flex; gap: .5rem; justify-content: center; margin-top: .75rem; }
+.xf-export { width: 100%; margin-bottom: 1rem; }
+.xf-export-error { margin: -.5rem 0 .75rem; text-align: center; }
+.xf-fieldset { border: none; margin: 0; padding: 0; }
 
 /* 手動輸入模式（spec §4.0 的降級路徑） */
 .xf-manual { display: flex; flex-direction: column; gap: 10px; padding: 16px; }
-.xf-manual label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #7a736a; }
-.xf-manual input, .xf-manual textarea {
-  font: inherit; padding: 7px 9px; border: 1px solid #d9d3c9; border-radius: 8px;
-  background: #fff; color: #16130f; width: 100%; box-sizing: border-box;
-}
-.xf-manual textarea { resize: vertical; line-height: 1.5; }
-.xf-manual-note { font-size: 12px; line-height: 1.5; color: #9a938a; }
-.xf-manual-actions { display: flex; gap: 8px; }
-.xf-manual-actions button {
-  flex: 1; padding: 9px; border-radius: 8px; border: 1px solid #d9d3c9;
-  background: #fff; color: #16130f; font: inherit; cursor: pointer;
-}
-.xf-manual-actions button[type="submit"] { background: #16130f; color: #fff; border-color: #16130f; }
+.xf-manual label { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; color: var(--ink-soft); }
+.xf-manual textarea { min-height: 7rem; }
+.xf-manual-actions { display: flex; gap: .5rem; }
+.xf-manual-actions button { flex: 1; }
 
-/* 鎖推內容提醒 */
+/* 鎖推內容提醒。這是唯一不走 token 的區塊：警示色本來就該跳出既有色階，
+   而且深淺兩色模式各需要一組，才不會在深色底上出現刺眼的淺黃塊。 */
 .xf-protected {
   border: 1px solid #e0c088; background: #fdf6e7; color: #5c4a24;
-  border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; font-size: 13px; line-height: 1.6;
+  border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 1rem;
+  font-size: .85rem; line-height: 1.6;
 }
 .xf-protected strong { color: #4a3a18; }
 .xf-protected p { margin: 6px 0 0; }
 .xf-protected-caveat { color: #7a6738; }
-.xf-hint { margin: 4px 0 0; font-size: 12px; line-height: 1.55; color: #9a938a; }
+@media (prefers-color-scheme: dark) {
+  .xf-protected { border-color: #6b5424; background: #2a2113; color: #e6d6ae; }
+  .xf-protected strong { color: #f4e7c6; }
+  .xf-protected-caveat { color: #c4b287; }
+}

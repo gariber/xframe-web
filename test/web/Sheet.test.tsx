@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { render } from 'preact'
 import type { ComponentChild } from 'preact'
-import { Sheet } from '../../web/Sheet'
+import { Sheet } from '../../src/ui/Sheet'
 
 function mount(node: ComponentChild) {
   const host = document.createElement('div')

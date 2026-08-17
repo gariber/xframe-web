@@ -7,6 +7,7 @@ import { loadSettings, saveSettings } from './store'
 import { parseTweet, extractTweetId } from '../parse/microdata'
 import { buildManualTweet, type ManualInput } from './manual'
 import { extractFromDom } from '../content/dom-fallback'
+import { Sheet } from '../ui/Sheet'
 // type-only：只要背景模組的型別，不能把 `addListener` 的側作用拉進內容腳本的
 // bundle。混進值匯入的話，vite 會把整個 background/index.ts（包含它 import
 // 的 fetch-tweet、asset-proxy）一起打進 content script。
@@ -142,16 +143,19 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
       </header>
 
       <div class="xf-preview" ref={cardRef}>
-        {status.phase === 'loading' && <div class="xf-msg">讀取推文中…</div>}
+        {status.phase === 'loading' && <div class="msg" role="status">讀取推文中…</div>}
         {status.phase === 'error' && (
-          <div class="xf-msg">
-            <div>{status.message}</div>
-            <button type="button" class="xf-retry" onClick={() => setRetryCount((n) => n + 1)}>
-              重試
-            </button>
-            <button type="button" class="xf-retry" onClick={() => setStatus({ phase: 'manual' })}>
-              手動輸入
-            </button>
+          <div class="msg">
+            <div class="err" role="alert">{status.message}</div>
+            <div class="xf-msg-actions">
+              {/* xf-retry 沒有樣式，是給測試用的語意掛鉤 —— 外觀走共用按鈕。 */}
+              <button class="xf-retry" type="button" onClick={() => setRetryCount((n) => n + 1)}>
+                重試
+              </button>
+              <button type="button" onClick={() => setStatus({ phase: 'manual' })}>
+                手動輸入
+              </button>
+            </div>
           </div>
         )}
         {status.phase === 'manual' && (
@@ -186,12 +190,12 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
                 onInput={(e) => setManualInput({ ...manualInput, text: e.currentTarget.value })}
               />
             </label>
-            <div class="xf-manual-note">
+            <p class="hint">
               手動模式不含頭像、圖片、互動數與引用推文 —— 這些無法由你補上，
               卡片會以既有的降級樣式呈現。
-            </div>
+            </p>
             <div class="xf-manual-actions">
-              <button type="submit">套用</button>
+              <button class="primary" type="submit">套用</button>
               <button type="button" onClick={() => setRetryCount((n) => n + 1)}>取消</button>
             </div>
           </form>
@@ -212,12 +216,14 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
         </div>
       )}
 
-      <button class="xf-export" type="button" disabled={status.phase !== 'ready' || busy} onClick={doExport}>
+      <button class="primary xf-export" type="button" disabled={status.phase !== 'ready' || busy} onClick={doExport}>
         {busy ? '產生中…' : '下載 PNG'}
       </button>
-      {exportError && <div class="xf-export-error">{exportError}</div>}
+      {exportError && <div class="err xf-export-error" role="alert">{exportError}</div>}
+      {/* 這是「你即將下載的圖會比預期小」的提醒，必須留在下載鍵旁邊。設定分區
+          預設收合，塞進去就等於沒有提醒。 */}
       {exportSize && exportWidthBelowTarget(exportSize.width, exportSize.height) && (
-        <p class="xf-hint">
+        <p class="hint">
           這則貼文很長，圖片高度已達上限，輸出寬度會低於 {EXPORT_WIDTH}px。
         </p>
       )}
@@ -228,100 +234,105 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
         即時 live-patch 它 —— 產生的圖可能是新舊設定混雜的畫面。用一個
         fieldset 包住所有設定控制項，busy 時整批 disabled，是最簡單、不需要
         自己刻鎖的做法。
+
+        分區的組成、標題與順序都跟著網頁版走（背景紙張 → 畫布與排版 → 顯示項目
+        → 隱私），用的是同一個 Sheet 元件。兩邊是同一個產品，設定面板不該長成
+        兩個樣子。
       */}
       <fieldset class="xf-fieldset" disabled={busy}>
-      <section class="xf-group">
-        <h3>畫布與排版</h3>
-        <label>留白 <b>{settings.padding}</b>
-          <input type="range" min={24} max={160} value={settings.padding}
-            onInput={(e) => patch({ padding: +e.currentTarget.value })} />
-        </label>
-        <label>文字尺寸 <b>{settings.fontSize}</b>
-          <input type="range" min={13} max={40} value={settings.fontSize}
-            onInput={(e) => patch({ fontSize: +e.currentTarget.value })} />
-        </label>
-        <label>底板透明度 <b>{Math.round(settings.panelOpacity * 100)}%</b>
-          <input type="range" min={0} max={100} value={settings.panelOpacity * 100}
-            onInput={(e) => patch({ panelOpacity: +e.currentTarget.value / 100 })} />
-        </label>
-        <label>底板顏色
-          <input type="color" value={settings.panelColor}
-            onInput={(e) => patch({ panelColor: e.currentTarget.value })} />
-        </label>
-        <label>文字顏色
-          <input type="color" value={settings.textColor}
-            onInput={(e) => patch({ textColor: e.currentTarget.value })} />
-        </label>
-        <label>比例
-          <select value={settings.aspect}
-            onChange={(e) => patch({ aspect: e.currentTarget.value as CardSettings['aspect'] })}>
-            <option value="auto">自動高度</option>
-            <option value="1:1">1:1 方形</option>
-            <option value="4:5">4:5 直式</option>
-          </select>
-        </label>
-        {/*
-          固定比例會把圖片裁成圖框的比例，捨棄哪一部分要由使用者決定——照片主體
-          常在上半部，預設偏上只是個好猜測，不是答案。auto 高度不裁切，這根滑桿
-          在那裡動了也不會有變化，所以只在固定比例且真的有圖時出現。
-        */}
-        {settings.aspect !== 'auto' && status.phase === 'ready'
-          && status.tweet.media.some((m) => m.dataUrl) && (
-          <label>圖片位置 {settings.mediaFocusY}%
-            <input type="range" min={0} max={100} value={settings.mediaFocusY}
-              onInput={(e) => patch({ mediaFocusY: +e.currentTarget.value })} />
-          </label>
-        )}
-        {/*
-          「顯示項目」裡也有一個叫「時間」的核取方塊（控制顯不顯示）。兩個
-          控制項同名會讓人找不到，所以這裡明確叫「時間格式」。
-        */}
-        <label>時間格式
-          <select value={settings.timeFormat}
-            onChange={(e) => patch({ timeFormat: e.currentTarget.value as CardSettings['timeFormat'] })}>
-            <option value="relative">相對（6h）</option>
-            <option value="absolute">絕對（2026-08-01 05:54）</option>
-          </select>
-        </label>
-      </section>
+        <Sheet title="背景紙張">
+          <button type="button" onClick={() => patch({ background: randomPreset() })}>隨機生成一張</button>
+          <div class="swatches">
+            {PRESETS.map((p) => (
+              <button key={`${p.kind}-${p.palette}`} type="button"
+                aria-label={`${p.kind} ${p.palette}`}
+                aria-pressed={settings.background.kind === p.kind && settings.background.palette === p.palette}
+                style={{ background: generate(p.kind, p.palette, p.seed) }}
+                onClick={() => patch({ background: { ...p } })} />
+            ))}
+          </div>
+        </Sheet>
 
-      <section class="xf-group">
-        <h3>背景紙張</h3>
-        <button type="button" onClick={() => patch({ background: randomPreset() })}>隨機生成一張</button>
-        <div class="xf-swatches">
-          {PRESETS.map((p) => (
-            <button key={`${p.kind}-${p.palette}`} type="button" class="xf-sw"
-              aria-label={`${p.kind} ${p.palette}`}
-              aria-pressed={settings.background.kind === p.kind && settings.background.palette === p.palette}
-              style={{ background: generate(p.kind, p.palette, p.seed) }}
-              onClick={() => patch({ background: { ...p } })} />
+        <Sheet title="畫布與排版">
+          <label>留白
+            <input type="range" min={16} max={120} value={settings.padding}
+              onInput={(e) => patch({ padding: +e.currentTarget.value })} />
+            <span class="hint-inline">{settings.padding}</span>
+          </label>
+          <label>文字尺寸
+            <input type="range" min={13} max={40} value={settings.fontSize}
+              onInput={(e) => patch({ fontSize: +e.currentTarget.value })} />
+            <span class="hint-inline">{settings.fontSize}</span>
+          </label>
+          <label>底板透明度
+            <input type="range" min={0} max={100} value={settings.panelOpacity * 100}
+              onInput={(e) => patch({ panelOpacity: +e.currentTarget.value / 100 })} />
+            <span class="hint-inline">{Math.round(settings.panelOpacity * 100)}%</span>
+          </label>
+          <label>底板顏色
+            <input type="color" value={settings.panelColor}
+              onInput={(e) => patch({ panelColor: e.currentTarget.value })} />
+          </label>
+          <label>文字顏色
+            <input type="color" value={settings.textColor}
+              onInput={(e) => patch({ textColor: e.currentTarget.value })} />
+          </label>
+          <label>比例
+            <select value={settings.aspect}
+              onChange={(e) => patch({ aspect: e.currentTarget.value as CardSettings['aspect'] })}>
+              <option value="9:16">9:16 IG 限動</option>
+              <option value="auto">自動高度</option>
+              <option value="1:1">1:1 方形</option>
+              <option value="4:5">4:5 直式</option>
+            </select>
+          </label>
+          {/*
+            「顯示項目」裡也有一個叫「時間」的核取方塊（控制顯不顯示）。兩個
+            控制項同名會讓人找不到，所以這裡明確叫「時間格式」。
+          */}
+          <label>時間格式
+            <select value={settings.timeFormat}
+              onChange={(e) => patch({ timeFormat: e.currentTarget.value as CardSettings['timeFormat'] })}>
+              <option value="relative">相對（6h）</option>
+              <option value="absolute">絕對（2026-08-01 05:54）</option>
+            </select>
+          </label>
+          {/*
+            固定比例會把圖片裁成圖框的比例，捨棄哪一部分要由使用者決定——照片主體
+            常在上半部，預設偏上只是個好猜測，不是答案。auto 高度不裁切，這根滑桿
+            在那裡動了也不會有變化，所以只在固定比例且真的有圖時出現。
+          */}
+          {settings.aspect !== 'auto' && status.phase === 'ready'
+            && status.tweet.media.some((m) => m.dataUrl) && (
+            <label>圖片位置
+              <input type="range" min={0} max={100} value={settings.mediaFocusY}
+                onInput={(e) => patch({ mediaFocusY: +e.currentTarget.value })} />
+              <span class="hint-inline">{settings.mediaFocusY}%</span>
+            </label>
+          )}
+        </Sheet>
+
+        <Sheet title="顯示項目">
+          {(['avatar', 'stats', 'timestamp', 'media'] as const).map((k) => (
+            <label key={k}>
+              <input type="checkbox" checked={settings.show[k]}
+                onChange={(e) => patch({ show: { ...settings.show, [k]: e.currentTarget.checked } })} />
+              {{ avatar: '頭像', stats: '互動統計', timestamp: '時間', media: '推文圖片' }[k]}
+            </label>
           ))}
-        </div>
-      </section>
+        </Sheet>
 
-      <section class="xf-group">
-        <h3>顯示項目</h3>
-        {(['avatar', 'stats', 'timestamp', 'media'] as const).map((k) => (
-          <label key={k}>
-            <input type="checkbox" checked={settings.show[k]}
-              onChange={(e) => patch({ show: { ...settings.show, [k]: e.currentTarget.checked } })} />
-            {{ avatar: '頭像', stats: '互動統計', timestamp: '時間', media: '推文圖片' }[k]}
+        <Sheet title="隱私">
+          <label>
+            <input type="checkbox" checked={settings.maskIdentity}
+              onChange={(e) => patch({ maskIdentity: e.currentTarget.checked })} />
+            遮蔽作者身分
           </label>
-        ))}
-      </section>
-
-      <section class="xf-group">
-        <h3>隱私</h3>
-        <label>
-          <input type="checkbox" checked={settings.maskIdentity}
-            onChange={(e) => patch({ maskIdentity: e.currentTarget.checked })} />
-          遮蔽作者身分
-        </label>
-        <p class="xf-hint">
-          名稱、帳號、頭像會一起蓋掉 —— 只遮其中一項等於沒遮，剩下任何一項都能認出人。
-          內文若含可識別線索則不在處理範圍。
-        </p>
-      </section>
+          <p class="hint">
+            名稱、帳號、頭像會一起蓋掉 —— 只遮其中一項等於沒遮，剩下任何一項都能認出人。
+            內文若含可識別線索則不在處理範圍。
+          </p>
+        </Sheet>
       </fieldset>
     </div>
   )
