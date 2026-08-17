@@ -53,13 +53,12 @@ export function fitPanelScale(availableHeight: number, panelHeight: number): num
 }
 
 /**
- * 小畫布仍要讓四組互動數與品牌留在同一列。這個估算包含四組圖示／短數字、
- * 三個分隔點、列間距與品牌字樣；實際列寬不足時整列等比縮小，避免品牌掉到
- * 第二行或把任一組數據裁掉。
+ * 小畫布仍要讓四組互動數維持單列。這個估算包含四組圖示／短數字、三個
+ * 分隔點與列間距；實際列寬不足時只縮小統計列，品牌則留在自己的右對齊行。
  */
-export function footerFitScale(availableWidth: number, baseFontSize: number, hasStats: boolean): number {
+export function statsFitScale(availableWidth: number, baseFontSize: number, hasStats: boolean): number {
   if (!hasStats || availableWidth <= 0 || baseFontSize <= 0) return 1
-  return Math.min(1, availableWidth / (baseFontSize * 22))
+  return Math.min(1, availableWidth / (baseFontSize * 14))
 }
 
 /**

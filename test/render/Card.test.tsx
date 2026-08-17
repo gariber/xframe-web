@@ -65,13 +65,14 @@ describe('Card', () => {
     expect(avatar.style.borderRadius).toBe('50%')
   })
 
-  it('X 官方圖示固定在右上角，並和作者頭像垂直置中對齊', () => {
+  it('X 官方圖示獨立成行，置中於作者資訊上方', () => {
     const el = mount()
     const mark = el.querySelector('[data-part="x-mark"]') as HTMLElement
+    const platformRow = el.querySelector('[data-part="platform-row"]') as HTMLElement
     expect(mark).not.toBeNull()
-    expect(mark.style.position).toBe('absolute')
-    expect(mark.style.top).toBe('38px')
-    expect(mark.style.right).toBe('30px')
+    expect(platformRow.contains(mark)).toBe(true)
+    expect(platformRow.style.justifyContent).toBe('center')
+    expect(mark.style.position).toBe('')
     expect(el.querySelector('[data-part="window-controls"]')).toBeNull()
   })
 
@@ -84,16 +85,20 @@ describe('Card', () => {
     expect(brand.style.borderTop).toBe('')
   })
 
-  it('品牌標識固定在右下，並與互動數據位於同一列', () => {
+  it('底部依序排列分隔線、互動數與右下品牌', () => {
     const el = mount()
     const footer = el.querySelector('[data-part="footer-meta"]') as HTMLElement
+    const divider = el.querySelector('[data-part="footer-divider"]') as HTMLElement
     const stats = el.querySelector('[data-part="stats"]') as HTMLElement
     const brand = el.querySelector('[data-part="brand"]') as HTMLElement
+    const children = [...footer.children]
+    expect(footer.contains(divider)).toBe(true)
     expect(footer.contains(stats)).toBe(true)
     expect(footer.contains(brand)).toBe(true)
-    expect(footer.style.alignItems).toBe('baseline')
-    expect(footer.style.flexWrap).toBe('nowrap')
+    expect(footer.style.flexDirection).toBe('column')
     expect(stats.style.flexWrap).toBe('nowrap')
+    expect(children.indexOf(divider)).toBeLessThan(children.indexOf(stats))
+    expect(children.indexOf(stats)).toBeLessThan(children.indexOf(brand))
     expect(brand.style.marginLeft).toBe('auto')
     expect(brand.style.textAlign).toBe('right')
   })
@@ -384,6 +389,22 @@ describe('固定比例的媒體填滿版面', () => {
     // happy-dom 會丟棄含 CSS max() 的 padding shorthand，實際數值由
     // card.css.test.ts 的純函式與真瀏覽器幾何驗證。
     expect(canvas.dataset.aspect).toBe('9:16')
+  })
+
+  it('9:16 媒體卡仍維持置中平台列與分層頁尾', () => {
+    const el = mount(mediaTweet(), { ...DEFAULT_SETTINGS, aspect: '9:16', padding: 28 })
+    const panel = el.querySelector('[data-part="panel"]') as HTMLElement
+    const platformRow = el.querySelector('[data-part="platform-row"]') as HTMLElement
+    const footer = el.querySelector('[data-part="footer-meta"]') as HTMLElement
+    const divider = el.querySelector('[data-part="footer-divider"]') as HTMLElement
+    const stats = el.querySelector('[data-part="stats"]') as HTMLElement
+    const brand = el.querySelector('[data-part="brand"]') as HTMLElement
+    const panelChildren = [...panel.children]
+    const footerChildren = [...footer.children]
+    expect(platformRow.style.justifyContent).toBe('center')
+    expect(panelChildren.indexOf(platformRow)).toBeLessThan(panelChildren.indexOf(footer))
+    expect(footerChildren).toEqual([divider, stats, brand])
+    expect(brand.style.marginLeft).toBe('auto')
   })
 })
 

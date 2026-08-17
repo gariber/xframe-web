@@ -9,7 +9,7 @@ import {
   canvasPaddingYStyle,
   canvasSizeStyle,
   fitPanelScale,
-  footerFitScale,
+  statsFitScale,
   accentFrom,
 } from './card.css'
 import { METRIC_META } from './metrics'
@@ -170,7 +170,7 @@ function Avatar({ author, size }: { author: Post['author']; size: number }) {
 }
 
 /** 官方品牌圖示取自 Simple Icons；卡片內只作平台識別，不提供互動。 */
-function XMark({ size, top, right }: { size: number; top: number; right: number }) {
+function XMark({ size }: { size: number }) {
   return (
     <svg
       data-part="x-mark"
@@ -179,12 +179,11 @@ function XMark({ size, top, right }: { size: number; top: number; right: number 
       width={size}
       height={size}
       style={{
-        position: 'absolute',
-        top,
-        right,
+        display: 'block',
         fill: 'currentColor',
         opacity: 0.9,
         pointerEvents: 'none',
+        flex: '0 0 auto',
       }}
     >
       <path d={siX.path} />
@@ -364,8 +363,8 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
     return () => ro.disconnect()
   }, [ratio, s.aspect, s.padding, constrainedMedia, settings, post])
 
-  const footerAvailableWidth = canvasWidth - s.padding * 2 - (constrainedMedia ? 36 : 60) - 2
-  const footerScale = footerFitScale(footerAvailableWidth, s.fontSize, s.show.stats)
+  const statsAvailableWidth = canvasWidth - s.padding * 2 - (constrainedMedia ? 36 : 60) - 2
+  const statsScale = statsFitScale(statsAvailableWidth, s.fontSize, s.show.stats)
 
   return (
     <div
@@ -439,12 +438,20 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
           flexDirection: constrainedMedia ? 'column' : undefined,
         }}
       >
-        <XMark
-          size={constrainedMedia ? 23 : 28}
-          top={constrainedMedia ? 24.5 : 38}
-          right={constrainedMedia ? 18 : 30}
-        />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: constrainedMedia ? 12 : 22, paddingRight: constrainedMedia ? 34 : 44, flex: '0 0 auto' }}>
+        <div
+          data-part="platform-row"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginBottom: constrainedMedia ? 10 : 16,
+            flex: '0 0 auto',
+          }}
+        >
+          <XMark size={constrainedMedia ? 23 : 28} />
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: constrainedMedia ? 12 : 22, flex: '0 0 auto' }}>
           {s.show.avatar && <Avatar author={author} size={constrainedMedia ? 40 : 52} />}
           <div style={{ lineHeight: 1.2, minWidth: 0 }}>
             <div style={{ fontWeight: 700, fontSize: s.fontSize * 0.9 }}>{author.name}</div>
@@ -571,45 +578,55 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
           data-part="footer-meta"
           style={{
             display: 'flex',
-            alignItems: 'baseline',
-            justifyContent: 'space-between',
-            flexWrap: 'nowrap',
-            columnGap: '0.8em',
+            flexDirection: 'column',
+            alignItems: 'stretch',
             marginTop: constrainedMedia ? 10 : 16,
             flex: '0 0 auto',
-            width: footerScale < 1 ? `${100 / footerScale}%` : '100%',
-            transform: footerScale < 1 ? `scale(${footerScale})` : undefined,
-            transformOrigin: 'left bottom',
             boxSizing: 'border-box',
           }}
         >
           {s.show.stats && (
-            <div
-              data-part="stats"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                flexWrap: 'nowrap',
-                rowGap: '0.35em',
-                gap: '0.6em',
-                opacity: 0.55,
-                fontSize: s.fontSize * 0.72,
-                flex: '1 1 auto',
-              }}
-            >
-              {post.metrics.map((m, i) => (
-                <Fragment key={m.kind}>
-                  {i > 0 && <Sep />}
-                  <Stat metric={m} />
-                </Fragment>
-              ))}
-            </div>
+            <>
+              <div
+                data-part="footer-divider"
+                aria-hidden="true"
+                style={{
+                  borderTop: '1px solid currentColor',
+                  opacity: 0.14,
+                  marginBottom: constrainedMedia ? 7 : 10,
+                  flex: '0 0 auto',
+                }}
+              />
+              <div
+                data-part="stats"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  flexWrap: 'nowrap',
+                  gap: '0.6em',
+                  opacity: 0.55,
+                  fontSize: s.fontSize * 0.72,
+                  width: statsScale < 1 ? `${100 / statsScale}%` : '100%',
+                  transform: statsScale < 1 ? `scale(${statsScale})` : undefined,
+                  transformOrigin: 'left top',
+                  flex: '0 0 auto',
+                }}
+              >
+                {post.metrics.map((m, i) => (
+                  <Fragment key={m.kind}>
+                    {i > 0 && <Sep />}
+                    <Stat metric={m} />
+                  </Fragment>
+                ))}
+              </div>
+            </>
           )}
 
           <div
             data-part="brand"
             style={{
               marginLeft: 'auto',
+              marginTop: constrainedMedia ? 6 : 10,
               opacity: 0.36,
               fontSize: s.fontSize * 0.58,
               fontWeight: 300,
