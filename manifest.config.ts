@@ -3,7 +3,7 @@ import { defineManifest } from '@crxjs/vite-plugin'
 const manifest = defineManifest({
   manifest_version: 3,
   name: 'XFrame',
-  version: '0.2.1',
+  version: '0.3.0',
   description: '把 X 推文變成漂亮的分享圖',
   // Chrome Web Store 強制要求 128×128；其餘尺寸供工具列、擴充功能頁與
   // 管理介面使用。由 scripts/make-icons.py 產生，設計呼應背景引擎的 sunset 調色盤。
