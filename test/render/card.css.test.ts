@@ -15,7 +15,7 @@ import {
 describe('cardScale', () => {
   it('每一項都是基準字級的倍數，與 ThreadsFrame 的係數一致', () => {
     expect(cardScale(20, false)).toEqual({
-      logo: 30,
+      logo: 22,
       logoGap: 40,
       avatar: 52,
       avatarGap: 12,

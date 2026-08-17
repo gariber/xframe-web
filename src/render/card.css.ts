@@ -87,7 +87,13 @@ export function statsFitScale(availableWidth: number, naturalWidth: number): num
 export function cardScale(size: number, compact: boolean) {
   const pick = (normal: number, tight: number) => Math.round(size * (compact ? tight : normal))
   return {
-    logo: pick(1.5, 1.2),
+    /*
+     * 標誌刻意比 ThreadsFrame 的 1.5em 小。倍數本身不是可比的量：ThreadsFrame
+     * 的內容寬度是 856/34 ≈ 25em，XFrame 只有約 15em——同樣 1.5em 的標誌放在
+     * 比較窄（以 em 計）的卡片上就是會顯得大。改看「佔內容寬度的比例」才對得
+     * 起來，1.1em 在並排比較時最接近 ThreadsFrame 的視覺重量。
+     */
+    logo: pick(1.1, 0.9),
     /*
      * 標誌下方要留得比面板上緣的留白更多，標誌才會讀成「貼在卡片頂端的平台
      * 標記」而不是壓在作者列頭上的一個東西。上下留白接近相等時（先前是上 26／

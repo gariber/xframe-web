@@ -36,9 +36,20 @@ takes the numbers themselves from ThreadsFrame's `src/render.ts`.
   in `src/render/card.css.ts`. The platform mark was a fixed `28px` and the
   avatar a fixed `52px`, so neither grew when the user raised the text size and
   the header's weight relationship drifted apart at both extremes.
-- Platform mark: `1.5 × size`, kept at opacity `0.9`. ThreadsFrame dims its logo
+- Platform mark: `1.1 × size`, kept at opacity `0.9`. ThreadsFrame dims its logo
   to `0.5`, but the X mark is already a high-contrast solid glyph and dimming it
   reads as dirty rather than quiet. This is a deliberate divergence.
+- The mark is deliberately smaller than ThreadsFrame's `1.5 × size`, because the
+  multiplier is not a comparable quantity across the two products. ThreadsFrame
+  draws onto a fixed 1080px canvas: at its defaults the content column is
+  `856px` against a `34px` text size, so the card is about **25em** wide. XFrame
+  lays out in the DOM and its content column is roughly **15em** wide at the
+  defaults. The same `1.5em` mark therefore covers far more of an XFrame card —
+  measured at 5.96% of the content width on ThreadsFrame versus 9.6–14% on
+  XFrame depending on viewport. `1.1em` was chosen by rendering XFrame at
+  1.5/1.25/1.1/0.95em beside an actual ThreadsFrame render and comparing; note
+  that no single fixed percentage is reachable, since XFrame's ratio moves with
+  the viewport while ThreadsFrame's does not.
 - The gap below the mark is `2.0 × size` (40px at the default) against 27px of
   panel padding above it. With near-equal space on both sides — it was 26 above
   and 16 below — the mark reads as pushed down onto the author row rather than
