@@ -144,7 +144,7 @@ function SafariTranslationBridge({ token }: { token: string }) {
 
   return (
     <main class="translation-bridge">
-      <p class="translation-bridge-brand">XFrame · Gariber Studio</p>
+      <p class="translation-bridge-brand">XFrame · gariber.studio</p>
       <h1>Translate with Safari</h1>
       <p>Use Safari’s Translate menu to translate this page into Traditional Chinese. Then send the result back to XFrame.</p>
       <div class="translation-bridge-source" ref={sourceRef}>
