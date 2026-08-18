@@ -172,6 +172,11 @@ fieldset { min-width: 0; }
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+/* 縮放包裝層：整張卡片縮到預覽框裡，而不是把下半部裁掉。
+   transform-origin 靠上置中，縮放時卡片不會往上飄離視野。
+   網頁版與擴充功能面板都用它把卡片塞進固定高度的預覽框。 */
+.preview-fit { transform-origin: top center; }
+
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;

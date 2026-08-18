@@ -148,6 +148,10 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
   const [translationFeedback, setTranslationFeedback] = useState<string | null>(null)
   const [translatedFrom, setTranslatedFrom] = useState<TranslatedFrom>('en')
   const cardRef = useRef<HTMLDivElement>(null)
+  const fitRef = useRef<HTMLDivElement>(null)
+  // 卡片釘在面板上方，設定從它底下捲過去 —— 調滑桿要能即時看到效果，而不是
+  // 捲上去看一眼再捲下來調。卡片比預覽框高時整張縮進去，而不是把下半截裁掉。
+  const [fit, setFit] = useState(1)
 
   // 原文永遠是抓下來的那一份 —— 譯文是疊在它上面的一層，不是取代它。
   const original = status.phase === 'ready' ? status.tweet : null
@@ -226,7 +230,10 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
   }
 
   const doExport = async () => {
-    const node = cardRef.current?.firstElementChild as HTMLElement | null
+    // 直接查 canvas，不用 firstElementChild —— 中間多包一層縮放容器之後，
+    // firstElementChild 就不再是卡片了，而那種錯誤不會報錯，只會匯出錯的東西
+    // （整張圖被縮放層一起縮小）。
+    const node = cardRef.current?.querySelector('[data-part="canvas"]') as HTMLElement | null
     if (!node || status.phase !== 'ready') return
     setBusy(true)
     setExportError(null)
@@ -242,6 +249,31 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
     }
   }
 
+  // 量測卡片實際高度，算出塞進預覽框所需的縮放比例。
+  // 用 offsetHeight 而非 getBoundingClientRect：前者是版面尺寸，不受自己套上的
+  // transform 影響，否則會量到縮放後的值再縮一次，一路收斂到極小。
+  //
+  // 沒有卡片時（讀取中、錯誤、手動輸入）一律 1：那些內容不是卡片，縮小只會讓
+  // 手動輸入的表單變得難以操作。
+  useLayoutEffect(() => {
+    const host = cardRef.current
+    const inner = fitRef.current
+    if (!host || !inner) return
+    const measure = () => {
+      const card = inner.querySelector('[data-part="canvas"]') as HTMLElement | null
+      if (!card || !card.offsetHeight) { setFit(1); return }
+      const avail = host.clientHeight
+      setFit(avail > 0 ? Math.min(1, avail / card.offsetHeight) : 1)
+    }
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(measure)
+    ro.observe(host)
+    const card = inner.querySelector('[data-part="canvas"]')
+    if (card) ro.observe(card)
+    return () => ro.disconnect()
+  }, [shown, settings, status])
+
   // 跟 doExport 量的是同一個節點——這裡只是讀不是光柵化，用來預先判斷輸出
   // 寬度會不會撞上 MAX_EXPORT_PIXELS 而被 exportScale 悄悄縮小。
   //
@@ -254,7 +286,9 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
   // 的版面尺寸。
   const [exportSize, setExportSize] = useState<{ width: number; height: number } | null>(null)
   useLayoutEffect(() => {
-    const node = status.phase === 'ready' ? (cardRef.current?.firstElementChild as HTMLElement | null) : null
+    const node = status.phase === 'ready'
+      ? (cardRef.current?.querySelector('[data-part="canvas"]') as HTMLElement | null)
+      : null
     if (!node) {
       setExportSize(null)
       return
@@ -275,6 +309,7 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
       </header>
 
       <div class="xf-preview" ref={cardRef}>
+        <div class="preview-fit" ref={fitRef} style={{ transform: `scale(${fit})` }}>
         {status.phase === 'loading' && <div class="msg" role="status">讀取推文中…</div>}
         {status.phase === 'error' && (
           <div class="msg">
@@ -333,7 +368,16 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
           </form>
         )}
         {shown && <Card post={shown} settings={settings} />}
+        </div>
       </div>
+
+      {/*
+        標題列與預覽固定在上方，其餘內容在自己的捲動區裡從底下經過 —— 調整設定
+        時要能即時看到卡片，而不是反覆上下捲動。網頁版用 position: sticky 達成
+        同一件事；面板是固定高度的側欄，用 flex 欄更直接，連標題列的關閉鍵也
+        一起留住，而且不必為 sticky 的位移去猜標題列有多高。
+      */}
+      <div class="xf-body">
 
       {status.phase === 'ready' && status.tweet.source === 'dom' && (
         <div class="xf-protected" role="note">
@@ -483,6 +527,7 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
           </p>
         </Sheet>
       </fieldset>
+      </div>
     </div>
   )
 }

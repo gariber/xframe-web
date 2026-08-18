@@ -7,13 +7,16 @@
 :host { all: initial; }
 
 .xf-panel {
-  position: fixed; top: 0; right: 0; bottom: 0; width: 420px; overflow-y: auto;
+  position: fixed; top: 0; right: 0; bottom: 0; width: 420px;
+  /* flex 欄：標題列與預覽固定，只有 .xf-body 捲動。整個面板一起捲的話，
+     調設定時卡片會被推出視野，得反覆上下捲動才看得到效果。 */
+  display: flex; flex-direction: column;
   z-index: 2147483647; background: var(--ground); color: var(--ink); padding: 16px;
   font: var(--font);
   -webkit-font-smoothing: antialiased;
   box-shadow: -8px 0 32px rgba(0,0,0,.18);
 }
-.xf-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.xf-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex: 0 0 auto; }
 .xf-head strong { font-size: 1.1rem; }
 /* 關閉鍵是圖示鍵，不套共用按鈕的內距與邊框，但保留可觸及的點擊面積 */
 .xf-head button {
@@ -23,8 +26,16 @@
 }
 .xf-preview {
   border: 1px solid var(--line); border-radius: var(--radius-lg);
-  overflow: hidden; margin-bottom: 1rem; background: var(--ground);
+  margin-bottom: 1rem; background: var(--ground);
+  flex: 0 0 auto;
+  /* 上限與網頁版同樣是 52vh：留空間給下方的設定。卡片超過就整張縮進去
+     （見 Panel 的 fit 量測），不是裁掉 —— 卡片本身尺寸不變，匯出不受影響。
+     auto 是給讀取中／錯誤／手動輸入那些非卡片內容用的，它們不縮放。 */
+  max-height: 52vh; overflow: auto; overscroll-behavior: contain;
 }
+/* 捲動區。min-height: 0 不可省 —— flex 項目的預設 min-height 是 auto，
+   內容再高也不會讓自己出現捲軸，而是把整個面板撐爆。 */
+.xf-body { flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; min-height: 0; }
 .xf-msg-actions { display: flex; gap: .5rem; justify-content: center; margin-top: .75rem; }
 .xf-export { width: 100%; margin-bottom: 1rem; }
 .xf-export-error { margin: -.5rem 0 .75rem; text-align: center; }

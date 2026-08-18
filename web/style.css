@@ -27,9 +27,6 @@ h1 { font-size: 1.1rem; margin: 0 0 1rem; }
   /* 下緣做一點陰影，讓捲動的設定內容從它底下經過時看得出層次 */
   box-shadow: 0 8px 16px -12px rgba(0,0,0,.5);
 }
-/* 縮放包裝層：整張卡片縮到預覽框裡，而不是把下半部裁掉。
-   transform-origin 靠上置中，縮放時卡片不會往上飄離視野。 */
-.preview-fit { transform-origin: top center; }
 .msg button { margin-top: .75rem; }
 .urlbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem; min-width: 0; margin-bottom: .75rem; }
 .urlbar input { flex: 1; min-width: 0; }
