@@ -1,7 +1,7 @@
-import type { Post, TranslatedFrom } from '../src/types'
-import { tokenize } from '../src/parse/tokenize'
+import type { Post, TranslatedFrom } from '../types'
+import { tokenize } from '../parse/tokenize'
 
-export { TRANSLATED_FROM_LABEL, TRANSLATED_FROM_OPTIONS } from '../src/render/translated'
+export { TRANSLATED_FROM_LABEL, TRANSLATED_FROM_OPTIONS } from '../render/translated'
 
 export type TextLanguage = {
   kind: 'chinese' | 'foreign' | 'none'
@@ -19,6 +19,29 @@ export type TranslationPlan = {
 export type TranslationDraft = {
   main: string
   quoted: string
+}
+
+/**
+ * 已套用譯文時，同時握著原文與譯文兩份 Post，以及目前顯示哪一份。
+ *
+ * 保留原文而不是就地覆蓋，是為了「顯示原文／顯示譯文」能來回切，而且「還原
+ * 原文」不必重新抓一次推文。
+ */
+export type TranslatedVersion = {
+  original: Post
+  translated: Post
+  view: 'original' | 'translated'
+}
+
+/*
+ * 貼上框一開始是空的，不預先填入原文。
+ *
+ * 這是個「把 X 翻好的字貼進來」的框：預填原文的話使用者得先全選刪掉才能貼，
+ * 而且畫面上會同時出現兩份一模一樣的原文（上面的來源區塊已經有一份），看起來
+ * 像是哪裡出錯了。空框配 placeholder 才讀得出它在等什麼。
+ */
+export function emptyTranslationDraft(): TranslationDraft {
+  return { main: '', quoted: '' }
 }
 
 /**

@@ -12,7 +12,15 @@ import { readFileSync } from 'node:fs'
  * 這種疊層關係在 happy-dom 驗不到（沒有版面引擎，讀不到計算後的樣式），真實
  * 瀏覽器驗證又要先抓到一則推文。所以直接讀樣式表本身：規則寫錯就擋下來。
  */
-const css = readFileSync('web/style.css', 'utf8')
+/*
+ * 翻譯面板的樣式已移進共用的設計語彙（兩邊用同一個 TranslationPanel 元件），
+ * 而 .preview 仍是網頁版自己的版面。疊層關係要跨這兩份檔案才看得完整，所以
+ * 合起來檢查 —— 只讀其中一份，這個守則就會出現破口。
+ *
+ * 刻意不含 src/editor/panel.css：面板是 position: fixed 的側欄，用的是
+ * 2147483647 去壓過 x.com 自己的介面，和這裡談的頁內疊層是兩回事。
+ */
+const css = readFileSync('src/ui/theme.css', 'utf8') + '\n' + readFileSync('web/style.css', 'utf8')
 
 function ruleBody(selector: string): string {
   const start = css.indexOf(selector + ' {')

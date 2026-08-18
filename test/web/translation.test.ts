@@ -5,7 +5,7 @@ import {
   buildTranslationPlan,
   detectTextLanguage,
   toTranslatedFrom,
-} from '../../web/translation'
+} from '../../src/translate/translation'
 import { translatedLabel } from '../../src/render/translated'
 
 function makePost(rawText: string, quotedText?: string): Post {

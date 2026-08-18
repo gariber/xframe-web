@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
-import type { CardSettings, Post, Segment, TranslatedFrom } from '../src/types'
+import type { CardSettings, Post, TranslatedFrom } from '../src/types'
 import { Card, DEFAULT_SETTINGS } from '../src/render/Card'
 import { PRESETS, generate, randomPreset } from '../src/render/backgrounds'
 import { exportPng, buildFilename, downloadBlob, EXPORT_WIDTH } from '../src/render/export'
@@ -8,13 +8,14 @@ import { parseTweet, extractTweetId } from '../src/parse/microdata'
 import { fetchTweetHtml, hydrateAssets } from './fetch'
 import { Sheet } from '../src/ui/Sheet'
 import { canShareImageFile, createPngFile, shareImageFile } from './share'
+import { TranslationPanel } from '../src/ui/TranslationPanel'
 import {
   applyPastedTranslation,
   buildTranslationPlan,
-  TRANSLATED_FROM_LABEL,
-  TRANSLATED_FROM_OPTIONS,
+  emptyTranslationDraft,
+  type TranslatedVersion,
   type TranslationDraft,
-} from './translation'
+} from '../src/translate/translation'
 
 const STORAGE_KEY = 'xframe.web.settings'
 
@@ -39,49 +40,7 @@ type Status =
   | { phase: 'ready'; tweet: Post }
   | { phase: 'error'; message: string }
 
-type TranslatedVersion = {
-  original: Post
-  translated: Post
-  view: 'original' | 'translated'
-}
-
 const TEXT_CHANGED_DURING_EXPORT = '卡片文字剛更新，請再存一次。'
-
-/*
- * 原文區塊仍然標成 translate="no"。譯文現在由使用者從 X 貼進來，不再經過瀏覽器
- * 翻譯，但使用者自己對整頁下翻譯指令時，不該讓瀏覽器去動我們拿來當比對基準的
- * 原文——那會讓「貼上的內容和原文一不一樣」這個判斷失去意義。
- */
-function browserTranslation(value: 'yes' | 'no') {
-  return (element: HTMLElement | null): void => {
-    if (element) element.setAttribute('translate', value)
-  }
-}
-
-const disableBrowserTranslation = browserTranslation('no')
-
-function TranslationSourceText({ segments }: { segments: Segment[] }) {
-  return (
-    <>
-      {segments.map((segment, index) => (
-        segment.type === 'text'
-          ? <span key={index}>{segment.value}</span>
-          : <span key={index} ref={disableBrowserTranslation}>{segment.value}</span>
-      ))}
-    </>
-  )
-}
-
-/*
- * 貼上框一開始是空的，不預先填入原文。
- *
- * 這是個「把 X 翻好的字貼進來」的框：預填原文的話使用者得先全選刪掉才能貼，
- * 而且畫面上會同時出現兩份一模一樣的原文（上面的來源區塊已經有一份），看起來
- * 像是哪裡出錯了。空框配 placeholder 才讀得出它在等什麼。
- */
-function emptyTranslationDraft(): TranslationDraft {
-  return { main: '', quoted: '' }
-}
 
 /**
  * 卡片上可見文字的指紋，用來在匯出前後比對內容有沒有被換掉。
@@ -402,113 +361,20 @@ function XFrameApp() {
       </div>
 
       {status.phase === 'ready' && translationPlan?.hasForeignText && translationDraft && (
-        <section class="translation-guide" aria-labelledby="translation-title">
-          <div class="translation-heading">
-            <div>
-              <strong id="translation-title">翻譯</strong>
-              <span>貼上 X 翻好的譯文</span>
-            </div>
-            {translatedVersion && <span class="translation-state">已套用</span>}
-          </div>
-
-          <p class="translation-instructions">
-            在 X 上點推文的「翻譯貼文」，把翻好的文字複製後貼到下面，再套用到卡片。
-          </p>
-
-          <div class="translation-source" ref={disableBrowserTranslation} aria-label="原文">
-            {translationPlan.main.kind === 'foreign' && (
-              <div class="translation-source-part">
-                <span class="translation-kicker">主文原文</span>
-                <div data-part="body" lang={translationPlan.main.tag} dir="auto">
-                  <TranslationSourceText segments={status.tweet.text} />
-                </div>
-              </div>
-            )}
-            {translationPlan.quoted?.kind === 'foreign' && status.tweet.quoted && (
-              <div class="translation-source-part">
-                <span class="translation-kicker">引用原文</span>
-                <div data-part="quote-body" lang={translationPlan.quoted.tag} dir="auto">
-                  <TranslationSourceText segments={status.tweet.quoted.text} />
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div class="translation-editors">
-            {translationPlan.main.kind === 'foreign' && (
-              <label for="translation-main">
-                主文譯文
-                <textarea
-                  id="translation-main"
-                  dir="auto"
-                  placeholder="貼上 X 翻好的譯文"
-                  value={translationDraft.main}
-                  onInput={(event) => {
-                    setTranslationDraft({ ...translationDraft, main: event.currentTarget.value })
-                    setTranslationFeedback(null)
-                  }}
-                />
-              </label>
-            )}
-            {translationPlan.quoted?.kind === 'foreign' && (
-              <label for="translation-quoted">
-                引用譯文
-                <textarea
-                  id="translation-quoted"
-                  dir="auto"
-                  placeholder="貼上 X 翻好的譯文"
-                  value={translationDraft.quoted}
-                  onInput={(event) => {
-                    setTranslationDraft({ ...translationDraft, quoted: event.currentTarget.value })
-                    setTranslationFeedback(null)
-                  }}
-                />
-              </label>
-            )}
-            {/*
-              卡片標示要說「翻譯自◯文」，語言由原文自動判定。判定會錯——全漢字
-              日文和中文分不出來——所以給一個下拉讓使用者改，而不是把錯的標示
-              硬印在卡片上。
-            */}
-            <label for="translation-from">
-              翻譯自
-              <select
-                id="translation-from"
-                value={translatedFrom}
-                onChange={(event) => {
-                  setTranslatedFrom(event.currentTarget.value as TranslatedFrom)
-                  setTranslationFeedback(null)
-                }}
-              >
-                {TRANSLATED_FROM_OPTIONS.map((tag) => (
-                  <option key={tag} value={tag}>{TRANSLATED_FROM_LABEL[tag]}</option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          <button class="primary translation-apply" type="button" disabled={busy} onClick={applyDraftTranslation}>
-            套用到卡片
-          </button>
-
-          <div class="translation-actions">
-            {translatedVersion && (
-              <>
-                <button type="button" aria-pressed={translatedVersion.view === 'translated'}
-                  onClick={() => showTranslatedVersion('translated')}>顯示譯文</button>
-                <button type="button" aria-pressed={translatedVersion.view === 'original'}
-                  onClick={() => showTranslatedVersion('original')}>顯示原文</button>
-              </>
-            )}
-            <button class="translation-restore" type="button" onClick={restoreOriginal}>還原原文</button>
-          </div>
-
-          {translationFeedback && <p class="translation-feedback" role="status" aria-live="polite">{translationFeedback}</p>}
-          <p class="translation-note">
-            譯文由你自己貼上，XFrame 不使用翻譯 API，也不會把原文或譯文送到任何伺服器——
-            全部只留在這個瀏覽器分頁裡。卡片也只在你按下「套用到卡片」後才會被譯文取代。
-          </p>
-        </section>
+        <TranslationPanel
+          post={status.tweet}
+          plan={translationPlan}
+          draft={translationDraft}
+          from={translatedFrom}
+          applied={translatedVersion}
+          feedback={translationFeedback}
+          busy={busy}
+          onDraft={(draft) => { setTranslationDraft(draft); setTranslationFeedback(null) }}
+          onFrom={(from) => { setTranslatedFrom(from); setTranslationFeedback(null) }}
+          onApply={applyDraftTranslation}
+          onView={showTranslatedVersion}
+          onRestore={restoreOriginal}
+        />
       )}
 
       {status.phase === 'ready' && (

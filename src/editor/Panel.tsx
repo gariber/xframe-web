@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { CardSettings, Post } from '../types'
 import { Card, DEFAULT_SETTINGS } from '../render/Card'
 import { PRESETS, generate, randomPreset } from '../render/backgrounds'
@@ -8,6 +8,15 @@ import { parseTweet, extractTweetId, explainParseFailure } from '../parse/microd
 import { buildManualTweet, type ManualInput } from './manual'
 import { extractFromDom } from '../content/dom-fallback'
 import { Sheet } from '../ui/Sheet'
+import { TranslationPanel } from '../ui/TranslationPanel'
+import {
+  applyPastedTranslation,
+  buildTranslationPlan,
+  emptyTranslationDraft,
+  type TranslatedVersion,
+  type TranslationDraft,
+} from '../translate/translation'
+import type { TranslatedFrom } from '../types'
 // type-only：只要背景模組的型別，不能把 `addListener` 的側作用拉進內容腳本的
 // bundle。混進值匯入的話，vite 會把整個 background/index.ts（包含它 import
 // 的 fetch-tweet、asset-proxy）一起打進 content script。
@@ -67,7 +76,55 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
   // 每次點「重試」就變動的值，讓下面抓推文的 effect 重新跑一次。
   const [retryCount, setRetryCount] = useState(0)
   const [manualInput, setManualInput] = useState<ManualInput>({ name: '', handle: '', text: '' })
+  const [translated, setTranslated] = useState<TranslatedVersion | null>(null)
+  const [draft, setDraft] = useState<TranslationDraft | null>(null)
+  const [translationFeedback, setTranslationFeedback] = useState<string | null>(null)
+  const [translatedFrom, setTranslatedFrom] = useState<TranslatedFrom>('en')
   const cardRef = useRef<HTMLDivElement>(null)
+
+  // 原文永遠是抓下來的那一份 —— 譯文是疊在它上面的一層，不是取代它。
+  const original = status.phase === 'ready' ? status.tweet : null
+  const plan = useMemo(
+    () => (original ? buildTranslationPlan(original) : null),
+    [original],
+  )
+  // 卡片實際渲染哪一份：套用譯文後看 view，否則就是原文。
+  const shown = translated
+    ? (translated.view === 'translated' ? translated.translated : translated.original)
+    : original
+
+  // 換一則推文（或重試）就把翻譯狀態整個重來，否則上一則的譯文會殘留。
+  useEffect(() => {
+    setTranslated(null)
+    setTranslationFeedback(null)
+    setDraft(plan?.hasForeignText ? emptyTranslationDraft() : null)
+    if (plan) setTranslatedFrom(plan.from)
+  }, [plan])
+
+  function applyDraftTranslation() {
+    if (!original || !plan || !draft) return
+    const next = applyPastedTranslation(original, plan, draft, translatedFrom)
+    if (!next) {
+      setTranslationFeedback('貼上框是空的，或內容和原文相同。請貼上 X 翻好的譯文。')
+      return
+    }
+    setTranslated({ original, translated: next, view: 'translated' })
+    setTranslationFeedback('譯文已套用到卡片。')
+  }
+
+  function showTranslatedVersion(view: TranslatedVersion['view']) {
+    if (!translated || translated.view === view) return
+    setTranslated({ ...translated, view })
+    setTranslationFeedback(null)
+  }
+
+  function restoreOriginal() {
+    if (!plan) return
+    setTranslated(null)
+    setDraft(plan.hasForeignText ? emptyTranslationDraft() : null)
+    setTranslatedFrom(plan.from)
+    setTranslationFeedback(null)
+  }
 
   useEffect(() => {
     // 讀取失敗（例如 chrome.storage 出錯）就退回預設值，而不是留下一個永遠
@@ -141,7 +198,7 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
     const ro = new ResizeObserver(measure)
     ro.observe(node)
     return () => ro.disconnect()
-  }, [status, settings])
+  }, [status, settings, shown])
 
   return (
     <div class="xf-panel">
@@ -208,7 +265,7 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
             </div>
           </form>
         )}
-        {status.phase === 'ready' && <Card post={status.tweet} settings={settings} />}
+        {shown && <Card post={shown} settings={settings} />}
       </div>
 
       {status.phase === 'ready' && status.tweet.source === 'dom' && (
@@ -228,6 +285,23 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
         {busy ? '產生中…' : '下載 PNG'}
       </button>
       {exportError && <div class="err xf-export-error" role="alert">{exportError}</div>}
+      {original && plan?.hasForeignText && draft && (
+        <TranslationPanel
+          post={original}
+          plan={plan}
+          draft={draft}
+          from={translatedFrom}
+          applied={translated}
+          feedback={translationFeedback}
+          busy={busy}
+          onDraft={(next) => { setDraft(next); setTranslationFeedback(null) }}
+          onFrom={(next) => { setTranslatedFrom(next); setTranslationFeedback(null) }}
+          onApply={applyDraftTranslation}
+          onView={showTranslatedVersion}
+          onRestore={restoreOriginal}
+        />
+      )}
+
       {/* 這是「你即將下載的圖會比預期小」的提醒，必須留在下載鍵旁邊。設定分區
           預設收合，塞進去就等於沒有提醒。 */}
       {exportSize && exportWidthBelowTarget(exportSize.width, exportSize.height) && (
