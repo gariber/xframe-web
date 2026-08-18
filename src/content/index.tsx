@@ -2,12 +2,9 @@ import { render } from 'preact'
 import { startDetector } from './detector'
 import { Panel } from '../editor/Panel'
 import panelCss from '../editor/panel.css?inline'
+import { EXTENSION_ID, HOST_ID } from './identity'
 
-// 同理於 detector 的注入標記：shadow host 掛在共用的頁面 DOM 上，兩份副本用
-// 同一個 id 會互相接管對方的容器。併進擴充功能 ID 讓各自獨立。
-const EXTENSION_ID =
-  typeof chrome !== 'undefined' && chrome.runtime?.id ? chrome.runtime.id : 'dev'
-const HOST_ID = `xframe-host-${EXTENSION_ID}`
+
 
 function ensureHost(): ShadowRoot {
   let host = document.getElementById(HOST_ID)

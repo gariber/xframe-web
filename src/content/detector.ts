@@ -1,25 +1,6 @@
 import { ADAPTERS } from '../platforms'
+import { MARK, BUTTON_CLASS, warnIfAnotherCopyIsRunning } from './identity'
 
-/**
- * 注入標記寫在**頁面自己的 DOM** 上，而頁面 DOM 是所有擴充功能共用的。
- *
- * 這一點曾經造成一個極難察覺的狀況：同時裝著商店版與開發用的未封裝版時，兩份
- * content script 都會跑，但先跑到的那份會把 anchor 標記起來，後跑的那份看到標記
- * 就整個跳過 —— 頁面上只會有一顆 ◪ 按鈕，而它屬於誰完全看載入順序。輸的那份
- * 從此收不到任何點擊，連它的 service worker 都不會被喚醒（chrome://extensions
- * 會顯示成閒置／無法使用）。結果是：明明裝了新版，用到的卻始終是舊版的程式碼，
- * 而且沒有任何錯誤訊息。
- *
- * 把擴充功能自己的 ID 併進標記，兩份副本就各自獨立：各自注入、各自運作。同時
- * 裝兩份時會看到兩顆按鈕 —— 那是刻意的，寧可一眼看出「裝了兩份」，也不要靜悄悄
- * 地用到不知道哪一份。
- */
-// 在頂層讀取要能容忍 `chrome` 不存在（單元測試環境、以及任何非擴充功能的
-// 執行情境）。取不到就用固定字串，行為與從前的共用標記相同。
-const EXTENSION_ID =
-  typeof chrome !== 'undefined' && chrome.runtime?.id ? chrome.runtime.id : 'dev'
-const MARK = `data-xframe-injected-${EXTENSION_ID}`
-const BUTTON_CLASS = `xframe-trigger-${EXTENSION_ID}`
 
 function makeButton(permalink: string, onClick: (p: string) => void): HTMLButtonElement {
   const btn = document.createElement('button')
@@ -43,6 +24,9 @@ function makeButton(permalink: string, onClick: (p: string) => void): HTMLButton
 }
 
 function inject(root: ParentNode, onClick: (p: string) => void): void {
+  // 每次都檢查而非只在啟動時：另一份副本可能比我們晚一步才注入。內部有一次性
+  // 旗標，真的發現之後就不再重複做事。
+  warnIfAnotherCopyIsRunning()
   // 走註冊表而非直接呼叫某個平台的偵測函式 —— 這是本檔案與「有哪些平台」
   // 唯一的耦合點，新增平台不必再改這裡。anchor 是不是找得到連結、是不是
   // 巢狀引用推文，都是平台知識，交給各 adapter 的 findPermalinks 決定。
