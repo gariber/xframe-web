@@ -7,6 +7,10 @@ import { loadSettings, saveSettings } from './store'
 import { parseTweet, extractTweetId, explainParseFailure } from '../parse/microdata'
 import { buildManualTweet, type ManualInput } from './manual'
 import { extractFromDom } from '../content/dom-fallback'
+// 只有純函式，沒有任何 side effect —— 與下面那個 type-only 的 background/index
+// 匯入不同，這個可以安全地打進內容腳本。
+import { fetchTweetHtml, TweetFetchError } from '../background/fetch-tweet'
+import { hydrateAssets } from '../background/asset-proxy'
 import { Sheet } from '../ui/Sheet'
 import { TranslationPanel } from '../ui/TranslationPanel'
 import {
@@ -42,13 +46,49 @@ const ERROR_TEXT: Record<string, string> = {
   'unknown-request': '擴充功能版本不相符，請重新載入頁面',
 }
 
+/**
+ * 取得推文頁 HTML。先自己抓，抓不到才請 service worker 代抓。
+ *
+ * 面板跑在 x.com 的頁面上，而要抓的也是 x.com 的網址 —— 那是**同源請求**，
+ * 內容腳本自己就能發，不需要任何跨來源權限。原本一律繞 service worker，等於
+ * 讓整個功能的關鍵路徑依賴一個隨時可能被回收的東西：MV3 的 service worker 會
+ * 在閒置後被終止，喚醒與回應之間任何一步出問題，訊息通道就會關閉，使用者只看到
+ * 「網路錯誤，請重試」。實測就是這樣壞的（console 會出現 "A listener indicated
+ * an asynchronous response by returning true, but the message channel closed
+ * before a response was received"）。
+ *
+ * 仍保留 service worker 這條路當備援：頁面在 twitter.com、而永久連結是 x.com
+ * 時就是跨來源，內容腳本抓不到，得靠 manifest 的 host_permissions 由背景代抓。
+ */
+async function fetchHtml(permalink: string): Promise<string> {
+  try {
+    return await fetchTweetHtml(permalink)
+  } catch (direct) {
+    // 404 / 429 是 X 給出的明確答覆，換個管道再問一次只會得到同樣的答案 ——
+    // 直接往上拋，不必為此喚醒 service worker。會退到背景的只有「這個管道
+    // 送不出去」這類傳輸失敗（跨來源被擋、離線）。
+    if (direct instanceof TweetFetchError && (direct.kind === 'not-found' || direct.kind === 'rate-limited')) {
+      throw new Error(direct.kind)
+    }
+    const res = await chrome.runtime.sendMessage<Request, Response>({
+      type: 'fetch-tweet-html', url: permalink,
+    }).catch(() => undefined)
+    // 背景那條也不通就把「自己抓」的失敗原因往上拋 —— 它比訊息通道的錯誤
+    // 更接近真正的問題（404、429、離線）。
+    // 一律normalise 成「訊息就是 ERROR_TEXT 的鍵」的 Error，讓每種失敗都保有
+    // 自己的文案 —— 尤其 unknown-request（版本不相符）不該被籠統說成網路錯誤。
+    if (!res) throw new Error(direct instanceof TweetFetchError ? direct.kind : 'network')
+    if (!res.ok) throw new Error(res.kind)
+    if (res.type !== 'fetch-tweet-html') throw new Error('unknown-request')
+    return res.html
+  }
+}
+
 async function loadTweet(permalink: string): Promise<Post> {
   const id = extractTweetId(permalink)
   if (!id) throw new Error('parse')
-  const res = await chrome.runtime.sendMessage<Request, Response>({ type: 'fetch-tweet-html', url: permalink })
-  if (!res.ok) throw new Error(res.kind)
-  if (res.type !== 'fetch-tweet-html') throw new Error('unknown-request')
-  let tweet = parseTweet(res.html, id)
+  const html = await fetchHtml(permalink)
+  let tweet = parseTweet(html, id)
   if (!tweet) {
     // 公開抓取拿不到內容，最常見的原因是鎖推帳號 —— 其貼文對未登入請求本來
     // 就不可見。使用者的瀏覽器看得到（登入且獲核准），所以改從眼前的 DOM 讀。
@@ -58,13 +98,40 @@ async function loadTweet(permalink: string): Promise<Post> {
     // 到 console，讓「請把這一行貼給我」成為可能。
     console.warn(
       '[XFrame] 公開抓取解析失敗，改用頁面 DOM。診斷：',
-      { version: chrome.runtime.getManifest().version, ...explainParseFailure(res.html, id) },
+      { version: chrome.runtime.getManifest().version, ...explainParseFailure(html, id) },
     )
     tweet = extractFromDom(permalink)
   }
   if (!tweet) throw new Error('parse')
-  const hydrated = await chrome.runtime.sendMessage<Request, Response>({ type: 'hydrate-assets', tweet })
-  return hydrated.ok && hydrated.type === 'hydrate-assets' ? hydrated.tweet : tweet
+  return hydrate(tweet)
+}
+
+/** 該抓的資產是不是都抓到了。抓不到的圖會被卡片直接藏起來，所以這很要緊。 */
+function fullyHydrated(out: Post, input: Post): boolean {
+  if (input.author.avatarUrl && !out.author.avatarDataUrl) return false
+  return out.media.every((m) => Boolean(m.dataUrl))
+}
+
+/**
+ * 把頭像與圖片轉成 data URL。同樣先自己來，不成才請 service worker。
+ *
+ * 圖片在 pbs.twimg.com，從 x.com 看是跨來源 —— 但它明確回
+ * `access-control-allow-origin: https://x.com`，所以內容腳本抓得到（網頁版
+ * 就是這樣做的）。轉 data URL 的理由是跨域圖片會污染 canvas，匯出會整個失敗。
+ *
+ * 這一步失敗不會讓卡片消失，但卡片會把抓不到的圖直接藏起來（見 Card 的
+ * `media.filter(m => m.dataUrl)`）——「明明有圖卻沒有圖」就是這樣來的，所以
+ * 這裡同樣不讓它單獨吊在 service worker 上。
+ */
+async function hydrate(tweet: Post): Promise<Post> {
+  const direct = await hydrateAssets(tweet).catch(() => tweet)
+  if (fullyHydrated(direct, tweet)) return direct
+
+  const res = await chrome.runtime.sendMessage<Request, Response>({ type: 'hydrate-assets', tweet })
+    .catch(() => undefined)
+  if (res?.ok && res.type === 'hydrate-assets' && fullyHydrated(res.tweet, tweet)) return res.tweet
+  // 兩條都沒抓齊時取自己那份：至少頭像或部分圖片可能已經到手。
+  return direct
 }
 
 export function Panel({ permalink, onClose }: { permalink: string; onClose: () => void }) {

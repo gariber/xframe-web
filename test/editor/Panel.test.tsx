@@ -35,6 +35,15 @@ async function waitFor(check: () => boolean, timeout = 2000): Promise<void> {
   }
 }
 
+/*
+ * 面板現在會先自己 fetch（同源，不經 service worker），抓不到才退回背景代抓。
+ * 這些既有測試驗證的是背景那條路，所以把直接抓打成失敗，行為與從前一致。
+ * 直接抓的路徑另有專屬測試。
+ */
+function stubDirectFetchFailure() {
+  vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('no direct fetch in test') }))
+}
+
 function stubChrome() {
   vi.stubGlobal('chrome', {
     runtime: {
@@ -59,6 +68,7 @@ beforeEach(() => {
   host = document.createElement('div')
   document.body.appendChild(host)
   stubChrome()
+  stubDirectFetchFailure()
   vi.mocked(exportMod.exportPng).mockReset()
   vi.mocked(exportMod.downloadBlob).mockReset()
   vi.mocked(storeMod.loadSettings).mockReset()
@@ -263,5 +273,48 @@ describe('Panel 匯出寬度提示（審查修正）', () => {
       Object.defineProperty(HTMLElement.prototype, 'offsetWidth', widthDesc)
       Object.defineProperty(HTMLElement.prototype, 'offsetHeight', heightDesc)
     }
+  })
+})
+
+/*
+ * 面板跑在 x.com、抓的也是 x.com —— 同源，內容腳本自己就能發。原本一律繞
+ * service worker，等於把關鍵路徑吊在一個隨時會被回收的東西上：MV3 的 SW 閒置
+ * 後會被終止，喚醒或回應中任何一步出問題，訊息通道就關閉，使用者只看到
+ * 「網路錯誤，請重試」。實測就是這樣壞的。
+ */
+describe('抓取不再依賴 service worker', () => {
+  it('自己抓得到時，完全不發 fetch-tweet-html 訊息', async () => {
+    stubChrome()
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(fx, { status: 200 })))
+    vi.mocked(storeMod.loadSettings).mockResolvedValue(DEFAULT_SETTINGS)
+    render(<Panel permalink={PERMALINK} onClose={() => {}} />, host)
+    await waitFor(() => (host.querySelector('.xf-export') as HTMLButtonElement)?.disabled === false)
+
+    const sent = vi.mocked(chrome.runtime.sendMessage).mock.calls.map((c) => (c[0] as unknown as { type: string }).type)
+    expect(sent).not.toContain('fetch-tweet-html')
+  })
+
+  it('自己抓不到時退回 service worker，卡片照樣出得來', async () => {
+    stubChrome()
+    stubDirectFetchFailure()
+    vi.mocked(storeMod.loadSettings).mockResolvedValue(DEFAULT_SETTINGS)
+    render(<Panel permalink={PERMALINK} onClose={() => {}} />, host)
+    await waitFor(() => (host.querySelector('.xf-export') as HTMLButtonElement)?.disabled === false)
+
+    const sent = vi.mocked(chrome.runtime.sendMessage).mock.calls.map((c) => (c[0] as unknown as { type: string }).type)
+    expect(sent).toContain('fetch-tweet-html')
+    expect(host.querySelector('[data-part="body"]')).not.toBeNull()
+  })
+
+  // 404 是 X 的明確答覆，換個管道問只會得到一樣的答案。
+  it('直接抓到 404 時不再吵醒 service worker', async () => {
+    stubChrome()
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 404 })))
+    vi.mocked(storeMod.loadSettings).mockResolvedValue(DEFAULT_SETTINGS)
+    render(<Panel permalink={PERMALINK} onClose={() => {}} />, host)
+    await waitFor(() => host.textContent!.includes('這則推文已不存在'))
+
+    const sent = vi.mocked(chrome.runtime.sendMessage).mock.calls.map((c) => (c[0] as unknown as { type: string }).type)
+    expect(sent).not.toContain('fetch-tweet-html')
   })
 })

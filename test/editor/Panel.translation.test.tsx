@@ -33,6 +33,8 @@ async function waitFor(check: () => boolean, timeout = 2000): Promise<void> {
 let host: HTMLElement
 
 function stubChrome(html: string) {
+  // 直接抓打成失敗，讓測試走背景代抓那條穩定的路（見 Panel.test.tsx 的說明）
+  vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('no direct fetch in test') }))
   vi.stubGlobal('chrome', {
     runtime: {
       sendMessage: vi.fn(async (msg: { type: string }) => {
