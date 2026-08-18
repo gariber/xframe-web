@@ -9,8 +9,15 @@ describe('startDetector stop()', () => {
     // requestAnimationFrame 仍會在下一幀觸發並多跑一次 inject()，除非 stop()
     // 自己也 cancelAnimationFrame。這裡直接對 rAF/cAF 開 spy，驗證 stop()
     // 真的把待處理的那個 handle 取消掉。
-    const rafSpy = vi.spyOn(window, 'requestAnimationFrame')
-    const cafSpy = vi.spyOn(window, 'cancelAnimationFrame')
+    // rAF 改成「只記錄、不自動觸發」。原本直接 spy 真實的 rAF，測試就得賭
+    // `await setTimeout(0)` 會早於 happy-dom 那個約 16ms 的 rAF 計時器 ——
+    // 機器一忙就翻盤，rAF 先跑完、內部 handle 被清成 null，stop() 自然不會
+    // 呼叫 cancelAnimationFrame，測試就紅了。那是測試自己的競態，不是被測
+    // 行為的問題。改成手動控制之後，「stop() 會不會取消待處理的 handle」
+    // 這個契約是被確定地驗證的，不再依賴時間。
+    let nextHandle = 1
+    const rafSpy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => nextHandle++)
+    const cafSpy = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {})
 
     const stop = startDetector(() => {})
 

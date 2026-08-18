@@ -346,6 +346,36 @@ describe('parseTweet 真實新版 SSR 頁面', () => {
     for (const m of t.metrics) expect(m.value).not.toBeNull()
   })
 
+  /*
+   * X 的未登入 SSR 會連解析用的錨點一起在地化：`<title>` 的樣板、操作列的
+   * aria-label、以及瀏覽數的單位詞。我們雖然固定以英文抓取，但 X 的語系判定
+   * 不只看 Accept-Language（實測無法從單一環境完全控制它），所以解析本身不能
+   * 依賴語系。
+   *
+   * 這份 fixture 是同一則推文的日文版：title 是「Xユーザーの…さん:」、
+   * aria-label 是「返信／リポスト／いいね」。它必須和英文版解出一樣的結果。
+   */
+  it('在地化頁面（日文）一樣解析成功，不退化', () => {
+    const t = parseTweet(fx('visible-ssr-localized'), '2089442390805233999')!
+
+    expect(t).not.toBeNull()
+    expect(t.source).toBe('fetch')
+    expect(t.author.handle).toBe('CatWorkers')
+    expect(t.rawText).toContain('Spotted at the local vet.')
+    expect(t.media).toHaveLength(1)
+  })
+
+  it('在地化頁面的互動數不靠英文標籤，一樣讀得到', () => {
+    const t = parseTweet(fx('visible-ssr-localized'), '2089442390805233999')!
+
+    // 全部四項都要有值 —— 只靠英文 aria-label 的話這裡會整排是 null
+    for (const m of t.metrics) expect(m.value).not.toBeNull()
+    const by = (k: string) => t.metrics.find((m) => m.kind === k)!.value
+    expect(by('replies')).toBe(10)
+    expect(by('reposts')).toBe(46)
+    expect(by('views')).toBe(38_000)
+  })
+
   it('回覆推文：不再退化，內文不含被回覆對象的帳號', () => {
     const t = parseTweet(fx('visible-ssr-reply'), '2089153024648425811')!
 

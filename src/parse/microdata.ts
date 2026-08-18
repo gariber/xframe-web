@@ -243,7 +243,7 @@ function parseMetrics(article: Element): Metric[] {
  */
 function parseVisibleMetricNumber(raw: string): number | null {
   const normalized = raw.normalize('NFKC').replace(/[\s,，٬]/g, '')
-  const match = normalized.match(/^(\d+(?:\.\d+)?)(K|M|B|千|万|萬|亿|億)?$/i)
+  const match = normalized.match(/^(\d+(?:\.\d+)?)(K|M|B|千|천|万|萬|만|亿|億|억)?$/i)
   if (!match) return null
   const value = Number(match[1])
   if (!Number.isFinite(value)) return null
@@ -252,10 +252,14 @@ function parseVisibleMetricNumber(raw: string): number | null {
     M: 1_000_000,
     B: 1_000_000_000,
     千: 1_000,
+    // 韓文的萬與億是諺文，不是漢字 —— 少了這兩個，韓文語系的瀏覽數會解析失敗。
+    천: 1_000,
     万: 10_000,
     萬: 10_000,
+    만: 10_000,
     亿: 100_000_000,
     億: 100_000_000,
+    억: 100_000_000,
   }
   const unit = match[2]
   return Math.round(value * (unit ? multiplier[unit.toUpperCase()] : 1))
@@ -271,33 +275,93 @@ function parseVisibleMetricNumber(raw: string): number | null {
  * 讓它們的數字外洩進主推文。按鈕存在但沒有數字代表 X 隱藏了零值，解析為 0；
  * 整個語意控制不存在才維持 null。
  */
+/**
+ * 動作列各按鈕的強調色，是 X 自己的品牌色碼，不隨語系改變。
+ *
+ * 實測 en / ja 兩版的 HTML 結構完全相同，只有 aria-label 的字串不同：
+ *   回覆=blue、轉推=green、喜歡=magenta、書籤=blue、分享=blue
+ * 其中 green 與 magenta 是唯一的，可以直接認人。blue 有四個共用，認不出來。
+ */
+const ACCENT_INTERACTION: Record<string, MetricKind> = {
+  green: 'reposts',
+  magenta: 'likes',
+}
+
+function accentOf(control: Element): string | null {
+  const host = control.closest('[class*="hover:text-"]')
+  const cls = host?.getAttribute('class') ?? ''
+  return cls.match(/hover:text-([a-z]+)-\d+/)?.[1] ?? null
+}
+
+/** 動作列控制項：有 aria-label、且位於本 article 內。維持文件順序。 */
+function actionControls(article: Element): Element[] {
+  return [...article.querySelectorAll('[aria-label]')]
+    .filter((el) => el.closest('article') === article)
+}
+
+function countNear(control: Element, article: Element): number | null {
+  const group = control.parentElement
+  const count = group?.querySelector('[data-animated-count-visual]')
+  if (count && count.closest('article') !== article) return null
+  // 按鈕在、數字不在，代表 X 把零值藏起來了，解析為 0。
+  return count ? parseVisibleMetricNumber(count.textContent ?? '') : 0
+}
+
+/**
+ * 新版未登入 SSR 已移除 interactionStatistic，互動數只剩可見的操作列。
+ *
+ * 三層識別，由可信到勉強：
+ *   1. aria-label 的英文字串（我們固定以英文抓取時走這條）
+ *   2. 按鈕的強調色（green=轉推、magenta=喜歡）—— 不隨語系改變
+ *   3. 回覆永遠緊鄰在轉推之前，用相對位置補上
+ *
+ * 為什麼需要 2 與 3：X 的未登入 SSR 會把 aria-label 一起在地化，而我們無法
+ * 保證每個使用者拿到的都是英文版（X 的語系判定不只看 Accept-Language）。
+ * 少了這兩層，非英文環境下整排互動數都會是「—」。
+ *
+ * 所有查詢都限制在目前 article；引用推文或下方回覆各有自己的 article，不能
+ * 讓它們的數字外洩進主推文。整個語意控制不存在才維持 null。
+ */
 function parseVisibleMetrics(article: Element): Metric[] {
   const found = new Map<MetricKind, number>()
-
-  for (const control of article.querySelectorAll('[aria-label]')) {
-    if (control.closest('article') !== article) continue
-    const kind = VISIBLE_INTERACTION[control.getAttribute('aria-label') ?? '']
-    if (!kind) continue
-
-    const group = control.parentElement
-    const count = group?.querySelector('[data-animated-count-visual]')
-    if (count && count.closest('article') !== article) continue
-    const value = count ? parseVisibleMetricNumber(count.textContent ?? '') : 0
-    if (value === null) continue
+  const record = (kind: MetricKind, value: number | null) => {
+    if (value === null) return
     const previous = found.get(kind)
     if (previous === undefined || value > previous) found.set(kind, value)
   }
 
-  // 主推文詳情頁的瀏覽數不在下方操作列，而在時間旁的 `{數字} Views` 連結。
+  const controls = actionControls(article)
+
+  // 第 1、2 層：逐一辨識
+  const kinds = controls.map((control) => {
+    const byLabel = VISIBLE_INTERACTION[control.getAttribute('aria-label') ?? '']
+    if (byLabel) return byLabel
+    const accent = accentOf(control)
+    return accent ? ACCENT_INTERACTION[accent] : undefined
+  })
+
+  // 第 3 層：回覆緊鄰在轉推之前。只在轉推真的被認出來時才成立，且只認前一個
+  // 「還沒被認出身分」的控制項 —— 不硬套位置，避免把別的按鈕當成回覆。
+  const repostAt = kinds.indexOf('reposts')
+  if (repostAt > 0 && !kinds.includes('replies') && kinds[repostAt - 1] === undefined) {
+    kinds[repostAt - 1] = 'replies'
+  }
+
+  controls.forEach((control, i) => {
+    const kind = kinds[i]
+    if (kind) record(kind, countNear(control, article))
+  })
+
+  // 主推文詳情頁的瀏覽數不在操作列，而是時間旁一個「{數字}{單位詞}」的連結
+  // （en: `33.6KViews`／ja: `3.4万再生数`）。數字之後那個詞是在地化的，所以
+  // 不比對字串，只要求：開頭是可解析的數字、其後至少兩個字元且不含數字。
+  // 「至少兩個字元」是為了排開時間軸的相對時間（`17h`）被誤讀成瀏覽數。
   for (const link of article.querySelectorAll('a[href]')) {
     if (link.closest('article') !== article) continue
     const text = (link.textContent ?? '').replace(/\s+/g, '')
-    const match = text.match(/^(.+?)Views$/i)
+    const match = text.match(/^([\d.,]+(?:[KMB]|[千천万萬만亿億억])?)(\D{2,})$/i)
     if (!match) continue
-    const value = parseVisibleMetricNumber(match[1])
-    if (value === null) continue
-    const previous = found.get('views')
-    if (previous === undefined || value > previous) found.set('views', value)
+    record('views', parseVisibleMetricNumber(match[1]))
   }
 
   return X_METRIC_ORDER.map((kind) => ({ kind, value: found.get(kind) ?? null }))
@@ -375,15 +439,41 @@ function normalizeVisibleText(text: string): string {
 }
 
 /**
+ * 可信的內文錨點：優先用 `og:description`，其次才是 `<title>`。
+ *
+ * 兩者都帶著同一段推文內文，但 `<title>` 是「UI 樣板 + 內文」的組合，樣板會隨
+ * X 判定的語系改變（`{名稱} on X: "…"` / `Xユーザーの{名稱}さん: 「…」` /
+ * `X에서 {名稱} 님` …），一旦樣板對不上，整條解析就 fail closed 並退化成讀
+ * DOM —— 作者被遮蔽、圖片與互動數全空。
+ *
+ * `og:description` 的內容則**只有推文本身**，沒有任何 UI 字串。實測同一則推文的
+ * en / ja / ko 三個語系版本，這個欄位一字不差。用它當錨點，解析就與 X 判定的
+ * 語系完全脫鉤 —— 不管那個判定是依 Accept-Language、IP 地理位置還是別的東西。
+ *
+ * 仍保留 title 當備援：舊版頁面沒有 og:description，而它在英文語系下是可用的。
+ */
+function trustedBodyText(
+  ogDescription: string | null,
+  title: string,
+  authorName: string,
+): string | null {
+  const fromOg = ogDescription === null ? null : normalizeVisibleText(ogDescription)
+  if (fromOg) return fromOg
+  const fromTitle = bodyFromTitle(title, authorName)
+  return fromTitle === null ? null : normalizeVisibleText(fromTitle)
+}
+
+/**
  * 2026-08-15 起 X 的未登入 SSR 仍保留 SocialMediaPosting article、permalink、
  * 可見作者連結、title 與正文，但移除了 itemprop="author" / "text" /
  * "identifier"。這條 fallback 只在數個獨立表面完全一致時採信：article ID 必須
- * 等於 permalink ID，permalink handle 必須等於可見作者連結，title 正文必須
- * 等於 article 內的可見正文。任一邊對不上就 fail closed。
+ * 等於 permalink ID，permalink handle 必須等於可見作者連結，可信錨點的內文必須
+ * 對得上 article 內的可見正文。任一邊對不上就 fail closed。
  */
 function parseVisibleArticle(
   article: Element,
   title: string,
+  ogDescription: string | null,
   expectedId: string,
 ): Omit<Post, 'quoted' | 'media' | 'text' | 'textComplete'> | null {
   const permalink = parsePermalink(metaOf(article, 'url'), expectedId)
@@ -392,9 +482,8 @@ function parseVisibleArticle(
   const author = parseVisibleAuthor(article, permalink.handle)
   if (!author) return null
 
-  const titleText = bodyFromTitle(title, author.name)
-  if (!titleText) return null
-  const normalizedTitle = normalizeVisibleText(titleText)
+  const trusted = trustedBodyText(ogDescription, title, author.name)
+  if (!trusted) return null
   const visibleMatches = [...article.querySelectorAll('[dir="auto"]')]
     .filter((el) => el.closest('article') === article)
     .map((el) => {
@@ -403,12 +492,17 @@ function parseVisibleArticle(
       return normalizeVisibleText(copy.textContent ?? '')
     })
     .filter((text) => text !== '')
-  // 先要求完全相等；對不上時才允許「title 多了開頭的 @提及」這一種已知差異
-  // （回覆推文）。順序不能反 —— 先剝的話，內文真的以 @ 開頭的非回覆推文會被
-  // 剝掉開頭。兩種都對不上就維持 fail closed。
-  const rawText = visibleMatches.includes(normalizedTitle)
-    ? normalizedTitle
-    : visibleMatches.find((text) => text === stripLeadingMentions(normalizedTitle))
+  // 先要求完全相等；對不上時才依序放寬兩種**已知**差異，順序不能反：
+  //   1. 錨點多了開頭的 @提及（回覆推文；先剝的話，內文真的以 @ 開頭的非回覆
+  //      推文會被剝掉開頭）
+  //   2. 錨點被 X 截短（og:description 約 200 字），可見正文是它的延長
+  // 兩者都不中就維持 fail closed —— 絕不把其他 UI 文字當成推文內文。
+  const stripped = stripLeadingMentions(trusted)
+  const rawText =
+    visibleMatches.find((text) => text === trusted)
+    ?? visibleMatches.find((text) => text === stripped)
+    ?? visibleMatches.find((text) => text.startsWith(trusted))
+    ?? visibleMatches.find((text) => text.startsWith(stripped))
   if (rawText === undefined) return null
 
   return {
@@ -449,6 +543,40 @@ function parseArticle(article: Element): Omit<Post, 'quoted' | 'media' | 'text' 
   }
 }
 
+/**
+ * 解析失敗時的診斷摘要。
+ *
+ * 公開抓取失敗會安靜地退化成讀 DOM，而降級後的卡片本身看起來是正常的（只是
+ * 作者被遮蔽、沒有圖片與互動數），使用者無從得知發生了什麼、我們也無從遠端
+ * 重現 —— X 給不同地區、不同語系、不同登入狀態的頁面並不一樣。
+ *
+ * 這個函式把「到底卡在哪一關」濃縮成一行可以直接複製貼上的資料。刻意只取長度、
+ * 布林與前 80 字，不輸出整頁 HTML，也不含使用者的 cookie 或個人資料。
+ */
+export function explainParseFailure(html: string, tweetId: string): Record<string, unknown> {
+  if (!html) return { reason: 'empty-html' }
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  const article = doc.querySelector(
+    `article[data-tweet-id="${tweetId}"][itemtype="https://schema.org/SocialMediaPosting"]`,
+  )
+  const title = doc.querySelector('title')?.textContent ?? ''
+  const og = doc.querySelector('meta[property="og:description"]')?.getAttribute('content') ?? null
+  return {
+    htmlLength: html.length,
+    // 這頁是不是 React 外殼（X 對某些請求只回外殼，裡面沒有推文）
+    isAppShell: html.includes('id="react-root"') && !html.includes('SocialMediaPosting'),
+    articleFound: !!article,
+    anyArticle: doc.querySelectorAll('article[data-tweet-id]').length,
+    hasOgDescription: og !== null,
+    ogHead: og?.slice(0, 80) ?? null,
+    titleHead: title.slice(0, 80),
+    hasStructuredText: !!doc.querySelector('[itemprop="text"]'),
+    visibleTextNodes: article
+      ? [...article.querySelectorAll('[dir="auto"]')].filter((el) => el.closest('article') === article).length
+      : 0,
+  }
+}
+
 export function parseTweet(html: string, tweetId: string): Post | null {
   if (!html) return null
   // tweetId 一律是 extractTweetId 用 \d+ 擷取出的純數字字串，放進雙引號屬性選擇器
@@ -464,7 +592,13 @@ export function parseTweet(html: string, tweetId: string): Post | null {
   if (!article) return null
 
   const title = doc.querySelector('title')?.textContent ?? ''
-  const base = parseArticle(article) ?? parseVisibleArticle(article, title, tweetId)
+  // og:description 只含推文內文、不含任何 UI 字串，因此不隨 X 判定的語系改變。
+  // 它是比 `<title>` 可靠得多的錨點，見 trustedBodyText。
+  const ogDescription = doc
+    .querySelector('meta[property="og:description"]')
+    ?.getAttribute('content') ?? null
+  const base = parseArticle(article)
+    ?? parseVisibleArticle(article, title, ogDescription, tweetId)
   if (!base) return null
 
   // 先讀 article 自己的可見文字。新版 X 會同時截斷 meta 與 title，完整內文只在

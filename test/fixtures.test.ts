@@ -58,6 +58,20 @@ describe('新版 SSR fixtures（2026-08 實抓）', () => {
     }
   })
 
+  /*
+   * 這一份刻意是**日文版**：title 樣板、操作列 aria-label、瀏覽數單位詞全部是
+   * 在地化的。解析不得依賴任何一個英文字串 —— 我們雖然固定以英文抓取，但 X 的
+   * 語系判定不只看 Accept-Language，實測無法從單一環境完全控制。
+   */
+  it('在地化 fixture 確實不含任何英文錨點', () => {
+    const html = readFileSync('test/fixtures/visible-ssr-localized.html', 'utf8')
+    expect(html).not.toContain(' on X: &quot;')
+    expect(html).not.toContain('aria-label="Reply"')
+    expect(html).toContain('aria-label="返信"')
+    // og:description 是唯一不被在地化的內文來源，解析靠它
+    expect(html).toContain('property="og:description"')
+  })
+
   it('reply fixture 的 title 帶著被回覆對象的帳號，可見正文不帶（這正是退化成因）', () => {
     const html = readFileSync('test/fixtures/visible-ssr-reply.html', 'utf8')
     expect(html).toMatch(/<title>[^<]*on X: &quot;@basarafire /)

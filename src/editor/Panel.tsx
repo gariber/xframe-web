@@ -4,7 +4,7 @@ import { Card, DEFAULT_SETTINGS } from '../render/Card'
 import { PRESETS, generate, randomPreset } from '../render/backgrounds'
 import { exportPng, buildFilename, downloadBlob, exportWidthBelowTarget, EXPORT_WIDTH } from '../render/export'
 import { loadSettings, saveSettings } from './store'
-import { parseTweet, extractTweetId } from '../parse/microdata'
+import { parseTweet, extractTweetId, explainParseFailure } from '../parse/microdata'
 import { buildManualTweet, type ManualInput } from './manual'
 import { extractFromDom } from '../content/dom-fallback'
 import { Sheet } from '../ui/Sheet'
@@ -43,6 +43,14 @@ async function loadTweet(permalink: string): Promise<Post> {
   if (!tweet) {
     // 公開抓取拿不到內容，最常見的原因是鎖推帳號 —— 其貼文對未登入請求本來
     // 就不可見。使用者的瀏覽器看得到（登入且獲核准），所以改從眼前的 DOM 讀。
+    //
+    // 降級後的卡片看起來是「正常但資訊少」，使用者無從得知是哪一關失敗，我們
+    // 也無從遠端重現（X 給不同地區、語系、登入狀態的頁面並不一樣）。把診斷印
+    // 到 console，讓「請把這一行貼給我」成為可能。
+    console.warn(
+      '[XFrame] 公開抓取解析失敗，改用頁面 DOM。診斷：',
+      { version: chrome.runtime.getManifest().version, ...explainParseFailure(res.html, id) },
+    )
     tweet = extractFromDom(permalink)
   }
   if (!tweet) throw new Error('parse')
