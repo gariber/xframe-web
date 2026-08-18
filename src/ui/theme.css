@@ -74,8 +74,20 @@ button.primary {
 }
 button:disabled { opacity: .45; cursor: default; }
 
+/* 字級不繼承，改設 16px 下限 —— 這是 iOS Safari 的自動放大門檻。
+   聚焦一個計算後字級小於 16px 的文字輸入框或下拉選單時，Safari 會放大整頁，
+   而且失焦之後不會縮回去：使用者貼完譯文，得先雙指把畫面縮小，才按得到底下的
+   「套用到卡片」。16px 是 WebKit 寫死的值，不是視覺偏好。
+   原本這裡寫 `font: inherit`，而那個簡寫會把字級一起重設成繼承值 —— 譯文
+   textarea 包在 .translation-editors label（.8rem）裡，繼承到的是 12.8px，
+   不是 --font 的 15px。兩者都在門檻下。
+   用 max() 而不是寫死 16px：使用者把瀏覽器預設字級調大時 1rem 會超過 16px，
+   不該被這條規則壓回去。
+   button 不列入 —— 按鈕不接受輸入，不會觸發放大，而並排的三欄按鈕列在字級
+   變大後會被擠到換行。 */
 input[type="text"], input[type="url"], textarea, select {
-  font: inherit;
+  font-family: inherit;
+  font-size: max(16px, 1rem);
   width: 100%;
   padding: .7rem .8rem;
   border: 1px solid var(--line);
