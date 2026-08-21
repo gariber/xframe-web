@@ -120,11 +120,14 @@ describe('parseTweet 巢狀引用推文隔離', () => {
   // 以下期望值皆直接從 test/fixtures/quoted.html 的原始 markup 讀出，
   // 不是憑空捏造：
   //   外層 article（data-tweet-id="2082883636177916306"）自己的
-  //   interactionStatistic 區塊：Likes=8015 Retweets=367
+  //   interactionStatistic 區塊：Likes=8015 Retweets=367 Quotes=195
   //   Replies=1003 Views=1096657
   //   巢狀 citation article（data-tweet-id="2082878156483219672"）自己的
-  //   interactionStatistic 區塊：Replies=982 Retweets=1600
+  //   interactionStatistic 區塊：Replies=982 Retweets=1600 Quotes=1594
   //   Likes=16299 Views=5928637
+  //
+  // 轉推數的期望值是 Retweets + Quotes（X 介面顯示的就是這個和），所以外層
+  // 是 367+195=562，巢狀是 1600+1594=3194。
   const t = parseTweet(fx('quoted'), '2082883636177916306')!
   const KINDS = ['replies', 'reposts', 'likes', 'views'] as const
   const metricOf = (tw: typeof t, kind: (typeof KINDS)[number]) =>
@@ -133,13 +136,13 @@ describe('parseTweet 巢狀引用推文隔離', () => {
   it('外層推文統計取自外層自己的區塊，而非巢狀引用推文', () => {
     expect(t).not.toBeNull()
     expect(metricOf(t, 'replies')).toBe(1003)
-    expect(metricOf(t, 'reposts')).toBe(367)
+    expect(metricOf(t, 'reposts')).toBe(562)
     expect(metricOf(t, 'likes')).toBe(8015)
     expect(metricOf(t, 'views')).toBe(1096657)
   })
 
   it('外層推文統計不等於巢狀引用推文的統計（防止未加範圍限制的迴歸）', () => {
-    const citation = { replies: 982, reposts: 1600, likes: 16299, views: 5928637 }
+    const citation = { replies: 982, reposts: 3194, likes: 16299, views: 5928637 }
     for (const k of KINDS) {
       expect(metricOf(t, k)).not.toBe(citation[k])
     }
@@ -373,6 +376,20 @@ describe('parseTweet 真實新版 SSR 頁面', () => {
     const by = (k: string) => t.metrics.find((m) => m.kind === k)!.value
     expect(by('replies')).toBe(10)
     expect(by('reposts')).toBe(46)
+    // 頁面上印的是在地化的縮寫「3.8万」，內嵌 store 的精確值是 38,390。
+    // 兩者都讀得到時以 store 為準，見 mergeMetrics。
+    expect(by('views')).toBe(38_390)
+  })
+
+  it('沒有內嵌 store 時，在地化的瀏覽數連結仍讀得出來（3.8万）', () => {
+    // 把 script 全部拿掉，只留 DOM —— 這正是 parseVisibleMetrics 那三層識別
+    // 唯一的來源。精確值消失後應該退回頁面上印的縮寫，而不是整項變 null。
+    const stripped = fx('visible-ssr-localized').replace(/<script[\s\S]*?<\/script>/gi, '')
+    const t = parseTweet(stripped, '2089442390805233999')!
+
+    const by = (k: string) => t.metrics.find((m) => m.kind === k)!.value
+    expect(by('replies')).toBe(10)
+    expect(by('reposts')).toBe(46)
     expect(by('views')).toBe(38_000)
   })
 
@@ -550,5 +567,105 @@ describe('fullTextFromTitle', () => {
 
   it('title 格式不符時退回 meta，不標記', () => {
     expect(fullTextFromTitle('完全不同的標題', 'A', '內文')).toEqual({ text: '內文', fromTitle: false })
+  })
+})
+
+describe('parseTweet 2026-08-21 新版 SSR', () => {
+  /*
+   * 這兩份 fixture 是 2026-08-21 直接抓下來的公開頁面，形狀與其他四份不同：
+   * 沒有 interactionStatistic、沒有 itemprop="text"/"author"/"identifier"、
+   * 引用推文只是一個不帶任何 itemprop 的巢狀 article，互動計數則放在頁面
+   * 內嵌的 client store 裡。三個回歸都是在這份頁面上實際壞掉的。
+   */
+  const main = parseTweet(fx('quoted-embedded'), '2090766694897619318')
+  const media = parseTweet(fx('media-embedded'), '2088868860346937579')
+  const metricOf = (tw: NonNullable<typeof main>, kind: string) =>
+    tw.metrics.find((m) => m.kind === kind)!.value
+
+  it('長推文取到完整內文 —— title 被截在 279 字，可見文字有全部 669 字', () => {
+    expect(main).not.toBeNull()
+    expect(main!.rawText.length).toBe(669)
+    expect(main!.rawText.startsWith("It's me again. I come bearing great news.")).toBe(true)
+    expect(main!.rawText.endsWith('Go do something amazing today.')).toBe(true)
+  })
+
+  it('補回全文之後不再掛「內文未完整取得」', () => {
+    expect(main!.textComplete).toBe(true)
+  })
+
+  it('統計取自內嵌 store 的精確值，而不是操作列的縮寫', () => {
+    // 操作列上印的是 2.2K / 817 / 17K，時間旁的瀏覽數連結是 1.8M。
+    expect(metricOf(main!, 'views')).toBe(1_777_903)
+    expect(metricOf(main!, 'replies')).toBe(2_201)
+    expect(metricOf(main!, 'likes')).toBe(16_613)
+    expect(metricOf(main!, 'views')).not.toBe(1_800_000)
+    expect(metricOf(main!, 'likes')).not.toBe(17_000)
+  })
+
+  it('轉推數是轉推＋引用 —— 使用者在 X 上看到的 1770，不是操作列的 817', () => {
+    expect(metricOf(main!, 'reposts')).toBe(817 + 953)
+  })
+
+  it('不帶 itemprop 的巢狀 article 仍認得出是引用推文', () => {
+    expect(main!.quoted?.id).toBe('2090675027670978569')
+    expect(main!.quoted?.author.handle).toBe('thsottiaux')
+    expect(main!.quoted?.author.name).toBe('Tibo')
+    expect(main!.quoted?.author.avatarUrl).toContain('pbs.twimg.com/profile_images/')
+    expect(main!.quoted?.rawText.startsWith("We've investigated a few messages")).toBe(true)
+  })
+
+  it('引用推文的統計也走內嵌 store，且不是外層推文的數字', () => {
+    const q = main!.quoted!
+    expect(q.metrics).toEqual([
+      { kind: 'views', value: 2_797_455 },
+      { kind: 'replies', value: 3_044 },
+      { kind: 'reposts', value: 213 + 554 },
+      { kind: 'likes', value: 6_560 },
+    ])
+  })
+
+  it('引用推文被 X 自己截斷時仍如實標示不完整', () => {
+    // 內嵌 store 的 note tweet 有 675 字，頁面上的引用區塊只印了 276 字。
+    expect(main!.quoted!.rawText.length).toBe(276)
+    expect(main!.quoted!.textComplete).toBe(false)
+  })
+
+  it('沒有引用推文的頁面不會憑空生出一則', () => {
+    expect(media).not.toBeNull()
+    expect(media!.quoted).toBeUndefined()
+  })
+
+  it('單則圖片推文：作者、內文、圖片與精確統計', () => {
+    expect(media!.author.handle).toBe('wa_cats')
+    expect(media!.rawText).toBe('お盆休み最終日。\nだらだらしながら、だらしないボディを晒している人')
+    expect(media!.textComplete).toBe(true)
+    expect(media!.media).toHaveLength(1)
+    expect(media!.media[0].url).toContain('pbs.twimg.com/media/')
+    expect(media!.metrics).toEqual([
+      { kind: 'views', value: 34_410 },
+      { kind: 'replies', value: 14 },
+      { kind: 'reposts', value: 262 + 3 },
+      { kind: 'likes', value: 3_813 },
+    ])
+  })
+})
+
+describe('parseTweet 錨點被截斷時的交叉驗證', () => {
+  const LONG = 'A'.repeat(200) + ' the quick brown fox jumps over the lazy'
+
+  it('錨點停在半途時，接受「可見文字以它開頭」並採用可見的全文', () => {
+    const t = parseTweet(
+      visibleOnlyHtml({ titleText: LONG, visibleText: `${LONG} dog. Done.` }),
+      VISIBLE_ONLY_ID,
+    )!
+    expect(t).not.toBeNull()
+    expect(t.rawText).toBe(`${LONG} dog. Done.`)
+    expect(t.textComplete).toBe(true)
+  })
+
+  it('可見文字不是以錨點開頭時 fail closed，不把其他 UI 文字當推文', () => {
+    expect(
+      parseTweet(visibleOnlyHtml({ titleText: LONG, visibleText: `另一段 ${LONG}` }), VISIBLE_ONLY_ID),
+    ).toBeNull()
   })
 })

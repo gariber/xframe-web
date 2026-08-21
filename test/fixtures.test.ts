@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync, existsSync } from 'node:fs'
 
-const NAMES = ['plain', 'quoted', 'media', 'quoted-with-media']
+const NAMES = ['plain', 'quoted', 'media', 'quoted-with-media', 'quoted-embedded', 'media-embedded']
 
 describe('fixtures', () => {
   it.each(NAMES)('%s 存在且含 microdata article', (name) => {
@@ -75,5 +75,46 @@ describe('新版 SSR fixtures（2026-08 實抓）', () => {
   it('reply fixture 的 title 帶著被回覆對象的帳號，可見正文不帶（這正是退化成因）', () => {
     const html = readFileSync('test/fixtures/visible-ssr-reply.html', 'utf8')
     expect(html).toMatch(/<title>[^<]*on X: &quot;@basarafire /)
+  })
+})
+
+/*
+ * 2026-08-21 抓下來的兩份頁面。它們存在的理由就是「形狀和另外四份不一樣」，
+ * 所以這裡把差異本身鎖起來：哪天有人重新存一份把這些特徵存沒了，測試會先
+ * 講話，而不是等到解析器的回歸測試失去驗證力才發現。
+ */
+describe('2026-08-21 新版 SSR fixture', () => {
+  const embedded = ['quoted-embedded', 'media-embedded']
+
+  it.each(embedded)('%s 的 article 已無 microdata 統計與內文', (name) => {
+    // 只看 DOM：同一份頁面的內嵌 store 裡仍有一份 JSON-LD 形狀的
+    // interactionStatistic，但那不是 microdata 屬性，解析器讀不到它。
+    const html = readFileSync(`test/fixtures/${name}.html`, 'utf8')
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    const article = doc.querySelector('article[itemtype="https://schema.org/SocialMediaPosting"]')!
+    expect(article).not.toBeNull()
+    expect(article.querySelector('[itemprop="interactionStatistic"]')).toBeNull()
+    expect(article.querySelector('[itemprop="text"]')).toBeNull()
+    expect(article.querySelector('[itemprop="author"]')).toBeNull()
+  })
+
+  it.each(embedded)('%s 的互動計數在內嵌 store 裡', (name) => {
+    const html = readFileSync(`test/fixtures/${name}.html`, 'utf8')
+    expect(html).toContain('__typename:"ApiCounts"')
+    expect(html).toContain('quote_count:')
+    expect(html).toContain('__typename:"ViewCountInfo"')
+  })
+
+  it('quoted-embedded 的引用推文是不帶 itemprop 的巢狀 article', () => {
+    const html = readFileSync('test/fixtures/quoted-embedded.html', 'utf8')
+    expect(html).not.toContain('itemProp="citation"')
+    expect(html).not.toContain('itemProp="sharedContent"')
+    expect(html).toContain('<article data-tweet-id="2090675027670978569">')
+  })
+
+  it('quoted-embedded 的 title 被截短，可見內文才是全文', () => {
+    const html = readFileSync('test/fixtures/quoted-embedded.html', 'utf8')
+    const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/)![1]
+    expect(title).toContain('at your own&quot; / X')
   })
 })

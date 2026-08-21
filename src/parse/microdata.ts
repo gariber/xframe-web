@@ -1,20 +1,25 @@
 import type { Post, Metric, MetricKind, Author, Media } from '../types'
 import { tokenize } from './tokenize'
+import { parseEmbeddedCounts, type EmbeddedCounts } from './embedded'
 
-const INTERACTION: Record<string, MetricKind> = {
+/**
+ * 解析過程中會出現、但卡片不會單獨顯示的一項：引用數。
+ *
+ * 它不在 MetricKind 裡，因為統計列沒有這一格；但它也不能不解析——X 的介面把
+ * 「轉推」與「引用」合併成同一個數字，卡片要對得起使用者在 X 上看到的東西，
+ * 就得把兩者加起來。
+ */
+type ParsedKind = MetricKind | 'quotes'
+
+const INTERACTION: Record<string, ParsedKind> = {
   'https://schema.org/ReplyAction': 'replies',
   'https://schema.org/ShareAction': 'reposts',
   'https://schema.org/LikeAction': 'likes',
   'https://schema.org/ViewAction': 'views',
+  'https://schema.org/InteractAction': 'quotes',
 }
 
-/**
- * X 的卡片統計列順序。與 x.com 網頁本身的排列一致。
- *
- * schema.org 還提供 InteractAction（引用數），但卡片從未顯示它，因此不解析 ——
- * 解析了卻永遠不顯示的欄位只會讓人以為它有用。要加回來的話，MetricKind、
- * METRIC_META、INTERACTION、這個陣列四處一起補。
- */
+/** X 的卡片統計列順序。與 x.com 網頁本身的排列一致。 */
 const X_METRIC_ORDER: readonly MetricKind[] = ['views', 'replies', 'reposts', 'likes']
 
 const VISIBLE_INTERACTION: Record<string, MetricKind> = {
@@ -249,7 +254,7 @@ function parseAuthor(article: Element): Author | null {
 }
 
 function parseMetrics(article: Element): Metric[] {
-  const found = new Map<MetricKind, number>()
+  const found = new Map<ParsedKind, number>()
   // 直接子層過濾至關重要：作者的追蹤者統計巢狀在 author 節點之下，不可混入
   for (const block of directChildren(article, 'interactionStatistic')) {
     const type = block.querySelector('[itemprop="interactionType"]')?.getAttribute('content')
@@ -260,6 +265,14 @@ function parseMetrics(article: Element): Metric[] {
       if (Number.isFinite(n)) found.set(kind, n)
     }
   }
+  /*
+   * 轉推數 = ShareAction（純轉推）＋ InteractAction（引用）。X 的介面顯示的是
+   * 這個和：實測 thsottiaux 那則 817 轉推 + 953 引用，x.com 上印的正是 1770。
+   * 只取 ShareAction 的話，四項統計裡就只有轉推一項對不上，看起來像隨機壞掉。
+   * 沒有 ShareAction 時維持 null——引用數自己不是轉推數，不能拿來頂替。
+   */
+  const reposts = found.get('reposts')
+  if (reposts !== undefined) found.set('reposts', reposts + (found.get('quotes') ?? 0))
   // 依固定順序輸出，而非依 DOM 中出現的順序 —— 後者會讓卡片的統計列順序
   // 隨 X 的標記變動而改變。
   return X_METRIC_ORDER.map((kind) => ({ kind, value: found.get(kind) ?? null }))
@@ -397,6 +410,24 @@ function parseVisibleMetrics(article: Element): Metric[] {
 }
 
 /**
+ * 頁面內嵌的精確計數優先於 DOM 讀到的數字。
+ *
+ * 兩個理由。一是精度：操作列印的是縮寫（`2.2K`、`17K`、`1.8M`），照著做出來的
+ * 卡片會把 1,777,903 次瀏覽寫成 1,800,000。二是完整性：轉推數必須含引用數，
+ * 而引用數在未登入頁面的 DOM 裡根本不存在，只有內嵌 store 有。
+ *
+ * 逐項覆蓋而不是整組換掉：內嵌 store 少了哪一項，那一項就還是用 DOM 的值，
+ * 不會因為 X 改了 store 的形狀就整列變成空白。
+ */
+function mergeMetrics(dom: Metric[], embedded: EmbeddedCounts | undefined): Metric[] {
+  if (!embedded) return dom
+  return dom.map((metric) => {
+    const exact = embedded[metric.kind]
+    return exact === undefined ? metric : { kind: metric.kind, value: exact }
+  })
+}
+
+/**
  * 取得屬於此 article 的圖片。
  * `img.closest('article') === article` 是正確歸屬的關鍵：若圖片位於巢狀的
  * 引用推文內，其最近的 article 祖先會是引用推文而非外層推文。
@@ -467,6 +498,80 @@ function normalizeVisibleText(text: string): string {
   return stripTrailingLink(text.replace(/\r\n?/g, '\n')).trim()
 }
 
+/** article 自己的可見文字節點（不含巢狀引用）。按鈕（Show more）先剝掉再取文字。 */
+function visibleTexts(article: Element): string[] {
+  return [...article.querySelectorAll('[dir="auto"]')]
+    .filter((el) => el.closest('article') === article)
+    .map((el) => {
+      const copy = el.cloneNode(true) as Element
+      for (const button of copy.querySelectorAll('button')) button.remove()
+      return normalizeVisibleText(copy.textContent ?? '')
+    })
+}
+
+/**
+ * 引用推文的永久連結。
+ *
+ * 外層推文有 `meta[itemprop="url"]` 可讀，引用推文沒有——新版頁面上它只是一個
+ * 巢狀的 `<article data-tweet-id="...">`，不帶任何 itemprop。唯一指向它自己的
+ * 東西是時間戳那個連結。
+ *
+ * 要求整個 article 裡只出現**一個**推文永久連結：多於一個就代表我們分不清哪
+ * 一個才是這則引用推文自己的，寧可放棄也不要張冠李戴地掛上別人的帳號。
+ */
+function permalinkFromLinks(article: Element): { url: string; id: string; handle: string } | null {
+  const found = new Map<string, { url: string; id: string; handle: string }>()
+  for (const link of article.querySelectorAll('a[href]')) {
+    if (link.closest('article') !== article) continue
+    const href = link.getAttribute('href')
+    if (!href) continue
+    let url: URL
+    try {
+      url = new URL(href, 'https://x.com')
+    } catch {
+      continue
+    }
+    if (!X_HOSTS.has(url.hostname)) continue
+    const match = url.pathname.match(/^\/([A-Za-z0-9_]{1,15})\/status\/(\d+)\/?$/)
+    if (!match) continue
+    found.set(match[2], { url: url.toString(), id: match[2], handle: match[1] })
+  }
+  return found.size === 1 ? [...found.values()][0] : null
+}
+
+/**
+ * 新版頁面的引用推文：沒有 microdata，也沒有 title 可以交叉驗證。
+ *
+ * 能倚靠的只有三件彼此獨立的可見事實——永久連結（給出 ID 與帳號）、指向同一
+ * 個帳號的個人檔案連結（給出顯示名稱），以及 article 自己的可見文字。三者
+ * 任一缺席就放棄整則引用，卡片會少一塊，但不會印出拼湊來的東西。
+ *
+ * 內文允許是空的：只有圖片的引用推文是常見的。
+ */
+function parseVisibleQuoted(
+  article: Element,
+  outerId: string,
+): Omit<Post, 'quoted' | 'media' | 'text' | 'textComplete'> | null {
+  const permalink = permalinkFromLinks(article)
+  if (!permalink || permalink.id === outerId) return null
+  const author = parseVisibleAuthor(article, permalink.handle)
+  if (!author) return null
+  const rawText = visibleTexts(article).reduce(
+    (longest, text) => (text.length > longest.length ? text : longest),
+    '',
+  )
+  return {
+    id: permalink.id,
+    url: permalink.url,
+    platform: 'x',
+    author,
+    source: 'fetch',
+    rawText,
+    createdAt: metaOf(article, 'dateCreated') ?? metaOf(article, 'datePublished') ?? '',
+    metrics: parseVisibleMetrics(article),
+  }
+}
+
 /**
  * 可信的內文錨點：優先用 `og:description`，其次才是 `<title>`。
  *
@@ -513,14 +618,7 @@ function parseVisibleArticle(
 
   const trusted = trustedBodyText(ogDescription, title, author.name)
   if (!trusted) return null
-  const visibleMatches = [...article.querySelectorAll('[dir="auto"]')]
-    .filter((el) => el.closest('article') === article)
-    .map((el) => {
-      const copy = el.cloneNode(true) as Element
-      for (const button of copy.querySelectorAll('button')) button.remove()
-      return normalizeVisibleText(copy.textContent ?? '')
-    })
-    .filter((text) => text !== '')
+  const visibleMatches = visibleTexts(article).filter((text) => text !== '')
   // 先要求完全相等；對不上時才依序放寬兩種**已知**差異，順序不能反：
   //   1. 錨點多了開頭的 @提及（回覆推文；先剝的話，內文真的以 @ 開頭的非回覆
   //      推文會被剝掉開頭）
@@ -626,6 +724,7 @@ export function parseTweet(html: string, tweetId: string): Post | null {
   const ogDescription = doc
     .querySelector('meta[property="og:description"]')
     ?.getAttribute('content') ?? null
+  const embedded = parseEmbeddedCounts(doc)
   const base = parseArticle(article)
     ?? parseVisibleArticle(article, title, ogDescription, tweetId)
   if (!base) return null
@@ -647,13 +746,18 @@ export function parseTweet(html: string, tweetId: string): Post | null {
     ? visibleText.fromArticle
     : titleText.fromTitle
 
-  // 舊版頁面使用 citation；新版公開頁面改成 sharedContent。兩者都不是直接子節點。
-  const citeEl = article.querySelector(
-    'article[itemprop="citation"], article[itemprop="sharedContent"]',
-  )
+  /*
+   * 舊版頁面用 citation，2026-08 的公開頁面改成 sharedContent，再新一點的版本
+   * 連 itemprop 都拿掉了——引用推文就只是一個巢狀的 `<article>`。前兩者仍優先，
+   * 因為那是明講出來的語意；沒有的話才退回「巢狀 article 就是引用推文」，這在
+   * 推文詳情頁上成立：底下的回覆是各自獨立的同層 article，不會巢狀在主推文裡。
+   */
+  const citeEl =
+    article.querySelector('article[itemprop="citation"], article[itemprop="sharedContent"]') ??
+    article.querySelector('article')
   let quoted: Omit<Post, 'quoted'> | undefined
   if (citeEl) {
-    const cbase = parseArticle(citeEl)
+    const cbase = parseArticle(citeEl) ?? parseVisibleQuoted(citeEl, tweetId)
     if (cbase) {
       const quoteText = fullTextFromArticle(citeEl, cbase.rawText)
       quoted = {
@@ -661,6 +765,7 @@ export function parseTweet(html: string, tweetId: string): Post | null {
         rawText: quoteText.text,
         text: tokenize(quoteText.text),
         media: parseMedia(citeEl),
+        metrics: mergeMetrics(cbase.metrics, embedded.get(cbase.id)),
         // 引用推文沒有自己的 title，但新版頁面的可見文字仍可作為第二份來源。
         // 若找不到，就保留原本的保守長度判斷。
         textComplete: looksComplete(quoteText.text, quoteText.fromArticle),
@@ -673,6 +778,7 @@ export function parseTweet(html: string, tweetId: string): Post | null {
     rawText: fullText,
     text: tokenize(fullText),
     media: parseMedia(article),
+    metrics: mergeMetrics(base.metrics, embedded.get(base.id)),
     textComplete: looksComplete(fullText, fromFullSource),
     ...(quoted ? { quoted } : {}),
   }
