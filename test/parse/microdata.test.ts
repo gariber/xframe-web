@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import {
-  parseTweet, extractTweetId, decodeEntities, stripTrailingLink, fullTextFromTitle,
+  parseTweet, extractTweetId, decodeEntities, stripTrailingLink, fullTextFromTitle, looksComplete,
 } from '../../src/parse/microdata'
 
 const fx = (n: string) => readFileSync(`test/fixtures/${n}.html`, 'utf8')
@@ -463,6 +463,39 @@ describe('textComplete', () => {
     const t = parseTweet(fx('quoted'), '2082883636177916306')!
     expect(t.quoted!.rawText.length).toBeGreaterThanOrEqual(190)
     expect(t.quoted!.textComplete).toBe(false)
+    // 截斷的實際樣子：停在字詞上，沒有任何結尾標點，也沒有刪節號
+    expect(t.quoted!.rawText.trim()).toMatch(/[\p{L}\p{N}]$/u)
+  })
+
+  /*
+   * 這是使用者實際回報的情況：一則超過 190 字、但**確實完整**的推文，被掛上
+   * 「內文未完整取得」。
+   *
+   * 成因是舊的判斷只看長度——meta 本身就是完整全文時，可見文字裡找不到「更長
+   * 的」候選，fromVerifiedSource 因此是 false，於是只剩長度這一條，任何長推文
+   * 都中標。長推文本來就多，提示到處都是就沒有資訊量。
+   */
+  it('長但完整的推文不標記為不完整——有結尾標點就不是被切在半途', () => {
+    const complete = 'a'.repeat(200) + ' and using your included usage.'
+    expect(looksComplete(complete, false)).toBe(true)
+  })
+
+  /*
+   * 已知漏判，記錄下來而不是假裝解決了：以 hashtag 收尾的長推文仍會被誤標。
+   * hashtag 本身也是字母結尾，先剝掉再判斷沒有用——剝掉後露出的還是字母。
+   */
+  it('以 hashtag 收尾的長推文仍會被誤標為不完整（已知限制）', () => {
+    // 句號在 hashtag 前面也救不了——判斷看的是最後一個字元，而那是 hashtag 的字母
+    expect(looksComplete('b'.repeat(200) + ' shipping today #XFrame', false)).toBe(false)
+    expect(looksComplete('b'.repeat(200) + ' shipping today. #XFrame', false)).toBe(false)
+    // 標點真的在最後才判定為完整
+    expect(looksComplete('b'.repeat(200) + ' #XFrame shipping today.', false)).toBe(true)
+  })
+
+  it('夠長又停在字詞上才算截斷——兩個條件缺一不可', () => {
+    expect(looksComplete('c'.repeat(200) + ' lower prices are', false)).toBe(false)
+    // 短文即使停在字詞上也不標：X 不會把這麼短的內容截斷
+    expect(looksComplete('short text ending mid word are', false)).toBe(true)
   })
 })
 

@@ -163,17 +163,46 @@ function fullTextFromArticle(
 /**
  * meta itemprop="text" 被視為可能截斷的長度下界。
  *
- * X 截在約 200 字，但不是精確值 —— 實測有 199 與 277 兩種。取 190 作為下界，
- * 寧可把剛好夠長的完整推文誤標為不確定，也不要把截斷的推文標成完整：前者
- * 只是多一行提示，後者是騙人。
- *
- * 主推文通常能從可見 article 或 title 補回全文；舊版引用推文若沒有可驗證的
- * 可見文字，仍需靠這個下界保守標示為可能不完整。
+ * X 截在約 200 字，但不是精確值 —— 實測有 199、276、277、279 幾種。
  */
 const META_TRUNCATION_FLOOR = 190
 
-function looksComplete(text: string, fromVerifiedSource: boolean): boolean {
-  return fromVerifiedSource || text.length < META_TRUNCATION_FLOOR
+/**
+ * 結尾看起來像被切在半途。
+ *
+ * X 截斷時**不留刪節號**——實測兩則引用推文分別停在 `...lower prices are` 與
+ * `...they felt it was`，就是硬切在句子中間。所以「有沒有 …」不能用來判斷，
+ * 但「停在字詞上、沒有任何結尾標點」本身就是很強的截斷痕跡。
+ *
+ * 已知的漏判：以 hashtag 或 @帳號收尾的長推文會被誤標為不完整，因為那些同樣
+ * 是字母結尾。曾經試過先剝掉結尾的 tag 再判斷，但那沒有用——剝掉之後露出的
+ * 仍然是字母（`Shipping today #tag` → `Shipping today`），結論不變。要真的分辨
+ * 得靠語意，不值得為此加一套規則，所以保留這個漏判並記在這裡。
+ */
+const ENDS_MID_WORD = /[\p{L}\p{N}]$/u
+
+function looksTruncated(text: string): boolean {
+  return ENDS_MID_WORD.test(text.trim())
+}
+
+/**
+ * 內文是否完整。
+ *
+ * 先前這裡只有長度下界：`fromVerifiedSource || text.length < 190`。問題是它分
+ * 不出兩種都會讓 fromVerifiedSource 為 false 的情況：
+ *
+ *   a) meta 被截斷，而我們沒能從可見文字補回全文  → 確實不完整
+ *   b) meta 本身就是完整全文，所以可見文字裡**找不到更長的候選**
+ *
+ * 結果是任何超過 190 字的完整長推文都被掛上「內文未完整取得」。長推文本來就
+ * 多，提示一旦到處都是就沒有資訊量，真正被截斷的那些反而混在裡面看不出來。
+ *
+ * 加上結尾檢查之後，只有「夠長 **且** 停在半途」才標為不完整——兩個條件同時
+ * 成立才是截斷的樣子。仍然保守：寧可漏標，也不要把完整的推文吵成不完整。
+ */
+export function looksComplete(text: string, fromVerifiedSource: boolean): boolean {
+  if (fromVerifiedSource) return true
+  return text.length < META_TRUNCATION_FLOOR || !looksTruncated(text)
 }
 
 /**

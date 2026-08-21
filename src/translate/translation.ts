@@ -143,16 +143,28 @@ export function applyPastedTranslation(
 
   if (!mainChanged && !quotedChanged) return null
 
+  /*
+   * 套用譯文時要一併清掉「內文未完整取得」。
+   *
+   * 那個旗標描述的是**抓取結果**——來源沒給全文。使用者貼上的譯文是他自己從 X
+   * 複製的完整內容，抓取的限制已經不適用了；沿用舊值的話，卡片會在一段完整的
+   * 譯文底下掛著「內文未完整取得」，說的是上一份文字的事。
+   */
   return {
     ...post,
     translatedFrom: from,
-    ...(mainChanged ? { rawText: main, text: tokenize(main) } : {}),
+    ...(mainChanged ? { rawText: main, text: tokenize(main), textComplete: true } : {}),
     ...(post.quoted
       ? {
           quoted: {
             ...post.quoted,
             ...(quotedChanged
-              ? { rawText: quoted, text: tokenize(quoted), translatedFrom: from }
+              ? {
+                  rawText: quoted,
+                  text: tokenize(quoted),
+                  translatedFrom: from,
+                  textComplete: true,
+                }
               : {}),
           },
         }
