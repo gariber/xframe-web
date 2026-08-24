@@ -34,6 +34,9 @@ describe('mergeSettings', () => {
     const merged = mergeSettings({ bogus: 1 } as never)
     expect('bogus' in merged).toBe(false)
   })
+  it('遮蔽作者是逐則貼文的判斷，不沿用上一則儲存值', () => {
+    expect(mergeSettings({ maskIdentity: true }).maskIdentity).toBe(false)
+  })
 })
 
 describe('mergeSettings 不可變性', () => {

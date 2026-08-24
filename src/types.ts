@@ -49,12 +49,10 @@ export type Platform = 'x'
  * 這則貼文的資料從哪裡來。
  *
  * `fetch` 是正常路徑：不帶 cookie 抓取公開頁面解析結構化資料。
- * `dom` 表示公開抓取拿不到內容 —— 最常見的原因是鎖定帳號，其內容對未登入
- * 請求本來就不可見 —— 改從使用者眼前這個已登入頁面讀取。
+ * `dom` 表示公開抓取拿不到或解析不了內容，改從使用者眼前這個已登入頁面讀取。
+ * 這不代表帳號一定鎖定：X 改版也可能讓公開頁解析失敗，因此鎖推狀態必須另外
+ * 由 `Post.isProtected` 表示。
  * `manual` 是使用者自己輸入的。
- *
- * 這個區別會一路影響 UI：來源為 `dom` 時要顯示傳播範圍的提醒，且身分遮蔽
- * 預設開啟。
  */
 export type PostSource = 'fetch' | 'dom' | 'manual'
 
@@ -79,6 +77,11 @@ export type Post = {
   metrics: Metric[]
   media: Media[]
   source: PostSource
+  /**
+   * 作者是否為鎖推帳號。只有已登入頁面作者區內明確出現 X 的 `icon-lock` 時才是
+   * true；缺少訊號時不猜測。這與資料是否來自 DOM 是兩件不同的事。
+   */
+  isProtected?: boolean
   quoted?: Omit<Post, 'quoted'>
   /**
    * 內文是否完整。
@@ -116,7 +119,7 @@ export type CardSettings = {
    * 遮蔽作者身分。名稱、帳號、頭像三者一起遮 —— 只遮其中一兩項是假的保護，
    * 剩下任何一項都足以認出人來，半套遮蔽只會給人錯誤的安全感。
    *
-   * 鎖推來源的推文預設開啟（安全的選擇當預設），一般推文預設關閉，兩者皆可
+   * 明確偵測為鎖推的貼文預設開啟（安全的選擇當預設），一般推文預設關閉，兩者皆可
    * 由使用者切換。
    */
   maskIdentity: boolean

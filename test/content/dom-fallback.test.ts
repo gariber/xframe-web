@@ -32,20 +32,40 @@ describe('parseUserName', () => {
 const PERMALINK = 'https://x.com/0x001A/status/2083310281724424677'
 
 /** 依 2026-08-01 實測的登入版結構搭建最小 DOM */
-function buildPage(opts: { text?: string; userName?: string; time?: string; avatar?: string } = {}) {
+function buildPage(opts: {
+  text?: string
+  userName?: string
+  time?: string
+  avatar?: string
+  isProtected?: boolean
+  metrics?: { views: string; replies: string; reposts: string; likes: string } | null
+} = {}) {
   const {
     text = '看完 poi s03',
     userName = '止痛藥水\n@0x001A',
     time = '2026-07-31T21:54:11.000Z',
     avatar = 'https://pbs.twimg.com/profile_images/1797436415435018240/78IKI5Gj_x96.jpg',
+    isProtected = false,
+    metrics = { views: '12,345', replies: '2', reposts: '0', likes: '89' },
   } = opts
   document.body.innerHTML = `
+    <svg data-testid="icon-lock" aria-label="檢視者自己的鎖頭"></svg>
     <article>
       <a href="/0x001A/status/2083310281724424677">link</a>
       <img src="${avatar}">
-      <div data-testid="User-Name">${userName.replace(/\n/g, '<br>')}</div>
+      <div data-testid="User-Name">
+        ${userName.replace(/\n/g, '<br>')}
+        ${isProtected ? '<svg data-testid="icon-lock" aria-label="受保護的帳戶"></svg>' : ''}
+      </div>
       <div data-testid="tweetText">${text}</div>
       <time datetime="${time}">now</time>
+      ${metrics ? `
+        <div role="group" aria-label="${metrics.replies} 則回覆、${metrics.reposts} 次轉發、${metrics.likes} 個喜歡、${metrics.views} 次觀看">
+          <button data-testid="reply" aria-label="${metrics.replies} 則回覆。回覆"></button>
+          <button data-testid="retweet" aria-label="${metrics.reposts} 次轉發。轉發"></button>
+          <button data-testid="like" aria-label="${metrics.likes} 個喜歡。喜歡"></button>
+          <a href="/0x001A/status/2083310281724424677/analytics">1.2 萬 次查看</a>
+        </div>` : ''}
     </article>`
   // happy-dom 的 innerText 不會把 <br> 轉成換行，實測的來源是真瀏覽器的
   // innerText。這裡直接補上真實的多行文字，讓測試對齊實測輸入而非 DOM 細節。
@@ -68,19 +88,29 @@ describe('extractFromDom', () => {
     expect(t.author.avatarUrl).toContain('profile_images')
   })
 
-  it('標記來源為 dom，讓 UI 顯示鎖推提醒並預設遮蔽', () => {
+  it('DOM 降級來源不等於鎖推；只有作者區內有 icon-lock 才標記鎖推', () => {
     buildPage()
-    expect(extractFromDom(PERMALINK)!.source).toBe('dom')
+    const publicPost = extractFromDom(PERMALINK)!
+    expect(publicPost.source).toBe('dom')
+    expect(publicPost.isProtected).toBe(false)
+
+    buildPage({ isProtected: true })
+    expect(extractFromDom(PERMALINK)!.isProtected).toBe(true)
   })
 
-  it('互動數一律 null —— X 只渲染非零數字且不帶標籤，猜錯比顯示「—」更糟', () => {
+  it('依 X 的語意控制項讀出四項精確互動數，包括零值與千分位', () => {
     buildPage()
     expect(extractFromDom(PERMALINK)!.metrics).toEqual([
-      { kind: 'views', value: null },
-      { kind: 'replies', value: null },
-      { kind: 'reposts', value: null },
-      { kind: 'likes', value: null },
+      { kind: 'views', value: 12_345 },
+      { kind: 'replies', value: 2 },
+      { kind: 'reposts', value: 0 },
+      { kind: 'likes', value: 89 },
     ])
+  })
+
+  it('頁面沒有提供互動語意標記時維持 null，不猜測未標記的數字', () => {
+    buildPage({ metrics: null })
+    expect(extractFromDom(PERMALINK)!.metrics.every((metric) => metric.value === null)).toBe(true)
   })
 
   it('不抓圖片：歸屬錯誤會把別人的圖畫進卡片', () => {

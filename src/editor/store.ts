@@ -28,6 +28,9 @@ export function mergeSettings(raw: Partial<CardSettings> | undefined): CardSetti
   for (const key of Object.keys(DEFAULT_SETTINGS) as (keyof CardSettings)[]) {
     const v = raw[key]
     if (v === undefined) continue
+    // 作者遮蔽是逐則貼文依 icon-lock 判斷的安全預設，不是跨貼文偏好。忽略舊版
+    // 曾寫進 storage 的值，避免看完鎖推後下一則公開貼文仍自動匿名。
+    if (key === 'maskIdentity') continue
     if (key === 'aspect' && !validAspect(v)) continue
     if (key === 'show' || key === 'background') {
       Object.assign(out[key], v)

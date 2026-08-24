@@ -78,6 +78,7 @@ beforeEach(() => {
 afterEach(() => {
   render(null, host)
   host.remove()
+  document.querySelectorAll('[data-test-x-page]').forEach((el) => el.remove())
   vi.unstubAllGlobals()
 })
 
@@ -316,5 +317,71 @@ describe('抓取不再依賴 service worker', () => {
 
     const sent = vi.mocked(chrome.runtime.sendMessage).mock.calls.map((c) => (c[0] as unknown as { type: string }).type)
     expect(sent).not.toContain('fetch-tweet-html')
+  })
+})
+
+function buildDomFallbackPage(isProtected: boolean) {
+  const page = document.createElement('div')
+  page.dataset.testXPage = ''
+  page.innerHTML = `
+    <article data-testid="tweet">
+      <a href="/thsottiaux/status/2083053369351090254">permalink</a>
+      <div data-testid="User-Name">
+        Tibo<br>@thsottiaux
+        ${isProtected ? '<svg data-testid="icon-lock"></svg>' : ''}
+      </div>
+      <div data-testid="tweetText">公開抓取解析失敗時仍從眼前頁面讀取</div>
+      <time datetime="2026-08-24T00:46:00.000Z"></time>
+      <div role="group" aria-label="948 則回覆、563 次轉發、6166 個喜歡、211 個書籤、461700 次觀看">
+        <button data-testid="reply" aria-label="948 則回覆。回覆"></button>
+        <button data-testid="retweet" aria-label="563 次轉發。轉發"></button>
+        <button data-testid="like" aria-label="6166 個喜歡。喜歡"></button>
+        <a href="/thsottiaux/status/2083053369351090254/analytics">45.3 萬 次查看</a>
+      </div>
+    </article>`
+  document.body.appendChild(page)
+  const user = page.querySelector('[data-testid="User-Name"]') as HTMLElement
+  const text = page.querySelector('[data-testid="tweetText"]') as HTMLElement
+  Object.defineProperty(user, 'innerText', { value: 'Tibo\n@thsottiaux', configurable: true })
+  Object.defineProperty(text, 'innerText', {
+    value: '公開抓取解析失敗時仍從眼前頁面讀取',
+    configurable: true,
+  })
+}
+
+async function mountDomFallback(isProtected: boolean) {
+  buildDomFallbackPage(isProtected)
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('<!doctype html><title>X</title>', { status: 200 })))
+  vi.stubGlobal('chrome', {
+    runtime: {
+      getManifest: () => ({ version: '0.3.0' }),
+      sendMessage: vi.fn(async () => ({ ok: false, kind: 'network', message: 'stubbed' })),
+    },
+    storage: { local: { get: vi.fn(async () => ({})), set: vi.fn(async () => {}) } },
+  })
+  vi.mocked(storeMod.loadSettings).mockResolvedValue(DEFAULT_SETTINGS)
+  render(<Panel permalink={PERMALINK} onClose={() => {}} />, host)
+  await waitFor(() => (host.querySelector('.xf-export') as HTMLButtonElement)?.disabled === false)
+}
+
+describe('Panel 依鎖推訊號決定遮蔽預設', () => {
+  it('公開貼文即使走 DOM 降級，也不預設遮蔽或顯示鎖推提醒', async () => {
+    await mountDomFallback(false)
+    const boxes = host.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')
+    const mask = boxes[boxes.length - 1]
+    expect(mask.checked).toBe(false)
+    expect(host.querySelector('.xf-protected')).toBeNull()
+    expect(host.textContent).toContain('461.7K')
+    expect(host.textContent).toContain('948')
+    expect(host.textContent).toContain('563')
+    expect(host.textContent).toContain('6.2K')
+  })
+
+  it('作者區明確有 icon-lock 時才預設遮蔽並顯示提醒', async () => {
+    await mountDomFallback(true)
+    const boxes = host.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')
+    const mask = boxes[boxes.length - 1]
+    expect(mask.checked).toBe(true)
+    expect(host.querySelector('.xf-protected')).not.toBeNull()
   })
 })

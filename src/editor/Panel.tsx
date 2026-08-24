@@ -90,8 +90,8 @@ async function loadTweet(permalink: string): Promise<Post> {
   const html = await fetchHtml(permalink)
   let tweet = parseTweet(html, id)
   if (!tweet) {
-    // 公開抓取拿不到內容，最常見的原因是鎖推帳號 —— 其貼文對未登入請求本來
-    // 就不可見。使用者的瀏覽器看得到（登入且獲核准），所以改從眼前的 DOM 讀。
+    // 公開抓取拿不到或解析不了內容時，改從眼前的 DOM 讀。這可能是鎖推，也可能
+    // 只是 X 改了公開頁結構；鎖推狀態由 DOM 作者區的 icon-lock 另外判斷。
     //
     // 降級後的卡片看起來是「正常但資訊少」，使用者無從得知是哪一關失敗，我們
     // 也無從遠端重現（X 給不同地區、語系、登入狀態的頁面並不一樣）。把診斷印
@@ -200,7 +200,9 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
   useEffect(() => {
     // 讀取失敗（例如 chrome.storage 出錯）就退回預設值，而不是留下一個永遠
     // 不會 resolve 的 promise 靜默吞掉錯誤 —— 面板至少要能用預設設定運作。
-    loadSettings().then(setSettings).catch(() => setSettings(DEFAULT_SETTINGS))
+    loadSettings()
+      .then((loaded) => setSettings((current) => ({ ...loaded, maskIdentity: current.maskIdentity })))
+      .catch(() => setSettings((current) => ({ ...DEFAULT_SETTINGS, maskIdentity: current.maskIdentity })))
   }, [])
 
   useEffect(() => {
@@ -210,12 +212,11 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
       .then((tweet) => {
         if (cancelled) return
         setStatus({ phase: 'ready', tweet })
-        // 鎖推來源預設開啟身分遮蔽：安全的選擇當預設，但仍可由使用者關掉。
+        // 只有作者區明確出現 X 的 icon-lock 才預設遮蔽。DOM 只是資料取得方式，
+        // 不能再被當成鎖推的替代判斷；公開貼文解析退化時也會走 DOM。
         // 刻意不寫進 chrome.storage —— 這是針對「這一則」的保護性預設，
         // 若持久化，下一則公開推文會莫名其妙也被遮起來。
-        if (tweet.source === 'dom') {
-          setSettings((prev) => (prev.maskIdentity ? prev : { ...prev, maskIdentity: true }))
-        }
+        setSettings((prev) => ({ ...prev, maskIdentity: tweet.isProtected === true }))
       })
       .catch((e) => {
         if (!cancelled) setStatus({ phase: 'error', message: ERROR_TEXT[e.message] ?? ERROR_TEXT.network })
@@ -226,7 +227,8 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
   const patch = (p: Partial<CardSettings>) => {
     const next = { ...settings, ...p }
     setSettings(next)
-    void saveSettings(next)
+    // 遮蔽只在目前這則貼文生效；其他排版設定照常保存。
+    void saveSettings({ ...next, maskIdentity: DEFAULT_SETTINGS.maskIdentity })
   }
 
   const doExport = async () => {
@@ -379,7 +381,7 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
       */}
       <div class="xf-body">
 
-      {status.phase === 'ready' && status.tweet.source === 'dom' && (
+      {status.phase === 'ready' && status.tweet.isProtected === true && (
         <div class="xf-protected" role="note">
           <strong>這是鎖推帳號的內容</strong>
           <p>

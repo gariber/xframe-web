@@ -291,7 +291,7 @@ describe('parseTweet 2026-08 可見 SSR fallback', () => {
   })
 
   // 回覆推文的 title 內文帶著被回覆對象的帳號，可見正文不帶。這個差異曾讓每一則
-  // 回覆都解析失敗、無聲退化成 DOM 路徑（作者被遮蔽、圖片與互動數全空）。
+  // 回覆都解析失敗、無聲退化成 DOM 路徑。
   it('回覆推文：title 多出開頭的 @提及時仍解析成功，且內文與 X 一致不含該提及', () => {
     const t = parseTweet(
       visibleOnlyHtml({ titleText: `@someone ${VISIBLE_ONLY_TEXT}` }),

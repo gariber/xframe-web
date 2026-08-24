@@ -37,7 +37,7 @@ export const DEFAULT_SETTINGS: CardSettings = {
   fontFamily: '-apple-system, "PingFang TC", "Noto Sans TC", system-ui, sans-serif',
   textColor: '#ffffff',
   show: { avatar: true, stats: true, timestamp: true, media: true },
-  // 一般推文預設不遮。鎖推來源的推文由 Panel 在載入完成時改為預設開啟 ——
+  // 一般推文預設不遮。鎖推貼文由 Panel 在載入完成時改為預設開啟 ——
   // 那是安全的預設，但仍然是使用者可以關掉的選擇。
   maskIdentity: false,
   timeFormat: 'relative',
