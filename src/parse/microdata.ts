@@ -540,6 +540,25 @@ function permalinkFromLinks(article: Element): { url: string; id: string; handle
 }
 
 /**
+ * 找出指定貼文自己的 article。
+ *
+ * 舊版 SSR 直接把 ID 寫在 data-tweet-id；2026-08-25 的版本移除了 article 上
+ * 所有貼文屬性，只剩時間與瀏覽數連結仍指向永久網址。後者必須在 article 自己的
+ * 連結中只出現一個貼文 ID，且精確等於輸入 ID，才採信。這會排除下方回覆，也
+ * 不會把巢狀引用的永久連結算到外層 article。
+ */
+function articleForTweet(doc: Document, tweetId: string): Element | null {
+  const structured = doc.querySelector(
+    `article[data-tweet-id="${tweetId}"][itemtype="https://schema.org/SocialMediaPosting"]`,
+  )
+  if (structured) return structured
+
+  const candidates = [...doc.querySelectorAll('article')]
+    .filter((article) => permalinkFromLinks(article)?.id === tweetId)
+  return candidates.length === 1 ? candidates[0] : null
+}
+
+/**
  * 新版頁面的引用推文：沒有 microdata，也沒有 title 可以交叉驗證。
  *
  * 能倚靠的只有三件彼此獨立的可見事實——永久連結（給出 ID 與帳號）、指向同一
@@ -610,7 +629,16 @@ function parseVisibleArticle(
   ogDescription: string | null,
   expectedId: string,
 ): Omit<Post, 'quoted' | 'media' | 'text' | 'textComplete'> | null {
-  const permalink = parsePermalink(metaOf(article, 'url'), expectedId)
+  // 有結構化 URL 時它仍是最高權威；存在但對不上就直接失敗，不能用可見連結
+  // 覆蓋矛盾。只有 X 把 itemprop=url 整個移除時，才退回 article 自己唯一的
+  // 永久連結。
+  const structuredUrl = metaOf(article, 'url')
+  const linked = structuredUrl === null ? permalinkFromLinks(article) : null
+  const permalink = structuredUrl !== null
+    ? parsePermalink(structuredUrl, expectedId)
+    : linked?.id === expectedId
+      ? { url: linked.url, handle: linked.handle }
+      : null
   if (!permalink) return null
 
   const author = parseVisibleAuthor(article, permalink.handle)
@@ -642,6 +670,21 @@ function parseVisibleArticle(
     createdAt: metaOf(article, 'dateCreated') ?? metaOf(article, 'datePublished') ?? '',
     metrics: parseVisibleMetrics(article),
   }
+}
+
+/**
+ * 新版無屬性 article 的建立時間只剩在頁首。先要求 og:url 與已解析的貼文 ID、
+ * 作者帳號完全一致，再接受可解析的 article:published_time；否則保留空字串。
+ */
+function publishedTimeFromHead(doc: Document, tweetId: string, handle: string): string {
+  const pageUrl = doc.querySelector('meta[property="og:url"]')?.getAttribute('content') ?? null
+  const permalink = parsePermalink(pageUrl, tweetId)
+  if (!permalink || permalink.handle.toLowerCase() !== handle.toLowerCase()) return ''
+
+  const published = doc
+    .querySelector('meta[property="article:published_time"]')
+    ?.getAttribute('content') ?? ''
+  return published !== '' && Number.isFinite(Date.parse(published)) ? published : ''
 }
 
 /**
@@ -683,17 +726,15 @@ function parseArticle(article: Element): Omit<Post, 'quoted' | 'media' | 'text' 
 export function explainParseFailure(html: string, tweetId: string): Record<string, unknown> {
   if (!html) return { reason: 'empty-html' }
   const doc = new DOMParser().parseFromString(html, 'text/html')
-  const article = doc.querySelector(
-    `article[data-tweet-id="${tweetId}"][itemtype="https://schema.org/SocialMediaPosting"]`,
-  )
+  const article = /^\d+$/.test(tweetId) ? articleForTweet(doc, tweetId) : null
   const title = doc.querySelector('title')?.textContent ?? ''
   const og = doc.querySelector('meta[property="og:description"]')?.getAttribute('content') ?? null
   return {
     htmlLength: html.length,
     // 這頁是不是 React 外殼（X 對某些請求只回外殼，裡面沒有推文）
-    isAppShell: html.includes('id="react-root"') && !html.includes('SocialMediaPosting'),
+    isAppShell: html.includes('id="react-root"') && !article,
     articleFound: !!article,
-    anyArticle: doc.querySelectorAll('article[data-tweet-id]').length,
+    anyArticle: doc.querySelectorAll('article').length,
     hasOgDescription: og !== null,
     ogHead: og?.slice(0, 80) ?? null,
     titleHead: title.slice(0, 80),
@@ -713,9 +754,7 @@ export function parseTweet(html: string, tweetId: string): Post | null {
   // 內插，這比未經檢查的內插更安全，也避開了這個 happy-dom 限制。
   if (!/^\d+$/.test(tweetId)) return null
   const doc = new DOMParser().parseFromString(html, 'text/html')
-  const article = doc.querySelector(
-    `article[data-tweet-id="${tweetId}"][itemtype="https://schema.org/SocialMediaPosting"]`,
-  )
+  const article = articleForTweet(doc, tweetId)
   if (!article) return null
 
   const title = doc.querySelector('title')?.textContent ?? ''
@@ -775,6 +814,7 @@ export function parseTweet(html: string, tweetId: string): Post | null {
 
   return {
     ...base,
+    createdAt: base.createdAt || publishedTimeFromHead(doc, tweetId, base.author.handle),
     rawText: fullText,
     text: tokenize(fullText),
     media: parseMedia(article),

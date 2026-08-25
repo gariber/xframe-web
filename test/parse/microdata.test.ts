@@ -47,6 +47,48 @@ function visibleOnlyHtml({
     </html>`
 }
 
+const ATTRIBUTELESS_ID = '2092058556707344708'
+const ATTRIBUTELESS_TEXT = `Tomorrow we will bring back the 5h limit for Plus accounts across ChatGPT Work and Codex. I had mentioned this a while ago, but then postponed it.
+
+This is necessary as (a) the 5h limit allows us to smoothen the load on our compute, allowing to keep the plan generous in terms of weekly usage and (b) users on the Plus plan are relatively casual and new users, but then also just accidentally eat through their whole weeks usage and then are confused, making it not a great experience.
+
+We are for the upcoming months keeping the 5h limit not enabled for Pro $100 and Pro $200 subscriptions.`
+
+/**
+ * 2026-08-25 的 X 未登入 SSR：article 還在，但 data-tweet-id、itemtype 與所有
+ * itemprop 都被移除。主貼文只剩永久連結能提供可信的貼文 ID 與作者帳號。
+ */
+function attributelessArticleHtml(): string {
+  const trustedPrefix = ATTRIBUTELESS_TEXT.slice(0, 279)
+  return `<!doctype html>
+    <html>
+      <head>
+        <title>Tibo on X: "${trustedPrefix}" / X</title>
+        <meta property="og:url" content="https://x.com/thsottiaux/status/${ATTRIBUTELESS_ID}">
+        <meta property="og:description" content="${trustedPrefix}">
+        <meta property="article:published_time" content="2026-08-25T01:16:43.000Z">
+      </head>
+      <body>
+        <article class="flex flex-col gap-1">
+          <a href="/thsottiaux"><img src="https://pbs.twimg.com/profile_images/2075819673263001600/pj1vyX6I_normal.jpg" alt="user avatar"></a>
+          <a href="https://x.com/thsottiaux">Tibo</a>
+          <a href="https://x.com/thsottiaux">@thsottiaux</a>
+          <div dir="auto">${ATTRIBUTELESS_TEXT}</div>
+          <a href="/thsottiaux/status/${ATTRIBUTELESS_ID}">1:16 AM · Aug 25, 2026</a>
+          <a href="/thsottiaux/status/${ATTRIBUTELESS_ID}"><span>23K</span><span>Views</span></a>
+          <span><button aria-label="Reply"></button><button><span data-animated-count-visual="true">231</span></button></span>
+          <span><button aria-label="Repost"></button><button><span data-animated-count-visual="true">43</span></button></span>
+          <span><button aria-label="Like"></button><button><span data-animated-count-visual="true">710</span></button></span>
+        </article>
+        <article>
+          <a href="/reply_user">Reply User</a>
+          <a href="/reply_user/status/2092058910643646743">8m</a>
+          <div dir="auto">This reply must never be selected as the main post.</div>
+        </article>
+      </body>
+    </html>`
+}
+
 describe('extractTweetId', () => {
   it('從永久連結取出 ID', () => {
     expect(extractTweetId('https://x.com/thsottiaux/status/2083053369351090254'))
@@ -239,6 +281,25 @@ describe('parseTweet 新版 X 公開頁面', () => {
 })
 
 describe('parseTweet 2026-08 可見 SSR fallback', () => {
+  it('article 移除全部貼文屬性後，仍以唯一且 ID 相符的永久連結解析主貼文', () => {
+    const t = parseTweet(attributelessArticleHtml(), ATTRIBUTELESS_ID)!
+
+    expect(t).not.toBeNull()
+    expect(t.id).toBe(ATTRIBUTELESS_ID)
+    expect(t.url).toBe(`https://x.com/thsottiaux/status/${ATTRIBUTELESS_ID}`)
+    expect(t.author).toMatchObject({ name: 'Tibo', handle: 'thsottiaux' })
+    expect(t.rawText).toBe(ATTRIBUTELESS_TEXT)
+    expect(t.createdAt).toBe('2026-08-25T01:16:43.000Z')
+    expect(t.metrics).toEqual([
+      { kind: 'views', value: 23_000 },
+      { kind: 'replies', value: 231 },
+      { kind: 'reposts', value: 43 },
+      { kind: 'likes', value: 710 },
+    ])
+    expect(t.source).toBe('fetch')
+    expect(t.textComplete).toBe(true)
+  })
+
   it('結構化 author/text 消失時，以 permalink、作者連結、title 與可見正文交叉驗證後解析', () => {
     const t = parseTweet(visibleOnlyHtml(), VISIBLE_ONLY_ID)!
 
