@@ -442,7 +442,11 @@ function parseMedia(article: Element): Media[] {
     .filter((m) => m.url !== '')
 }
 
-const X_HOSTS = new Set(['x.com', 'www.x.com', 'twitter.com', 'www.twitter.com', 'mobile.twitter.com'])
+// iPhone Safari 的未登入 SSR 會把主貼文永久連結改成 m.x.com，並附上
+// launch_app_store / ct 追蹤參數。仍採精確 host 白名單，不接受任意 *.x.com。
+const X_HOSTS = new Set([
+  'x.com', 'www.x.com', 'm.x.com', 'twitter.com', 'www.twitter.com', 'mobile.twitter.com',
+])
 
 function parsePermalink(
   rawUrl: string | null,
@@ -534,7 +538,17 @@ function permalinkFromLinks(article: Element): { url: string; id: string; handle
     if (!X_HOSTS.has(url.hostname)) continue
     const match = url.pathname.match(/^\/([A-Za-z0-9_]{1,15})\/status\/(\d+)\/?$/)
     if (!match) continue
-    found.set(match[2], { url: url.toString(), id: match[2], handle: match[1] })
+    // iPhone SSR 的回覆／轉推／喜歡按鈕會連到 m.x.com/i/status/{id}；這是 X 的
+    // 內部操作路由，不是作者為 @i 的永久連結。真正的主貼文連結在同一 article
+    // 內仍保留 /{handle}/status/{id}，只接受後者。
+    if (match[1].toLowerCase() === 'i') continue
+    // m.x.com 的連結帶有啟動 App Store 的追蹤參數；卡片與後續邏輯只需要穩定的
+    // canonical permalink，統一輸出 x.com，避免把裝置專屬參數保存下來。
+    found.set(match[2], {
+      url: `https://x.com/${match[1]}/status/${match[2]}`,
+      id: match[2],
+      handle: match[1],
+    })
   }
   return found.size === 1 ? [...found.values()][0] : null
 }

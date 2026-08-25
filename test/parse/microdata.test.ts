@@ -281,6 +281,35 @@ describe('parseTweet 新版 X 公開頁面', () => {
 })
 
 describe('parseTweet 2026-08 可見 SSR fallback', () => {
+  it('iPhone Safari 的 m.x.com 永久連結含追蹤參數時仍解析成功，且輸出正規 x.com 網址', () => {
+    const mobilePermalink =
+      `https://m.x.com/thsottiaux/status/${ATTRIBUTELESS_ID}?launch_app_store=true&ct=engagement_view_post`
+    const html = attributelessArticleHtml().replaceAll(
+      `href="/thsottiaux/status/${ATTRIBUTELESS_ID}"`,
+      `href="${mobilePermalink}"`,
+    ).replace(
+      '<span><button aria-label="Reply"></button>',
+      `<a href="https://m.x.com/i/status/${ATTRIBUTELESS_ID}?launch_app_store=true&ct=engagement_reply"></a>
+          <span><button aria-label="Reply"></button>`,
+    )
+    const t = parseTweet(html, ATTRIBUTELESS_ID)!
+
+    expect(t).not.toBeNull()
+    expect(t.id).toBe(ATTRIBUTELESS_ID)
+    expect(t.url).toBe(`https://x.com/thsottiaux/status/${ATTRIBUTELESS_ID}`)
+    expect(t.rawText).toBe(ATTRIBUTELESS_TEXT)
+  })
+
+  it('外觀像 m.x.com 的非 X 網域仍 fail closed', () => {
+    const fakePermalink = `https://m.x.com.evil.example/thsottiaux/status/${ATTRIBUTELESS_ID}`
+    const html = attributelessArticleHtml().replaceAll(
+      `href="/thsottiaux/status/${ATTRIBUTELESS_ID}"`,
+      `href="${fakePermalink}"`,
+    )
+
+    expect(parseTweet(html, ATTRIBUTELESS_ID)).toBeNull()
+  })
+
   it('article 移除全部貼文屬性後，仍以唯一且 ID 相符的永久連結解析主貼文', () => {
     const t = parseTweet(attributelessArticleHtml(), ATTRIBUTELESS_ID)!
 
