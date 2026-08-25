@@ -336,6 +336,7 @@ function buildDomFallbackPage(isProtected: boolean) {
         <button data-testid="reply" aria-label="948 則回覆。回覆"></button>
         <button data-testid="retweet" aria-label="563 次轉發。轉發"></button>
         <button data-testid="like" aria-label="6166 個喜歡。喜歡"></button>
+        <button data-testid="bookmark" aria-label="211 個書籤。加入書籤"></button>
         <a href="/thsottiaux/status/2083053369351090254/analytics">45.3 萬 次查看</a>
       </div>
     </article>`
@@ -371,10 +372,11 @@ describe('Panel 依鎖推訊號決定遮蔽預設', () => {
     const mask = boxes[boxes.length - 1]
     expect(mask.checked).toBe(false)
     expect(host.querySelector('.xf-protected')).toBeNull()
-    expect(host.textContent).toContain('461.7K')
     expect(host.textContent).toContain('948')
     expect(host.textContent).toContain('563')
     expect(host.textContent).toContain('6.2K')
+    expect(host.textContent).toContain('211')
+    expect(host.textContent).not.toContain('461.7K')
   })
 
   it('作者區明確有 icon-lock 時才預設遮蔽並顯示提醒', async () => {

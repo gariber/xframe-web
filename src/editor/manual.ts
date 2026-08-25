@@ -24,7 +24,7 @@ export const MANUAL_ID = 'manual'
  *
  * 拿不到的欄位一律退回既有的降級機制，不編造佔位值：
  * 沒有頭像 → Avatar 的首字母色塊；沒有時間 → relTime 對空字串回傳空字串；
- * 四項互動數皆為 null → fmt 渲染成「—」，與「真的是 0」語意上仍可區分。
+ * 五項互動數皆為 null → 卡片操作列渲染成「—」，與「真的是 0」仍可區分。
  *
  * 必填欄位不齊時回傳 null，呼叫端不得產出殘缺圖。
  */
@@ -56,6 +56,7 @@ export function buildManualTweet(input: ManualInput): Post | null {
       { kind: 'replies', value: null },
       { kind: 'reposts', value: null },
       { kind: 'likes', value: null },
+      { kind: 'bookmarks', value: null },
     ],
     media: [],
     // 使用者自己打的字，沒有「來源截斷」這回事，定義上就是完整內文。

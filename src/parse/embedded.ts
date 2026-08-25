@@ -9,7 +9,7 @@ export type EmbeddedCounts = Partial<Record<MetricKind, number>>
  * 那顆轉推按鈕只印純轉推數。X 自己的介面顯示的卻是「轉推 ＋ 引用」——實測
  * 兩則推文都對得上：817+953=1770、213+554=767，與使用者在 x.com 上看到的
  * 1756 / 763（稍早的快照）一致。只讀操作列的話，卡片上的轉推數會比使用者
- * 在 X 上看到的少掉整整一個引用數，而其他三項都對，看起來就像隨機壞掉一項。
+ * 在 X 上看到的少掉整整一個引用數，而其他四項都對，看起來就像隨機壞掉一項。
  *
  * 引用數在未登入頁面的 DOM 裡**完全沒有**——沒有「查看引用」連結、也沒有
  * 任何節點帶著這個數字。唯一的來源是頁面內嵌的 client store。
@@ -88,8 +88,10 @@ export function parseEmbeddedCounts(doc: Document): Map<string, EmbeddedCounts> 
       const replies = intField(body, 'reply_count')
       const likes = intField(body, 'favorite_count')
       const reposts = intField(body, 'retweet_count')
+      const bookmarks = intField(body, 'bookmark_count')
       if (replies !== null) counts.replies = replies
       if (likes !== null) counts.likes = likes
+      if (bookmarks !== null) counts.bookmarks = bookmarks
       /*
        * 轉推 ＋ 引用。X 的介面把兩者合在同一個數字裡，卡片要顯示的是使用者
        * 在 X 上看到的那個數，不是 API 欄位本身的意思。引用數缺席時只算轉推——

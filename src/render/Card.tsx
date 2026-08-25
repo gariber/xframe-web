@@ -16,7 +16,7 @@ import {
   STAT_ICON_EM,
   mediaBoxHeight,
 } from './card.css'
-import { METRIC_META } from './metrics'
+import { METRIC_META, X_CARD_METRIC_ORDER } from './metrics'
 import { translatedLabel, GROK_LOGO_PATH, GROK_LOGO_VIEWBOX } from './translated'
 
 /**
@@ -101,6 +101,13 @@ function Stat({ metric }: { metric: Metric }) {
       </svg>
       <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmt(metric.value)}</span>
     </span>
+  )
+}
+
+/** 固定依 X 操作列排序；缺少某項時保留「—」，但不把瀏覽數重複塞進操作列。 */
+function cardMetrics(metrics: Metric[]): Metric[] {
+  return X_CARD_METRIC_ORDER.map(
+    (kind) => metrics.find((metric) => metric.kind === kind) ?? { kind, value: null },
   )
 }
 
@@ -756,7 +763,7 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
                   flex: '0 0 auto',
                 }}
               >
-                {post.metrics.map((m, i) => (
+                {cardMetrics(post.metrics).map((m, i) => (
                   <Fragment key={m.kind}>
                     {i > 0 && <Sep />}
                     <Stat metric={m} />

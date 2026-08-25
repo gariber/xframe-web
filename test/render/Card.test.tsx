@@ -218,15 +218,15 @@ describe('Card', () => {
     expect(valueOf('轉推')).toBe('0')
   })
 
-  it('四項統計皆以圖示呈現，且圖示有無障礙名稱', () => {
+  it('統計列依 X 排列為回覆、轉推、喜歡、書籤，不重複顯示瀏覽數', () => {
     const stats = mount().querySelector('[data-part="stats"]') as HTMLElement
     const labels = [...stats.querySelectorAll('svg[aria-label]')].map((s) => s.getAttribute('aria-label'))
-    expect(labels).toEqual(['瀏覽', '回覆', '轉推', '讚'])
+    expect(labels).toEqual(['回覆', '轉推', '讚', '書籤'])
   })
 
   it('統計列不再出現中文標籤文字', () => {
     const stats = mount().querySelector('[data-part="stats"]') as HTMLElement
-    for (const word of ['回覆', '轉推', '讚', '瀏覽']) {
+    for (const word of ['回覆', '轉推', '讚', '書籤', '瀏覽']) {
       expect(stats.textContent).not.toContain(word)
     }
   })
@@ -544,12 +544,12 @@ describe('身分遮蔽（隱私）', () => {
 })
 
 describe('互動數格式（國際單位，不用中文）', () => {
-  const withStats = (views: number) => {
+  const withStats = (value: number) => {
     const t = parseTweet(fx('plain'), '2083053369351090254')!
-    return { ...t, metrics: t.metrics.map((m) => (m.kind === 'views' ? { ...m, value: views } : m)) }
+    return { ...t, metrics: t.metrics.map((m) => (m.kind === 'replies' ? { ...m, value } : m)) }
   }
-  const statsText = (views: number) =>
-    (mount(withStats(views)).querySelector('[data-part="stats"]') as HTMLElement).textContent!
+  const statsText = (value: number) =>
+    (mount(withStats(value)).querySelector('[data-part="stats"]') as HTMLElement).textContent!
 
   it('184000 顯示為 184K，不用「萬」', () => {
     expect(statsText(184_000)).toContain('184K')

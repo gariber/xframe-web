@@ -18,7 +18,7 @@ import { findPermalink, findTweetRoots } from './permalink'
  *   time[datetime]             → '2026-07-31T21:54:11.000Z'（ISO 8601，同 microdata）
  *   img[src*="profile_images"] → '…/78IKI5Gj_x96.jpg'
  *   [data-testid="icon-lock"]  → 作者為鎖推帳號（只在該推文 User-Name 內採信）
- *   reply／retweet／like       → aria-label 內的精確互動數
+ *   reply／retweet／like／bookmark → aria-label 內的精確互動數
  */
 
 const SEL = {
@@ -79,6 +79,7 @@ function domMetrics(article: Element, id: string): Post['metrics'] {
     { kind: 'replies', value: accessibleCount(reply) },
     { kind: 'reposts', value: accessibleCount(control('retweet')) },
     { kind: 'likes', value: accessibleCount(control('like')) },
+    { kind: 'bookmarks', value: accessibleCount(control('bookmark')) },
   ]
 }
 
@@ -131,7 +132,7 @@ export function extractFromDom(permalink: string): Post | null {
     rawText,
     text: tokenize(rawText),
     createdAt: article.querySelector(SEL.time)?.getAttribute('datetime') ?? '',
-    // 2026-08-24 實測：reply／retweet／like 有穩定 data-testid，aria-label 帶精確
+    // 2026-08-24 實測：reply／retweet／like／bookmark 有穩定 data-testid 與精確
     // 數字；瀏覽數則在這則推文自己的 /analytics 連結上。缺任何一項就保留 null。
     metrics: domMetrics(article, id),
     // 圖片同理不處理：時間軸的圖片節點與引用推文的難以可靠區分，而歸屬錯誤

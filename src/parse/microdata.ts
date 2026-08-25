@@ -15,17 +15,19 @@ const INTERACTION: Record<string, ParsedKind> = {
   'https://schema.org/ReplyAction': 'replies',
   'https://schema.org/ShareAction': 'reposts',
   'https://schema.org/LikeAction': 'likes',
+  'https://schema.org/BookmarkAction': 'bookmarks',
   'https://schema.org/ViewAction': 'views',
   'https://schema.org/InteractAction': 'quotes',
 }
 
-/** X 的卡片統計列順序。與 x.com 網頁本身的排列一致。 */
-const X_METRIC_ORDER: readonly MetricKind[] = ['views', 'replies', 'reposts', 'likes']
+/** 完整互動資料的穩定輸出順序；卡片可見列另由 X_CARD_METRIC_ORDER 決定。 */
+const X_METRIC_ORDER: readonly MetricKind[] = ['views', 'replies', 'reposts', 'likes', 'bookmarks']
 
 const VISIBLE_INTERACTION: Record<string, MetricKind> = {
   Reply: 'replies',
   Repost: 'reposts',
   Like: 'likes',
+  Bookmark: 'bookmarks',
   'View count': 'views',
 }
 
@@ -268,7 +270,7 @@ function parseMetrics(article: Element): Metric[] {
   /*
    * 轉推數 = ShareAction（純轉推）＋ InteractAction（引用）。X 的介面顯示的是
    * 這個和：實測 thsottiaux 那則 817 轉推 + 953 引用，x.com 上印的正是 1770。
-   * 只取 ShareAction 的話，四項統計裡就只有轉推一項對不上，看起來像隨機壞掉。
+   * 只取 ShareAction 的話，整列統計裡就只有轉推一項對不上，看起來像隨機壞掉。
    * 沒有 ShareAction 時維持 null——引用數自己不是轉推數，不能拿來頂替。
    */
   const reposts = found.get('reposts')

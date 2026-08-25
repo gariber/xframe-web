@@ -48,12 +48,13 @@ describe('buildManualTweet 欄位正規化', () => {
 describe('buildManualTweet 走既有的降級路徑', () => {
   const t = buildManualTweet(ok)!
 
-  it('四項互動數皆為 null，與「真的是 0」可區分', () => {
+  it('五項互動數皆為 null，與「真的是 0」可區分', () => {
     expect(t.metrics).toEqual([
       { kind: 'views', value: null },
       { kind: 'replies', value: null },
       { kind: 'reposts', value: null },
       { kind: 'likes', value: null },
+      { kind: 'bookmarks', value: null },
     ])
   })
 

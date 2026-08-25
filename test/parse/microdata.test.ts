@@ -140,7 +140,7 @@ describe('parseTweet 互動數', () => {
 describe('parseTweet metrics', () => {
   it('依 X 的顯示順序產出，不是解析順序', () => {
     const t = parseTweet(fx('plain'), '2083053369351090254')!
-    expect(t.metrics.map((m) => m.kind)).toEqual(['views', 'replies', 'reposts', 'likes'])
+    expect(t.metrics.map((m) => m.kind)).toEqual(['views', 'replies', 'reposts', 'likes', 'bookmarks'])
   })
 
   it('缺漏的欄位是 null 而非 0 —— 呼叫端要分得出「沒有這個數字」和「數字是零」', () => {
@@ -324,6 +324,7 @@ describe('parseTweet 2026-08 可見 SSR fallback', () => {
       { kind: 'replies', value: 231 },
       { kind: 'reposts', value: 43 },
       { kind: 'likes', value: 710 },
+      { kind: 'bookmarks', value: null },
     ])
     expect(t.source).toBe('fetch')
     expect(t.textComplete).toBe(true)
@@ -351,6 +352,7 @@ describe('parseTweet 2026-08 可見 SSR fallback', () => {
       { kind: 'replies', value: 3 },
       { kind: 'reposts', value: 77 },
       { kind: 'likes', value: 1155 },
+      { kind: 'bookmarks', value: null },
     ])
     expect(t.source).toBe('fetch')
     expect(t.textComplete).toBe(true)
@@ -377,6 +379,7 @@ describe('parseTweet 2026-08 可見 SSR fallback', () => {
       { kind: 'replies', value: 0 },
       { kind: 'reposts', value: null },
       { kind: 'likes', value: null },
+      { kind: 'bookmarks', value: null },
     ])
   })
 
@@ -435,7 +438,7 @@ describe('parseTweet 真實新版 SSR 頁面', () => {
     expect(t.rawText).toContain('お盆休み最終日。')
     expect(t.media).toHaveLength(1)
     expect(t.media[0].url).toContain('pbs.twimg.com/media/')
-    // 全部四項都要有值 —— 降級路徑的特徵就是這四項全是 null
+    // 全部五項都要有值；缺任何一項都代表解析退化。
     for (const m of t.metrics) expect(m.value).not.toBeNull()
   })
 
@@ -461,7 +464,7 @@ describe('parseTweet 真實新版 SSR 頁面', () => {
   it('在地化頁面的互動數不靠英文標籤，一樣讀得到', () => {
     const t = parseTweet(fx('visible-ssr-localized'), '2089442390805233999')!
 
-    // 全部四項都要有值 —— 只靠英文 aria-label 的話這裡會整排是 null
+    // 全部五項都要有值；只靠英文 aria-label 的話這裡會整排是 null。
     for (const m of t.metrics) expect(m.value).not.toBeNull()
     const by = (k: string) => t.metrics.find((m) => m.kind === k)!.value
     expect(by('replies')).toBe(10)
@@ -711,6 +714,7 @@ describe('parseTweet 2026-08-21 新版 SSR', () => {
       { kind: 'replies', value: 3_044 },
       { kind: 'reposts', value: 213 + 554 },
       { kind: 'likes', value: 6_560 },
+      { kind: 'bookmarks', value: null },
     ])
   })
 
@@ -736,6 +740,7 @@ describe('parseTweet 2026-08-21 新版 SSR', () => {
       { kind: 'replies', value: 14 },
       { kind: 'reposts', value: 262 + 3 },
       { kind: 'likes', value: 3_813 },
+      { kind: 'bookmarks', value: 110 },
     ])
   })
 })

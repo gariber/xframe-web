@@ -1,5 +1,8 @@
 import type { MetricKind } from '../types'
 
+/** X 單篇貼文操作列的可見順序；瀏覽數在 X 上位於時間旁，不屬於這一列。 */
+export const X_CARD_METRIC_ORDER: readonly MetricKind[] = ['replies', 'reposts', 'likes', 'bookmarks']
+
 /**
  * 互動數的圖示與標籤。
  *
@@ -29,5 +32,10 @@ export const METRIC_META: Record<MetricKind, { icon: string; label: string }> = 
   likes: {
     icon: 'M12 20.7 10.5 19.3C5.4 14.7 2 11.7 2 8.1 2 5.4 4.2 3.2 6.9 3.2c1.5 0 3 .7 4 1.9l1.1 1.3 1.1-1.3c1-1.2 2.5-1.9 4-1.9 2.7 0 4.9 2.2 4.9 4.9 0 3.6-3.4 6.6-8.5 11.2L12 20.7Z',
     label: '讚',
+  },
+  bookmarks: {
+    // X 自己的書籤外框：和回覆／轉推／喜歡同為 24×24 單色線性圖示。
+    icon: 'M4 4.5C4 3.12 5.12 2 6.5 2h11C18.88 2 20 3.12 20 4.5v18.44l-8-5.71-8 5.71V4.5Zm2 0v14.56l6-4.29 6 4.29V4.5c0-.28-.22-.5-.5-.5h-11c-.28 0-.5.22-.5.5Z',
+    label: '書籤',
   },
 }

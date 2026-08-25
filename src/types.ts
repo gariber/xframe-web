@@ -11,7 +11,7 @@ export type Segment =
  * Threads 沒有，Threads 有分享數而 X 沒有。因此卡片上放哪幾個、什麼順序，
  * 由各平台的 adapter 決定，這裡只定義有哪些可能。
  */
-export type MetricKind = 'views' | 'replies' | 'reposts' | 'likes'
+export type MetricKind = 'views' | 'replies' | 'reposts' | 'likes' | 'bookmarks'
 
 /** `value` 為 null 代表來源沒有提供這個數字，與「數字是零」不同。 */
 export type Metric = { kind: MetricKind; value: number | null }

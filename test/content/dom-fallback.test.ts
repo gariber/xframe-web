@@ -38,7 +38,7 @@ function buildPage(opts: {
   time?: string
   avatar?: string
   isProtected?: boolean
-  metrics?: { views: string; replies: string; reposts: string; likes: string } | null
+  metrics?: { views: string; replies: string; reposts: string; likes: string; bookmarks: string } | null
 } = {}) {
   const {
     text = '看完 poi s03',
@@ -46,7 +46,7 @@ function buildPage(opts: {
     time = '2026-07-31T21:54:11.000Z',
     avatar = 'https://pbs.twimg.com/profile_images/1797436415435018240/78IKI5Gj_x96.jpg',
     isProtected = false,
-    metrics = { views: '12,345', replies: '2', reposts: '0', likes: '89' },
+    metrics = { views: '12,345', replies: '2', reposts: '0', likes: '89', bookmarks: '7' },
   } = opts
   document.body.innerHTML = `
     <svg data-testid="icon-lock" aria-label="檢視者自己的鎖頭"></svg>
@@ -64,6 +64,7 @@ function buildPage(opts: {
           <button data-testid="reply" aria-label="${metrics.replies} 則回覆。回覆"></button>
           <button data-testid="retweet" aria-label="${metrics.reposts} 次轉發。轉發"></button>
           <button data-testid="like" aria-label="${metrics.likes} 個喜歡。喜歡"></button>
+          <button data-testid="bookmark" aria-label="${metrics.bookmarks} 個書籤。加入書籤"></button>
           <a href="/0x001A/status/2083310281724424677/analytics">1.2 萬 次查看</a>
         </div>` : ''}
     </article>`
@@ -98,13 +99,14 @@ describe('extractFromDom', () => {
     expect(extractFromDom(PERMALINK)!.isProtected).toBe(true)
   })
 
-  it('依 X 的語意控制項讀出四項精確互動數，包括零值與千分位', () => {
+  it('依 X 的語意控制項讀出五項精確互動數，包括書籤、零值與千分位', () => {
     buildPage()
     expect(extractFromDom(PERMALINK)!.metrics).toEqual([
       { kind: 'views', value: 12_345 },
       { kind: 'replies', value: 2 },
       { kind: 'reposts', value: 0 },
       { kind: 'likes', value: 89 },
+      { kind: 'bookmarks', value: 7 },
     ])
   })
 

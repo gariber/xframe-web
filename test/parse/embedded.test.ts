@@ -19,7 +19,7 @@ function store(id: string, counts: string, views?: string): string {
 }
 
 describe('parseEmbeddedCounts', () => {
-  it('以推文 ID 為鍵讀出四項計數', () => {
+  it('以推文 ID 為鍵讀出五項計數，包括書籤', () => {
     const found = parseEmbeddedCounts(doc(store(
       '2090766694897619318',
       'bookmark_count:973,favorite_count:16613,reply_count:2201,retweet_count:817,quote_count:953',
@@ -30,6 +30,7 @@ describe('parseEmbeddedCounts', () => {
       likes: 16613,
       reposts: 1770,
       views: 1777903,
+      bookmarks: 973,
     })
   })
 
