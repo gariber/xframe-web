@@ -150,21 +150,25 @@ function fullTextFromArticle(
   const candidates = [...article.querySelectorAll('[dir="auto"]')]
     .filter((el) => el.closest('article') === article)
     .map((el) => {
+      const hasExpansionControl = el.querySelector('button') !== null
       // 舊版 X 會把「Show more」按鈕放進同一個 dir=auto 容器。若直接讀
       // textContent，它會看似比 meta 多幾個字，反而把截斷內容誤判為全文。
       const copy = el.cloneNode(true) as Element
       for (const button of copy.querySelectorAll('button')) button.remove()
-      return stripTrailingLink(copy.textContent ?? '')
+      return { text: stripTrailingLink(copy.textContent ?? ''), hasExpansionControl }
     })
-    .filter((text) => text.length > trustedPrefix.length && text.startsWith(trustedPrefix))
+    .filter(({ text }) => text.length > trustedPrefix.length && text.startsWith(trustedPrefix))
 
-  const full = candidates.reduce<string | null>(
-    (longest, text) => longest === null || text.length > longest.length ? text : longest,
+  const full = candidates.reduce<{ text: string; hasExpansionControl: boolean } | null>(
+    (longest, candidate) => longest === null || candidate.text.length > longest.text.length
+      ? candidate
+      : longest,
     null,
   )
   return full === null
     ? { text: metaText, fromArticle: false }
-    : { text: full, fromArticle: true }
+    // 仍保留較長的可見片段，但有展開按鈕代表後面還有內容，不得標記為完整。
+    : { text: full.text, fromArticle: !full.hasExpansionControl }
 }
 
 /**
@@ -516,6 +520,33 @@ function visibleTexts(article: Element): string[] {
 }
 
 /**
+ * 可見正文是否足以證明已取得全文。
+ *
+ * 新版無 microdata 的頁面會先在 og:description / title 放一段可信摘要，再在主
+ * article 放更長的正文。只有正文精確等於最後採用的文字、確實延長可信摘要，且
+ * 同一文字容器內沒有任何展開按鈕時，才把它視為第二份完整來源。按鈕文字會在地
+ * 化，因此依結構判斷，不列舉 Show more／顯示更多等語系字串。
+ */
+function visibleArticleProvesComplete(
+  article: Element,
+  trustedText: string,
+  resolvedText: string,
+): boolean {
+  const stripped = stripLeadingMentions(trustedText)
+  const anchors = stripped === trustedText ? [trustedText] : [trustedText, stripped]
+
+  return [...article.querySelectorAll('[dir="auto"]')]
+    .filter((el) => el.closest('article') === article)
+    .some((el) => {
+      if (el.querySelector('button')) return false
+      const text = normalizeVisibleText(el.textContent ?? '')
+      return text === resolvedText && anchors.some(
+        (anchor) => text.length > anchor.length && text.startsWith(anchor),
+      )
+    })
+}
+
+/**
  * 引用推文的永久連結。
  *
  * 外層推文有 `meta[itemprop="url"]` 可讀，引用推文沒有——新版頁面上它只是一個
@@ -837,9 +868,13 @@ export function parseTweet(html: string, tweetId: string): Post | null {
   const fullText = useVisibleText
     ? visibleText.text
     : titleText.text
-  const fromFullSource = useVisibleText
+  const fromSelectedFullSource = useVisibleText
     ? visibleText.fromArticle
     : titleText.fromTitle
+  const trustedText = trustedBodyText(ogDescription, title, base.author.name)
+  const fromVisibleFullSource = trustedText !== null &&
+    visibleArticleProvesComplete(article, trustedText, fullText)
+  const fromFullSource = fromSelectedFullSource || fromVisibleFullSource
 
   /*
    * 舊版頁面用 citation，2026-08 的公開頁面改成 sharedContent，再新一點的版本

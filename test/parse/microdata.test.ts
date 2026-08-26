@@ -622,6 +622,28 @@ describe('textComplete', () => {
     expect(looksComplete(complete, false)).toBe(true)
   })
 
+  it('可見正文延長了可信摘要且沒有展開按鈕時，中文無句號結尾也標記為完整', () => {
+    const trusted = '這是 X 頁首提供的可信摘要。'.repeat(15)
+    const full = trusted + '這是只存在於主貼文可見正文裡的後續內容，正文到這裡完整結束呀'
+    const t = parseTweet(visibleOnlyHtml({ titleText: trusted, visibleText: full }), VISIBLE_ONLY_ID)!
+
+    expect(t.rawText).toBe(full)
+    expect(t.textComplete).toBe(true)
+  })
+
+  it('可見正文仍有 Show more 展開按鈕時，不把延長內容誤標為完整', () => {
+    const trusted = '這是 X 頁首提供的可信摘要。'.repeat(15)
+    const partial = trusted + '這段內容雖然更長，但畫面仍明確要求展開才能取得剩餘正文呀'
+    const html = visibleOnlyHtml({ titleText: trusted, visibleText: partial }).replace(
+      `<span>${partial}</span>`,
+      `<span>${partial}</span><button type="button">Show more</button>`,
+    )
+    const t = parseTweet(html, VISIBLE_ONLY_ID)!
+
+    expect(t.rawText).toBe(partial)
+    expect(t.textComplete).toBe(false)
+  })
+
   /*
    * 已知漏判，記錄下來而不是假裝解決了：以 hashtag 收尾的長推文仍會被誤標。
    * hashtag 本身也是字母結尾，先剝掉再判斷沒有用——剝掉後露出的還是字母。
