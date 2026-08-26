@@ -89,6 +89,13 @@ function attributelessArticleHtml(): string {
     </html>`
 }
 
+/** X 有時會在同一份 SSR 內重複輸出主貼文；測試只複製 article，不複製 head。 */
+function duplicateMainArticle(html: string, transform: (article: string) => string = (article) => article): string {
+  const article = html.match(/<article[\s\S]*?<\/article>/)?.[0]
+  if (!article) throw new Error('fixture 缺少 article')
+  return html.replace('</body>', `${transform(article)}</body>`)
+}
+
 describe('extractTweetId', () => {
   it('從永久連結取出 ID', () => {
     expect(extractTweetId('https://x.com/thsottiaux/status/2083053369351090254'))
@@ -305,6 +312,31 @@ describe('parseTweet 2026-08 可見 SSR fallback', () => {
     const html = attributelessArticleHtml().replaceAll(
       `href="/thsottiaux/status/${ATTRIBUTELESS_ID}"`,
       `href="${fakePermalink}"`,
+    )
+
+    expect(parseTweet(html, ATTRIBUTELESS_ID)).toBeNull()
+  })
+
+  it('同一主貼文被 X 重複輸出時，只在永久連結、作者、全文與圖片一致時解析', () => {
+    const withMedia = attributelessArticleHtml().replace(
+      '</article>',
+      '<img src="https://pbs.twimg.com/media/duplicate-safe?format=webp&amp;name=medium" alt=""></article>',
+    )
+    const t = parseTweet(duplicateMainArticle(withMedia), ATTRIBUTELESS_ID)!
+
+    expect(t).not.toBeNull()
+    expect(t.id).toBe(ATTRIBUTELESS_ID)
+    expect(t.author).toMatchObject({ name: 'Tibo', handle: 'thsottiaux' })
+    expect(t.rawText).toBe(ATTRIBUTELESS_TEXT)
+    expect(t.media).toEqual([
+      expect.objectContaining({ url: expect.stringContaining('pbs.twimg.com/media/duplicate-safe') }),
+    ])
+  })
+
+  it('重複主貼文的可見全文互相衝突時仍 fail closed', () => {
+    const html = duplicateMainArticle(
+      attributelessArticleHtml(),
+      (article) => article.replace(ATTRIBUTELESS_TEXT, '另一則不相干的貼文內容'),
     )
 
     expect(parseTweet(html, ATTRIBUTELESS_ID)).toBeNull()

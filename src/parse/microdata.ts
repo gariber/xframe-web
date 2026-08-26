@@ -556,6 +556,37 @@ function permalinkFromLinks(article: Element): { url: string; id: string; handle
 }
 
 /**
+ * 重複主貼文候選的內容身分。
+ *
+ * X 有時會在同一份 SSR 內為不同版面各輸出一份主貼文 article。兩份 outerHTML
+ * 不會完全相同（外層版面與附帶回覆不同），所以不能直接比字串；只比對真正屬於
+ * 主貼文、且會進入卡片的可信欄位。任一欄位解析不了，便不允許去重。
+ */
+function visibleArticleIdentity(article: Element): string | null {
+  const permalink = permalinkFromLinks(article)
+  if (!permalink) return null
+  const author = parseVisibleAuthor(article, permalink.handle)
+  if (!author) return null
+  const rawText = visibleTexts(article).reduce(
+    (longest, text) => text.length > longest.length ? text : longest,
+    '',
+  )
+  const mediaUrls = parseMedia(article).map((media) => media.url).sort()
+  // 一則貼文至少要有文字或圖片；兩者都沒有時，沒有足夠內容證明候選相同。
+  if (rawText === '' && mediaUrls.length === 0) return null
+  return JSON.stringify({
+    url: permalink.url,
+    author: {
+      name: author.name,
+      handle: author.handle.toLowerCase(),
+      avatarUrl: author.avatarUrl,
+    },
+    rawText,
+    mediaUrls,
+  })
+}
+
+/**
  * 找出指定貼文自己的 article。
  *
  * 舊版 SSR 直接把 ID 寫在 data-tweet-id；2026-08-25 的版本移除了 article 上
@@ -571,7 +602,16 @@ function articleForTweet(doc: Document, tweetId: string): Element | null {
 
   const candidates = [...doc.querySelectorAll('article')]
     .filter((article) => permalinkFromLinks(article)?.id === tweetId)
-  return candidates.length === 1 ? candidates[0] : null
+  if (candidates.length === 1) return candidates[0]
+  if (candidates.length === 0) return null
+
+  // 多個候選只在卡片會使用的身分、全文與圖片完全一致時，視為 X 的重複渲染。
+  // 任何衝突或缺漏都維持 fail closed，避免把同 ID 的不同內容誤當成同一則。
+  const identities = candidates.map(visibleArticleIdentity)
+  const first = identities[0]
+  return first !== null && identities.every((identity) => identity === first)
+    ? candidates[0]
+    : null
 }
 
 /**
