@@ -118,3 +118,39 @@ describe('2026-08-21 新版 SSR fixture', () => {
     expect(title).toContain('at your own&quot; / X')
   })
 })
+
+/*
+ * 2026-09-07 實抓的 iPhone Safari 未登入頁面。這一份鎖住的是**壞掉的成因本身**：
+ * article 上連 data-tweet-id 都沒有了，永久連結被改寫成 m.x.com 並附上 App
+ * Store 追蹤參數，而 og:description 與 <title> 都被截在 300 字再補一個刪節號。
+ * 哪天重新存一份把這些特徵存沒了，解析器那條回歸就不再驗證任何東西。
+ */
+describe('2026-09-07 刪節號錨點 fixture', () => {
+  const html = readFileSync('test/fixtures/visible-ssr-ellipsis.html', 'utf8')
+
+  it('article 完全沒有識別屬性', () => {
+    expect(html).toContain('<article class="flex flex-col gap-1">')
+    expect(html).not.toContain('data-tweet-id')
+    expect(html).not.toMatch(/item[TtPp][ypro]\w*=/)
+  })
+
+  it('永久連結被改寫成 m.x.com，帶 App Store 參數', () => {
+    expect(html).toContain('https://m.x.com/thsottiaux/status/2097043464538264003?launch_app_store=true')
+  })
+
+  it('og:description 與 title 都截在 300 字並補上刪節號', () => {
+    const og = html.match(/<meta property="og:description" content="([\s\S]*?)"[^>]*\/>/)![1]
+    const decoded = og.replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&')
+    expect(decoded).toHaveLength(300)
+    expect(decoded.endsWith('…')).toBe(true)
+    // 被截斷的 <title> 連結尾的引號都不見了（`…enjoyin… / X`），所以
+    // bodyFromTitle 的 `" / X` 尾綴比對在長貼文上必定落空 —— 這條路能通，
+    // 靠的完全是 og:description。
+    expect(html).toMatch(/<title>[\s\S]*…\s\/ X<\/title>/)
+    expect(html).not.toMatch(/<title>[\s\S]*&quot; \/ X<\/title>/)
+  })
+
+  it('互動計數仍在內嵌 store 裡', () => {
+    expect(html).toContain('__typename:"ApiCounts"')
+  })
+})

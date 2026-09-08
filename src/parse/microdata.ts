@@ -679,6 +679,27 @@ function parseVisibleQuoted(
 }
 
 /**
+ * 去掉錨點尾端的刪節號。
+ *
+ * X 把 `og:description` 與 `<title>` 都截在 300 字，並在斷點補一個刪節號
+ * （實測 `…Astra afte…`、`…into api traffic to then re-ser…`，都是硬切在字詞
+ * 中間再接 U+2026）。錨點與可見正文的比對全靠相等或前綴，而一個以刪節號結尾的
+ * 字串**永遠不可能**是全文的前綴——四種比對法會全部落空，parseVisibleArticle
+ * 回 null，整張卡片做不出來。任何超過 300 字的公開貼文都會中。
+ *
+ * 一併接受三個點的 ASCII 寫法，X 兩種都用過。
+ *
+ * 附帶一提，被截斷的 `<title>` 連結尾的引號都一起沒了（`…enjoyin… / X`），
+ * 所以 bodyFromTitle 的 `" / X` 尾綴比對在長貼文上必定落空。長貼文能解析，
+ * 靠的完全是 og:description 這個錨點。
+ */
+const TRAILING_ELLIPSIS = /(?:\u2026|\.\.\.)\s*$/
+
+function withoutTrailingEllipsis(text: string): string {
+  return text.replace(TRAILING_ELLIPSIS, '')
+}
+
+/**
  * 可信的內文錨點：優先用 `og:description`，其次才是 `<title>`。
  *
  * 兩者都帶著同一段推文內文，但 `<title>` 是「UI 樣板 + 內文」的組合，樣板會隨
@@ -737,14 +758,24 @@ function parseVisibleArticle(
   // 先要求完全相等；對不上時才依序放寬兩種**已知**差異，順序不能反：
   //   1. 錨點多了開頭的 @提及（回覆推文；先剝的話，內文真的以 @ 開頭的非回覆
   //      推文會被剝掉開頭）
-  //   2. 錨點被 X 截短（og:description 約 200 字），可見正文是它的延長
+  //   2. 錨點被 X 截短、沒有留下任何痕跡，可見正文是它的延長
   // 兩者都不中就維持 fail closed —— 絕不把其他 UI 文字當成推文內文。
-  const stripped = stripLeadingMentions(trusted)
+  //   3. 錨點被 X 截短**並補上刪節號**（見 withoutTrailingEllipsis）。這一層
+  //      放最後：只有在「連完整錨點的前綴都對不上」時才動它，作者自己打出的
+  //      刪節號因此不會被無故剝掉。
+  const anchors = [trusted, stripLeadingMentions(trusted)]
+  const trimmed = anchors.map(withoutTrailingEllipsis).filter((text) => text !== '')
+  const firstMatch = (accept: (text: string, anchor: string) => boolean, from: string[]) => {
+    for (const anchor of from) {
+      const hit = visibleMatches.find((text) => accept(text, anchor))
+      if (hit !== undefined) return hit
+    }
+    return undefined
+  }
   const rawText =
-    visibleMatches.find((text) => text === trusted)
-    ?? visibleMatches.find((text) => text === stripped)
-    ?? visibleMatches.find((text) => text.startsWith(trusted))
-    ?? visibleMatches.find((text) => text.startsWith(stripped))
+    firstMatch((text, anchor) => text === anchor, anchors)
+    ?? firstMatch((text, anchor) => text.startsWith(anchor), anchors)
+    ?? firstMatch((text, anchor) => text.startsWith(anchor), trimmed)
   if (rawText === undefined) return null
 
   return {

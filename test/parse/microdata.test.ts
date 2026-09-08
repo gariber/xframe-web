@@ -58,8 +58,11 @@ We are for the upcoming months keeping the 5h limit not enabled for Pro $100 and
  * 2026-08-25 的 X 未登入 SSR：article 還在，但 data-tweet-id、itemtype 與所有
  * itemprop 都被移除。主貼文只剩永久連結能提供可信的貼文 ID 與作者帳號。
  */
-function attributelessArticleHtml(): string {
-  const trustedPrefix = ATTRIBUTELESS_TEXT.slice(0, 279)
+function attributelessArticleHtml({
+  anchor = ATTRIBUTELESS_TEXT.slice(0, 279),
+  visibleText = ATTRIBUTELESS_TEXT,
+}: { anchor?: string; visibleText?: string } = {}): string {
+  const trustedPrefix = anchor
   return `<!doctype html>
     <html>
       <head>
@@ -73,7 +76,7 @@ function attributelessArticleHtml(): string {
           <a href="/thsottiaux"><img src="https://pbs.twimg.com/profile_images/2075819673263001600/pj1vyX6I_normal.jpg" alt="user avatar"></a>
           <a href="https://x.com/thsottiaux">Tibo</a>
           <a href="https://x.com/thsottiaux">@thsottiaux</a>
-          <div dir="auto">${ATTRIBUTELESS_TEXT}</div>
+          <div dir="auto">${visibleText}</div>
           <a href="/thsottiaux/status/${ATTRIBUTELESS_ID}">1:16 AM · Aug 25, 2026</a>
           <a href="/thsottiaux/status/${ATTRIBUTELESS_ID}"><span>23K</span><span>Views</span></a>
           <span><button aria-label="Reply"></button><button><span data-animated-count-visual="true">231</span></button></span>
@@ -816,5 +819,79 @@ describe('parseTweet 錨點被截斷時的交叉驗證', () => {
     expect(
       parseTweet(visibleOnlyHtml({ titleText: LONG, visibleText: `另一段 ${LONG}` }), VISIBLE_ONLY_ID),
     ).toBeNull()
+  })
+})
+
+/*
+ * 2026-09-07 起 X 把 og:description 與 <title> 都截在 300 字，並在斷點補一個
+ * 刪節號。錨點與可見正文的比對全靠相等或前綴，而以刪節號結尾的字串永遠不可能
+ * 是全文的前綴 —— 任何超過 300 字的公開貼文於是整則解析失敗，網頁版顯示的是
+ * 「無法讀取這則推文」，不是內文不完整。
+ */
+describe('parseTweet 錨點被補上刪節號', () => {
+  const CUT = ATTRIBUTELESS_TEXT.slice(0, 300)
+
+  it('U+2026 結尾的錨點仍能對上可見全文', () => {
+    const t = parseTweet(attributelessArticleHtml({ anchor: `${CUT}…` }), ATTRIBUTELESS_ID)!
+    expect(t).not.toBeNull()
+    expect(t.rawText).toBe(ATTRIBUTELESS_TEXT)
+    expect(t.textComplete).toBe(true)
+  })
+
+  it('三個點的 ASCII 寫法一樣接受', () => {
+    const t = parseTweet(attributelessArticleHtml({ anchor: `${CUT}...` }), ATTRIBUTELESS_ID)!
+    expect(t.rawText).toBe(ATTRIBUTELESS_TEXT)
+  })
+
+  it('剝掉刪節號之後仍對不上，就維持 fail closed', () => {
+    expect(
+      parseTweet(
+        attributelessArticleHtml({ anchor: `${CUT}…`, visibleText: '完全不同的一段介面文字' }),
+        ATTRIBUTELESS_ID,
+      ),
+    ).toBeNull()
+  })
+
+  it('作者自己打出的刪節號不會被剝掉 —— 完全相等優先於前綴', () => {
+    const authored = '收工。明天見…'
+    const t = parseTweet(
+      attributelessArticleHtml({ anchor: authored, visibleText: authored }),
+      ATTRIBUTELESS_ID,
+    )!
+    expect(t.rawText).toBe(authored)
+  })
+})
+
+describe('parseTweet 2026-09-07 實抓頁面（刪節號錨點）', () => {
+  const t = parseTweet(fx('visible-ssr-ellipsis'), '2097043464538264003')
+
+  it('整則解析成功 —— 這正是網頁版回報「無法讀取這則推文」的那一則', () => {
+    expect(t).not.toBeNull()
+  })
+
+  it('取到 422 字的完整內文，而不是 og:description 那 300 字', () => {
+    expect(t!.rawText.length).toBe(422)
+    expect(t!.rawText.startsWith('Never gonna give you up')).toBe(true)
+    expect(t!.rawText.endsWith('Lands around 6pm PST today.')).toBe(true)
+    expect(t!.rawText).not.toContain('…')
+    expect(t!.textComplete).toBe(true)
+  })
+
+  it('作者與時間取自可見連結與頁首', () => {
+    expect(t!.author.handle).toBe('thsottiaux')
+    expect(t!.author.name).toBe('Tibo')
+    expect(t!.author.avatarUrl).toContain('pbs.twimg.com/profile_images/')
+    expect(t!.createdAt).toBe('2026-09-07T19:24:57.000Z')
+  })
+
+  it('永久連結正規化成 x.com，不保留 m.x.com 的 App Store 追蹤參數', () => {
+    expect(t!.url).toBe('https://x.com/thsottiaux/status/2097043464538264003')
+  })
+
+  it('統計取自內嵌 store 的精確值', () => {
+    const by = (k: string) => t!.metrics.find((m) => m.kind === k)!.value
+    expect(by('views')).toBe(1_872_528)
+    expect(by('replies')).toBe(3_100)
+    expect(by('likes')).toBe(24_899)
   })
 })
