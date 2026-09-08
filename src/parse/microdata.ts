@@ -1,6 +1,11 @@
 import type { Post, Metric, MetricKind, Author, Media } from '../types'
 import { tokenize } from './tokenize'
-import { parseEmbeddedCounts, type EmbeddedCounts } from './embedded'
+import {
+  parseEmbeddedCounts,
+  parseEmbeddedPost,
+  type EmbeddedCounts,
+  type EmbeddedPost,
+} from './embedded'
 
 /**
  * 解析過程中會出現、但卡片不會單獨顯示的一項：引用數。
@@ -860,28 +865,103 @@ export function explainParseFailure(html: string, tweetId: string): Record<strin
     visibleTextNodes: article
       ? [...article.querySelectorAll('[dir="auto"]')].filter((el) => el.closest('article') === article).length
       : 0,
+    // DOM 全垮時還有沒有第二來源可用。兩者都是 false 才是真的沒救；
+    // storePost 為 true 卻整則解析失敗，代表是後備路徑本身出了問題。
+    hasEmbeddedStore: html.includes('__id:'),
+    storePost: /^\d+$/.test(tweetId) && parseEmbeddedPost(doc, tweetId) !== null,
   }
 }
 
-export function parseTweet(html: string, tweetId: string): Post | null {
-  if (!html) return null
-  // tweetId 一律是 extractTweetId 用 \d+ 擷取出的純數字字串，放進雙引號屬性選擇器
-  // 本來就安全（不含引號或反斜線），不需要 CSS.escape。實測發現 happy-dom 對
-  // CSS.escape 產生的識別碼跳脫序列（例如純數字字串會被轉成 `\32 083...`）在
-  // 引號屬性值裡解析錯誤，選擇器完全比對不到（0 筆），所以改用純數字守衛 + 原樣
-  // 內插，這比未經檢查的內插更安全，也避開了這個 happy-dom 限制。
-  if (!/^\d+$/.test(tweetId)) return null
-  const doc = new DOMParser().parseFromString(html, 'text/html')
-  const article = articleForTweet(doc, tweetId)
-  if (!article) return null
+/**
+ * DOM 讀到的內文不完整時，用內嵌 store 的全文接上去。
+ *
+ * 只在 store 的內文**以 DOM 的內文開頭**時才採用。這一步很重要：store 是 X
+ * 內部的序列化格式，只有一份資料、沒有第二個聲音會反對它；但「兩個各自獨立
+ * 的來源在重疊的那一段逐字相同」本身就是很強的確認——對得上就代表它們講的是
+ * 同一則貼文，store 多出來的那一截是同一段話的延長。對不上就原封不動退回。
+ *
+ * 這修好的是引用貼文：X 在引用區塊只印前 276 字，全文只在 store 裡。先前卡片
+ * 會在一段看起來完整的引文底下掛著「內文未完整取得」。
+ */
+function extendedByStore<T extends Omit<Post, 'quoted'>>(post: T, doc: Document): T {
+  if (post.textComplete) return post
+  const stored = parseEmbeddedPost(doc, post.id)
+  if (stored === null || !stored.textComplete) return post
+  const extended = stripTrailingLink(stored.rawText)
+  if (extended.length <= post.rawText.length || !extended.startsWith(post.rawText)) return post
+  return { ...post, rawText: extended, text: tokenize(extended), textComplete: true }
+}
 
-  const title = doc.querySelector('title')?.textContent ?? ''
-  // og:description 只含推文內文、不含任何 UI 字串，因此不隨 X 判定的語系改變。
-  // 它是比 `<title>` 可靠得多的錨點，見 trustedBodyText。
-  const ogDescription = doc
-    .querySelector('meta[property="og:description"]')
-    ?.getAttribute('content') ?? null
-  const embedded = parseEmbeddedCounts(doc)
+function authorFromStore(author: EmbeddedPost['author']): Author {
+  return {
+    name: author.name,
+    handle: author.handle,
+    handleDisplay: '@' + author.handle,
+    avatarUrl: author.avatarUrl,
+  }
+}
+
+function postBodyFromStore(
+  stored: EmbeddedPost,
+  embedded: Map<string, EmbeddedCounts>,
+): Omit<Post, 'quoted'> {
+  const rawText = stripTrailingLink(stored.rawText)
+  return {
+    id: stored.id,
+    url: `https://x.com/${stored.author.handle}/status/${stored.id}`,
+    platform: 'x',
+    author: authorFromStore(stored.author),
+    source: 'fetch',
+    rawText,
+    text: tokenize(rawText),
+    createdAt: stored.createdAt,
+    media: stored.media.map((media) => ({ url: media.url, alt: media.alt })),
+    // store 沒有互動數；那一份由 parseEmbeddedCounts 從同一頁另外讀出來。
+    metrics: mergeMetrics(
+      X_METRIC_ORDER.map((kind) => ({ kind, value: null })),
+      embedded.get(stored.id),
+    ),
+    textComplete: stored.textComplete,
+  }
+}
+
+/**
+ * 整條 DOM 路徑都走不通時，改由內嵌 store 生出貼文。
+ *
+ * 什麼時候會走到這裡：X 把 SSR 的 article 整個拿掉、或又換了一種我們還沒見過
+ * 的版面。這種時候 DOM 上沒有任何可信的表面，但 store 仍完整——與其讓使用者
+ * 看到「無法讀取這則推文」，不如用這份資料把卡片做出來。
+ *
+ * 它是**最後手段**，不是捷徑：只要 article 生得出貼文就一定走 DOM 那條，因為
+ * 那條有交叉驗證，這條沒有。
+ */
+function postFromStore(
+  doc: Document,
+  tweetId: string,
+  embedded: Map<string, EmbeddedCounts>,
+): Post | null {
+  const stored = parseEmbeddedPost(doc, tweetId)
+  if (stored === null) return null
+  const quotedStore = stored.quotedId === null ? null : parseEmbeddedPost(doc, stored.quotedId)
+  return {
+    ...postBodyFromStore(stored, embedded),
+    ...(quotedStore ? { quoted: postBodyFromStore(quotedStore, embedded) } : {}),
+  }
+}
+
+/**
+ * 從 article 解析出整則貼文。這是主要路徑：DOM 上有好幾個彼此獨立的表面
+ * （permalink、作者連結、og:description、可見正文）可以互相驗證，任一邊
+ * 對不上就 fail closed。
+ */
+function postFromArticle(
+  doc: Document,
+  article: Element,
+  tweetId: string,
+  embedded: Map<string, EmbeddedCounts>,
+  title: string,
+  ogDescription: string | null,
+): Post | null {
   const base = parseArticle(article)
     ?? parseVisibleArticle(article, title, ogDescription, tweetId)
   if (!base) return null
@@ -921,7 +1001,7 @@ export function parseTweet(html: string, tweetId: string): Post | null {
     const cbase = parseArticle(citeEl) ?? parseVisibleQuoted(citeEl, tweetId)
     if (cbase) {
       const quoteText = fullTextFromArticle(citeEl, cbase.rawText)
-      quoted = {
+      quoted = extendedByStore({
         ...cbase,
         rawText: quoteText.text,
         text: tokenize(quoteText.text),
@@ -930,18 +1010,44 @@ export function parseTweet(html: string, tweetId: string): Post | null {
         // 引用推文沒有自己的 title，但新版頁面的可見文字仍可作為第二份來源。
         // 若找不到，就保留原本的保守長度判斷。
         textComplete: looksComplete(quoteText.text, quoteText.fromArticle),
-      }
+      }, doc)
     }
   }
 
   return {
-    ...base,
-    createdAt: base.createdAt || publishedTimeFromHead(doc, tweetId, base.author.handle),
-    rawText: fullText,
-    text: tokenize(fullText),
-    media: parseMedia(article),
-    metrics: mergeMetrics(base.metrics, embedded.get(base.id)),
-    textComplete: looksComplete(fullText, fromFullSource),
+    ...extendedByStore({
+      ...base,
+      createdAt: base.createdAt || publishedTimeFromHead(doc, tweetId, base.author.handle),
+      rawText: fullText,
+      text: tokenize(fullText),
+      media: parseMedia(article),
+      metrics: mergeMetrics(base.metrics, embedded.get(base.id)),
+      textComplete: looksComplete(fullText, fromFullSource),
+    }, doc),
     ...(quoted ? { quoted } : {}),
   }
+}
+
+export function parseTweet(html: string, tweetId: string): Post | null {
+  if (!html) return null
+  // tweetId 一律是 extractTweetId 用 \d+ 擷取出的純數字字串，放進雙引號屬性選擇器
+  // 本來就安全（不含引號或反斜線），不需要 CSS.escape。實測發現 happy-dom 對
+  // CSS.escape 產生的識別碼跳脫序列（例如純數字字串會被轉成 `\32 083...`）在
+  // 引號屬性值裡解析錯誤，選擇器完全比對不到（0 筆），所以改用純數字守衛 + 原樣
+  // 內插，這比未經檢查的內插更安全，也避開了這個 happy-dom 限制。
+  if (!/^\d+$/.test(tweetId)) return null
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  const title = doc.querySelector('title')?.textContent ?? ''
+  // og:description 只含推文內文、不含任何 UI 字串，因此不隨 X 判定的語系改變。
+  // 它是比 `<title>` 可靠得多的錨點，見 trustedBodyText。
+  const ogDescription = doc
+    .querySelector('meta[property="og:description"]')
+    ?.getAttribute('content') ?? null
+  const embedded = parseEmbeddedCounts(doc)
+
+  const article = articleForTweet(doc, tweetId)
+  const fromArticle = article === null
+    ? null
+    : postFromArticle(doc, article, tweetId, embedded, title, ogDescription)
+  return fromArticle ?? postFromStore(doc, tweetId, embedded)
 }

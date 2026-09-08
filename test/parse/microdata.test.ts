@@ -1,8 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import {
-  parseTweet, extractTweetId, decodeEntities, stripTrailingLink, fullTextFromTitle, looksComplete,
-} from '../../src/parse/microdata'
+  parseTweet, extractTweetId, decodeEntities, stripTrailingLink, fullTextFromTitle, looksComplete, explainParseFailure } from '../../src/parse/microdata'
 
 const fx = (n: string) => readFileSync(`test/fixtures/${n}.html`, 'utf8')
 
@@ -90,6 +89,18 @@ function attributelessArticleHtml({
         </article>
       </body>
     </html>`
+}
+
+/** 只留內嵌 store：模擬 X 不再輸出 SSR 的 article。 */
+function withoutArticles(html: string): string {
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  for (const article of [...doc.querySelectorAll('article')]) article.remove()
+  return `<!doctype html>${doc.documentElement.outerHTML}`
+}
+
+/** 只留 DOM：模擬 X 不再輸出內嵌 store，或 store 換了形狀讀不到的情況。 */
+function withoutScripts(html: string): string {
+  return html.replace(/<script[\s\S]*?<\/script>/gi, '')
 }
 
 /** X 有時會在同一份 SSR 內重複輸出主貼文；測試只複製 article，不複製 head。 */
@@ -598,17 +609,25 @@ describe('textComplete', () => {
     expect(t.textComplete).toBe(true)
   })
 
-  // quoted fixture 的引用推文（citation）meta itemprop="text" 實測 276 字
-  // （超過 190 字下界，且句子在「Luna and Terra's lower prices are」中間斷開，
-  // 確實是被截斷，不是巧合地剛好夠長），brief 原先斷言的「小於 190」不成立。
-  // 一份文件只有一個 <title>，它描述主推文，引用推文沒有第二份來源可以驗證
-  // 是否被截斷，只能靠長度判斷 —— 這正是這個測試要證明的：長度過線時標記為
-  // 不完整，而不是誤標成完整。
-  it('長的引用推文（實測 276 字，超過 190 字下界且確實斷句）標記為不完整', () => {
+  /*
+   * quoted fixture 的引用推文（citation）meta itemprop="text" 實測 276 字，
+   * 句子在「Luna and Terra's lower prices are」中間斷開，確實是被 X 截斷的。
+   * DOM 上沒有第二份來源可以把它補回來——但內嵌 store 有全文，接上去之後
+   * 這則引文就是完整的 365 字。
+   */
+  it('引用推文的可見文字被截斷時，用內嵌 store 的全文接回來', () => {
     const t = parseTweet(fx('quoted'), '2082883636177916306')!
+    expect(t.quoted!.rawText.length).toBe(365)
+    expect(t.quoted!.rawText.startsWith("Luna and Terra's lower prices are")).toBe(false)
+    expect(t.quoted!.rawText.endsWith('so your usage goes further.')).toBe(true)
+    expect(t.quoted!.textComplete).toBe(true)
+  })
+
+  it('沒有 store 可以接時，仍如實標記為不完整而不是假裝完整', () => {
+    // 拿掉 script 就只剩 DOM。引文停在字詞上、沒有任何結尾標點，長度也過線。
+    const t = parseTweet(withoutScripts(fx('quoted')), '2082883636177916306')!
     expect(t.quoted!.rawText.length).toBeGreaterThanOrEqual(190)
     expect(t.quoted!.textComplete).toBe(false)
-    // 截斷的實際樣子：停在字詞上，沒有任何結尾標點，也沒有刪節號
     expect(t.quoted!.rawText.trim()).toMatch(/[\p{L}\p{N}]$/u)
   })
 
@@ -775,10 +794,18 @@ describe('parseTweet 2026-08-21 新版 SSR', () => {
     ])
   })
 
-  it('引用推文被 X 自己截斷時仍如實標示不完整', () => {
-    // 內嵌 store 的 note tweet 有 675 字，頁面上的引用區塊只印了 276 字。
-    expect(main!.quoted!.rawText.length).toBe(276)
-    expect(main!.quoted!.textComplete).toBe(false)
+  it('引用區塊只印了 276 字，全文從內嵌 store 接回來', () => {
+    expect(main!.quoted!.rawText.length).toBe(677)
+    expect(main!.quoted!.rawText.endsWith('using your included usage.')).toBe(true)
+    expect(main!.quoted!.textComplete).toBe(true)
+  })
+
+  it('把 script 拿掉就退回頁面上印的那 276 字，並如實標示不完整', () => {
+    const domOnly = parseTweet(withoutScripts(fx('quoted-embedded')), '2090766694897619318')!
+    expect(domOnly.quoted!.rawText.length).toBe(276)
+    expect(domOnly.quoted!.textComplete).toBe(false)
+    // 接回來的全文必須是它的延長，不是另一段文字。
+    expect(main!.quoted!.rawText.startsWith(domOnly.quoted!.rawText)).toBe(true)
   })
 
   it('沒有引用推文的頁面不會憑空生出一則', () => {
@@ -893,5 +920,95 @@ describe('parseTweet 2026-09-07 實抓頁面（刪節號錨點）', () => {
     expect(by('views')).toBe(1_872_528)
     expect(by('replies')).toBe(3_100)
     expect(by('likes')).toBe(24_899)
+  })
+})
+
+/*
+ * DOM 整條路都走不通時的第二來源。
+ *
+ * X 已經把 article 上的識別屬性拿光了；再往下一步就是連 article 都不輸出。
+ * 那一天 DOM 上不會有任何可信的表面，但同一頁的內嵌 store 仍然完整——與其讓
+ * 使用者看到「無法讀取這則推文」，不如用它把卡片做出來。
+ */
+describe('parseTweet 內嵌 store 後備', () => {
+  it('頁面上一個 article 都沒有時，仍生得出完整的貼文', () => {
+    const t = parseTweet(withoutArticles(fx('visible-ssr-ellipsis')), '2097043464538264003')!
+
+    expect(t).not.toBeNull()
+    expect(t.id).toBe('2097043464538264003')
+    expect(t.url).toBe('https://x.com/thsottiaux/status/2097043464538264003')
+    expect(t.author).toEqual({
+      name: 'Tibo',
+      handle: 'thsottiaux',
+      handleDisplay: '@thsottiaux',
+      avatarUrl: 'https://pbs.twimg.com/profile_images/2093807917833281537/2yBgpwVV_normal.jpg',
+    })
+    expect(t.rawText).toHaveLength(422)
+    expect(t.textComplete).toBe(true)
+    expect(t.createdAt).toBe('2026-09-07T19:24:57.000Z')
+    expect(t.text.length).toBeGreaterThan(0)
+    expect(t.source).toBe('fetch')
+  })
+
+  it('後備路徑也帶著圖片與精確互動數', () => {
+    const t = parseTweet(withoutArticles(fx('media-embedded')), '2088868860346937579')!
+
+    expect(t.author.handle).toBe('wa_cats')
+    expect(t.media).toEqual([
+      { url: 'https://pbs.twimg.com/media/HPzzMRcaQAA8Dnb.jpg', alt: '' },
+    ])
+    expect(t.metrics).toEqual([
+      { kind: 'views', value: 34_410 },
+      { kind: 'replies', value: 14 },
+      { kind: 'reposts', value: 265 },
+      { kind: 'likes', value: 3_813 },
+      { kind: 'bookmarks', value: 110 },
+    ])
+  })
+
+  it('引用貼文也一併生出來，且是未截斷的全文', () => {
+    const t = parseTweet(withoutArticles(fx('quoted-embedded')), '2090766694897619318')!
+
+    expect(t.rawText).toHaveLength(669)
+    expect(t.quoted?.id).toBe('2090675027670978569')
+    expect(t.quoted?.rawText).toHaveLength(677)
+    expect(t.quoted?.textComplete).toBe(true)
+    expect(t.quoted?.author.handle).toBe('thsottiaux')
+  })
+
+  it('DOM 與 store 都沒有時仍 fail closed', () => {
+    expect(parseTweet('<html><head><title>x</title></head><body></body></html>', '2097043464538264003'))
+      .toBeNull()
+    expect(parseTweet(withoutArticles(withoutScripts(fx('visible-ssr-ellipsis'))), '2097043464538264003'))
+      .toBeNull()
+  })
+
+  it('store 的內文若不是 DOM 內文的延長就不採用 —— 兩邊必須先對得上', () => {
+    // 把 store 裡那段引文的開頭改掉，讓它不再以 DOM 印出的 276 字開頭。
+    const tampered = fx('quoted-embedded').replaceAll(',text:"We', ',text:"ZZ We')
+    const t = parseTweet(tampered, '2090766694897619318')!
+
+    expect(t.quoted!.rawText).toHaveLength(276)
+    expect(t.quoted!.textComplete).toBe(false)
+    // 主貼文由 DOM 自己解出來，不受這段竄改影響。
+    expect(t.rawText).toHaveLength(669)
+    expect(t.textComplete).toBe(true)
+  })
+})
+
+describe('explainParseFailure', () => {
+  it('回報還有沒有第二來源可用', () => {
+    const withStore = explainParseFailure(fx('visible-ssr-ellipsis'), '2097043464538264003')
+    expect(withStore).toMatchObject({ hasEmbeddedStore: true, storePost: true, articleFound: true })
+
+    const domOnly = explainParseFailure(withoutScripts(fx('visible-ssr-ellipsis')), '2097043464538264003')
+    expect(domOnly).toMatchObject({ hasEmbeddedStore: false, storePost: false })
+
+    const storeOnly = explainParseFailure(withoutArticles(fx('visible-ssr-ellipsis')), '2097043464538264003')
+    expect(storeOnly).toMatchObject({ articleFound: false, storePost: true })
+  })
+
+  it('空頁面只回報原因，不會丟例外', () => {
+    expect(explainParseFailure('', '111')).toEqual({ reason: 'empty-html' })
   })
 })
