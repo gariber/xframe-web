@@ -114,8 +114,41 @@ describe('Card', () => {
     // 字級加倍，平台標誌與品牌小字必須跟著加倍；先前兩者是固定 px，
     // 使用者一拉字級，標頭與 footer 的比例關係就散掉了。
     expect(markOf(big)).toBe(markOf(small) * 2)
-    expect(brandOf(big)).toBe(`${40 * 0.62}px`)
-    expect(brandOf(small)).toBe(`${20 * 0.62}px`)
+    // 比例是相對於**實際用在內文上的**字級，不是使用者設定值：長貼文會自動
+    // 縮字級，而整張卡片必須跟著同一個基準縮，否則品牌、帳號、統計會反過來
+    // 比內文還大。這裡用 body 自己的 fontSize 當基準，就不會再寫死那個倍數。
+    const bodyOf = (el: HTMLElement) =>
+      Number.parseFloat((el.querySelector('[data-part="body"]') as HTMLElement).style.fontSize)
+    expect(brandOf(big)).toBe(`${bodyOf(big) * 0.62}px`)
+    expect(brandOf(small)).toBe(`${bodyOf(small) * 0.62}px`)
+    expect(bodyOf(big)).toBe(bodyOf(small) * 2)
+  })
+
+  it('長貼文縮字級時，整張卡片一起縮 —— 引文不會比本文還大', () => {
+    const long = '為了確保我們目前的用戶擁有絕佳的體驗並持續存取服務，我們將暫停對我們的訂閱方案。'.repeat(4)
+    const quote = '這是被引用的一段文字，用來檢查它不會比本文更大。'
+    const base = parseTweet(fx('plain'), '2083053369351090254')!
+    const post = {
+      ...base,
+      rawText: long,
+      text: [{ type: 'text' as const, value: long }],
+      quoted: {
+        ...base,
+        id: 'q',
+        rawText: quote,
+        text: [{ type: 'text' as const, value: quote }],
+      },
+    }
+    const el = mount(post, { ...DEFAULT_SETTINGS, aspect: '9:16' })
+    const sizeOf = (part: string) =>
+      Number.parseFloat((el.querySelector(`[data-part="${part}"]`) as HTMLElement).style.fontSize)
+
+    const body = sizeOf('body')
+    expect(body).toBeLessThan(DEFAULT_SETTINGS.fontSize)
+    // 卡片上沒有任何一段文字可以比內文大。
+    for (const part of ['quoted', 'handle', 'time', 'brand']) {
+      expect(sizeOf(part)).toBeLessThan(body)
+    }
   })
 
   it('底部依序排列分隔線、互動數與右下品牌', () => {

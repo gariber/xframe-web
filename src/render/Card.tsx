@@ -356,6 +356,18 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
   const author = s.maskIdentity ? MASKED_AUTHOR : post.author
   const quotedAuthor =
     post.quoted && (s.maskIdentity ? MASKED_AUTHOR : post.quoted.author)
+  /*
+   * 縮字級之後，整張卡片都要跟著縮。
+   *
+   * 先前只有內文吃這個結果，其餘（作者列、時間、統計、品牌、引用區塊）一律
+   * 從未縮過的 s.fontSize 推導，於是長貼文的字級層級整個反過來：實測 9:16
+   * 一則 258 權重的貼文，內文被縮到 14px，而引用區塊仍是 20×0.85=17px——
+   * 引文比它所在的本文還大 1.21 倍，帳號、時間與統計也都比內文大。1:1 更誇張，
+   * 內文 12px 對引文 17px，1.42 倍。
+   *
+   * 卡片的字級規格本來就是「每一項都由同一個基準推導」（見 cardScale），
+   * 所以縮過的值才是真正的基準，cardScale 與引用區塊都得吃它。
+   */
   const fontSize = fitFontSize(s.fontSize, post.rawText, s.aspect)
 
   const canvasRef = useRef<HTMLDivElement>(null)
@@ -380,7 +392,7 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
     s.show.media &&
     post.media.some((media) => Boolean(media.dataUrl))
   // 標誌、頭像、footer 小字與區塊間距一律由這裡推導，卡片內不再出現寫死的 px。
-  const scale = cardScale(s.fontSize, constrainedMedia)
+  const scale = cardScale(fontSize, constrainedMedia)
   const [canvasHeight, setCanvasHeight] = useState<number | undefined>(undefined)
   const [canvasWidth, setCanvasWidth] = useState(0)
   const [panelScale, setPanelScale] = useState(1)
@@ -626,7 +638,7 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
             style={{
               marginTop: 8,
               opacity: 0.5,
-              fontSize: s.fontSize * 0.72,
+              fontSize: fontSize * 0.72,
               flex: '0 0 auto',
             }}
           >
@@ -651,7 +663,7 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
               padding: '12px 14px',
               border: '1px solid rgba(255,255,255,.16)',
               borderRadius: 12,
-              fontSize: s.fontSize * 0.85,
+              fontSize: fontSize * 0.85,
               flex: '0 0 auto',
             }}
           >
@@ -674,7 +686,7 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
                 style={{
                   marginTop: 8,
                   opacity: 0.5,
-                  fontSize: s.fontSize * 0.72,
+                  fontSize: fontSize * 0.72,
                 }}
               >
                 內文未完整取得
