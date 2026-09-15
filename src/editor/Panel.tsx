@@ -96,9 +96,13 @@ async function loadTweet(permalink: string): Promise<Post> {
     // 降級後的卡片看起來是「正常但資訊少」，使用者無從得知是哪一關失敗，我們
     // 也無從遠端重現（X 給不同地區、語系、登入狀態的頁面並不一樣）。把診斷印
     // 到 console，讓「請把這一行貼給我」成為可能。
+    //
+    // 序列化成一行字串再印，而不是丟一個物件進去：console 會把物件收合成
+    // `▶ Object`，使用者得先知道要展開它才看得到內容 —— 實際回報時就卡在這裡，
+    // 截圖裡只有一個展不開的 Object，等於這行診斷白印了。字串能直接選取複製。
     console.warn(
-      '[XFrame] 公開抓取解析失敗，改用頁面 DOM。診斷：',
-      { version: chrome.runtime.getManifest().version, ...explainParseFailure(html, id) },
+      '[XFrame] 公開抓取解析失敗，改用頁面 DOM。診斷：'
+      + JSON.stringify({ version: chrome.runtime.getManifest().version, ...explainParseFailure(html, id) }),
     )
     tweet = extractFromDom(permalink)
   }
