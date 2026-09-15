@@ -98,6 +98,35 @@ export function parseUserName(raw: string): { name: string; handle: string } | n
   return { name: nameLine, handle: handleLine.slice(1) }
 }
 
+/**
+ * 這則推文自己的圖片。
+ *
+ * 這裡原本固定回空陣列，理由是「時間軸的圖片節點與引用推文的難以可靠區分，
+ * 歸屬錯誤會把別人的圖畫進卡片」。那個顧慮本身成立，但解法後來已經有了：
+ * ownedElements 用 `closest('article') === article` 把節點嚴格限制在這則推文
+ * 內，巢狀的引用推文有自己的 article，不會被算進來 —— 公開抓取路徑的
+ * parseMedia 用的正是同一招。既然歸屬能保證正確，就沒有再少給的理由：降級後
+ * 那張卡片少了圖，對使用者而言就是「明明有圖卻沒有圖」。
+ *
+ * 只認 `pbs.twimg.com/media/`：頭像在 profile_images、影片縮圖在
+ * amplify_video_thumb，兩者都不是推文圖片，比照公開路徑一併排除。
+ *
+ * 同一張圖在 DOM 裡可能出現不只一次（例如縮圖與放大版並存），依 media key
+ * 去重，否則卡片會排出兩張一模一樣的圖。
+ */
+function domMedia(article: Element): Post['media'] {
+  const seen = new Set<string>()
+  const media: Post['media'] = []
+  for (const img of ownedElements<HTMLImageElement>(article, 'img[src*="pbs.twimg.com/media/"]')) {
+    const url = img.getAttribute('src') ?? ''
+    const key = url.match(/\/media\/([^/?#.]+)/)?.[1]
+    if (!url || !key || seen.has(key)) continue
+    seen.add(key)
+    media.push({ url, alt: img.getAttribute('alt') ?? '' })
+  }
+  return media
+}
+
 /** 找出頁面上對應該永久連結的推文節點。 */
 function findArticle(permalink: string): Element | null {
   return findTweetRoots(document).find((el) => findPermalink(el) === permalink) ?? null
@@ -135,9 +164,8 @@ export function extractFromDom(permalink: string): Post | null {
     // 2026-08-24 實測：reply／retweet／like／bookmark 有穩定 data-testid 與精確
     // 數字；瀏覽數則在這則推文自己的 /analytics 連結上。缺任何一項就保留 null。
     metrics: domMetrics(article, id),
-    // 圖片同理不處理：時間軸的圖片節點與引用推文的難以可靠區分，而歸屬錯誤
-    // 會把別人的圖畫進卡片。降級路徑寧可少給，不可給錯。
-    media: [],
+    // 歸屬由 ownedElements 保證（見 domMedia）——與公開抓取路徑同一套規則。
+    media: domMedia(article),
     source: 'dom',
     // 只看這則推文自己的作者區，避免把頁首「目前登入帳號」的鎖頭誤套到貼文。
     isProtected: Boolean(userName?.querySelector('[data-testid="icon-lock"]')),

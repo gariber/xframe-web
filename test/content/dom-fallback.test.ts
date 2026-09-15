@@ -39,6 +39,10 @@ function buildPage(opts: {
   avatar?: string
   isProtected?: boolean
   metrics?: { views: string; replies: string; reposts: string; likes: string; bookmarks: string } | null
+  /** 這則推文自己的圖片（src 直接給值，模擬 X 的 DOM） */
+  images?: { src: string; alt?: string }[]
+  /** 巢狀引用推文帶的圖片 —— 絕不可被算成外層推文的圖 */
+  quotedImages?: string[]
 } = {}) {
   const {
     text = '看完 poi s03',
@@ -47,6 +51,8 @@ function buildPage(opts: {
     avatar = 'https://pbs.twimg.com/profile_images/1797436415435018240/78IKI5Gj_x96.jpg',
     isProtected = false,
     metrics = { views: '12,345', replies: '2', reposts: '0', likes: '89', bookmarks: '7' },
+    images = [],
+    quotedImages = [],
   } = opts
   document.body.innerHTML = `
     <svg data-testid="icon-lock" aria-label="檢視者自己的鎖頭"></svg>
@@ -58,6 +64,8 @@ function buildPage(opts: {
         ${isProtected ? '<svg data-testid="icon-lock" aria-label="受保護的帳戶"></svg>' : ''}
       </div>
       <div data-testid="tweetText">${text}</div>
+      ${images.map((i) => `<img src="${i.src}" alt="${i.alt ?? ''}">`).join('')}
+      ${quotedImages.length ? `<article>${quotedImages.map((src) => `<img src="${src}">`).join('')}</article>` : ''}
       <time datetime="${time}">now</time>
       ${metrics ? `
         <div role="group" aria-label="${metrics.replies} 則回覆、${metrics.reposts} 次轉發、${metrics.likes} 個喜歡、${metrics.views} 次觀看">
@@ -115,9 +123,57 @@ describe('extractFromDom', () => {
     expect(extractFromDom(PERMALINK)!.metrics.every((metric) => metric.value === null)).toBe(true)
   })
 
-  it('不抓圖片：歸屬錯誤會把別人的圖畫進卡片', () => {
+  /*
+   * 這裡原本是「不抓圖片」。當初的理由是歸屬難以保證，但 ownedElements 出現之後
+   * 就能用 `closest('article') === article` 嚴格限定範圍了 —— 公開抓取路徑的
+   * parseMedia 用的正是同一招。降級後卡片少一張圖，對使用者就是「明明有圖卻
+   * 沒有圖」，所以現在給，但歸屬必須守得住，下面幾個測試就是在守這件事。
+   */
+  it('抓到這則推文自己的圖片，連同 alt', () => {
+    buildPage({ images: [{ src: 'https://pbs.twimg.com/media/AAA?format=jpg&name=small', alt: '一隻貓' }] })
+    expect(extractFromDom(PERMALINK)!.media).toEqual([
+      { url: 'https://pbs.twimg.com/media/AAA?format=jpg&name=small', alt: '一隻貓' },
+    ])
+  })
+
+  it('沒有圖片時是空陣列', () => {
     buildPage()
     expect(extractFromDom(PERMALINK)!.media).toEqual([])
+  })
+
+  // 這是當初不敢抓圖的原因，也是現在最該守住的一條。
+  it('不把巢狀引用推文的圖片算成外層推文的圖片', () => {
+    buildPage({
+      images: [{ src: 'https://pbs.twimg.com/media/MINE?format=jpg&name=small' }],
+      quotedImages: ['https://pbs.twimg.com/media/THEIRS?format=jpg&name=small'],
+    })
+    const media = extractFromDom(PERMALINK)!.media
+    expect(media).toHaveLength(1)
+    expect(media[0].url).toContain('MINE')
+  })
+
+  it('頭像與影片縮圖都不算推文圖片', () => {
+    buildPage({
+      images: [
+        { src: 'https://pbs.twimg.com/profile_images/123/abc_x96.jpg' },
+        { src: 'https://pbs.twimg.com/amplify_video_thumb/456/img/def.jpg' },
+      ],
+    })
+    expect(extractFromDom(PERMALINK)!.media).toEqual([])
+  })
+
+  // 同一張圖在 DOM 裡可能縮圖與放大版並存，卡片不該排出兩張一樣的。
+  it('同一張圖只取一次', () => {
+    buildPage({
+      images: [
+        { src: 'https://pbs.twimg.com/media/SAME?format=jpg&name=small' },
+        { src: 'https://pbs.twimg.com/media/SAME?format=jpg&name=large' },
+        { src: 'https://pbs.twimg.com/media/OTHER?format=jpg&name=small' },
+      ],
+    })
+    const media = extractFromDom(PERMALINK)!.media
+    expect(media).toHaveLength(2)
+    expect(media.map((m) => m.url.includes('SAME')).filter(Boolean)).toHaveLength(1)
   })
 
   it('內文經 tokenize，hashtag 仍可上色', () => {
