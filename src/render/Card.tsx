@@ -339,10 +339,34 @@ const ASPECT_SHRINK: Record<CardSettings['aspect'], number> = {
  * `aspect` 也是輸入之一：不同比例的可用高度不同，先依係數調整 base，能讓
  * 常見長度在固定比例裡保持較大的實際字級（作用在 base 上，不動 floor）。
  */
-function fitFontSize(base: number, raw: string, aspect: CardSettings['aspect']): number {
+/**
+ * 版面上所有文字的加權長度。
+ *
+ * 必須把引用貼文與回覆對象一起算進去——它們和主文擠在同一個面板裡。只算主文的
+ * 話，一則短回覆掛著一長串父貼文完全不會觸發縮字級，面板於是被撐破，改由
+ * fitPanelScale 把**整張面板**等比縮小。那兩種縮法的結果差很多：縮字級只讓
+ * 文字變密，卡片的留白與邊框維持原尺寸；縮面板則是連留白一起縮，整張卡看起來
+ * 像一張卡片的縮圖，而不是一張卡片。
+ */
+export function weightedLength(post: Post): number {
+  const count = (raw: string) => raw.length + (raw.match(/[一-鿿぀-ヿ가-힯]/g) ?? []).length
+  return count(post.rawText)
+    + (post.quoted ? count(post.quoted.rawText) : 0)
+    + (post.replyTo ? count(post.replyTo.rawText) : 0)
+    + (post.replyTo?.quoted ? count(post.replyTo.quoted.rawText) : 0)
+}
+
+/**
+ * 字級收斂的下限。
+ *
+ * 再小就不是「密一點」而是讀不到了。碰到下限仍塞不下時，剩下的交給
+ * fitPanelScale——那時候縮圖至少還看得出排版，總比一片讀不出來的小字好。
+ */
+const MIN_CONTENT_FIT = 0.5
+
+export function fitFontSize(base: number, post: Post, aspect: CardSettings['aspect']): number {
   const effectiveBase = base * ASPECT_SHRINK[aspect]
-  const cjk = (raw.match(/[一-鿿぀-ヿ가-힯]/g) ?? []).length
-  const weighted = raw.length + cjk
+  const weighted = weightedLength(post)
   if (weighted <= 140) return effectiveBase
   if (weighted <= 240) return Math.max(13, effectiveBase * 0.85)
   if (weighted <= 380) return Math.max(12, effectiveBase * 0.7)
@@ -442,16 +466,42 @@ function QuoteBlock({ post, masked, fontSize, accent, showMedia }: {
  * 所以兩則之間的間距放在**右欄的 paddingBottom**，不是整塊的 marginBottom——
  * 放在外面的話左欄在間距處就結束了，線會斷在半空中。
  */
-function ThreadParent({ post, masked, scale, fontSize, accent, show }: {
+function ThreadParent({ post, masked, scale, fontSize, accent, show, canvasWidth }: {
   post: ParentPost
   masked: boolean
   scale: ReturnType<typeof cardScale>
   fontSize: number
   accent: string
   show: CardSettings['show']
+  /** 只為了在畫布寬度變了之後重新量一次作者列，不參與版面計算。 */
+  canvasWidth: number
 }) {
   const author = masked ? MASKED_AUTHOR : post.author
   const age = relTime(post.createdAt)
+
+  /*
+   * 作者列放不下時「整個拿掉顯示名稱」，而不是把它截成 `Udi Wert…`。
+   *
+   * 名稱、帳號、時間三樣要擠在一行，而卡片比 X 的介面窄得多，長一點的顯示名稱
+   * 一定溢出。截斷的結果兩個都殘（`Udi Wert… @u…`），兩邊都認不出來；留完整的
+   * 帳號至少還是一個能查得到的身分。
+   *
+   * CSS 沒有「放不下就拿掉某個元素」，所以得量。兩段 effect 是故意的：第一段在
+   * 輸入變動時把名稱放回去，第二段只在名稱還在時量——量完收掉之後就不再量，
+   * 否則收掉後寬度變鬆會再判定「放得下」，來回跳。
+   */
+  const headRef = useRef<HTMLDivElement>(null)
+  const [nameHidden, setNameHidden] = useState(false)
+  useLayoutEffect(() => {
+    setNameHidden(false)
+  }, [post.id, author.name, author.handleDisplay, scale.name, scale.handle, show.timestamp, canvasWidth])
+  useLayoutEffect(() => {
+    const el = headRef.current
+    if (!el || nameHidden) return
+    // 1px 容差：子像素的捨入不該把剛好放得下的名稱誤判成溢出。
+    if (el.scrollWidth > el.clientWidth + 1) setNameHidden(true)
+  })
+
   return (
     <div data-part="thread-parent" style={{ display: 'flex', gap: scale.avatarGap, flex: '0 0 auto' }}>
       {show.avatar && (
@@ -480,6 +530,7 @@ function ThreadParent({ post, masked, scale, fontSize, accent, show }: {
       )}
       <div style={{ minWidth: 0, flex: '1 1 auto', paddingBottom: scale.headGap }}>
         <div
+          ref={headRef}
           data-part="parent-head"
           style={{
             display: 'flex',
@@ -487,49 +538,33 @@ function ThreadParent({ post, masked, scale, fontSize, accent, show }: {
             gap: Math.round(scale.avatarGap / 2),
             minWidth: 0,
             marginBottom: scale.ruleGap,
+            // 量得到溢出的前提：不換行、不裁掉。scrollWidth 才會是自然寬度。
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
           }}
         >
-          {/*
-            單行作者列在窄卡片上一定會不夠寬（實測 9:16 手機寬度下，名稱＋帳號＋
-            時間比內容欄還長）。兩個名字都設成可收縮並以刪節號收尾，但帳號留一個
-            下限——沒有下限時它會被壓成 0 寬，看起來不像「被截斷」，而像整個欄位
-            不見了。X 自己的做法也是截帳號（`@udiWerth…`），不是把它藏起來。
-          */}
-          <span
-            data-part="parent-name"
-            style={{
-              fontWeight: 700,
-              /*
-               * 比主貼文的名稱小一級。X 的詳情頁也是這樣——被聚焦的那一則名字
-               * 最大，祖先的作者列整體降一級。而且這一行要塞下名稱、帳號與時間
-               * 三樣，卡片又比 X 的介面窄，降一級同時也換到需要的空間。
-               */
-              fontSize: scale.handle,
-              // 收縮權重 1 對帳號的 20：空間不夠時幾乎全由帳號吸收，名稱撐到
-              // 最後。X 也是這個優先序——`Udi Wertheimer @udiWerth…`，而不是
-              // 反過來把名字切掉。
-              flex: '0 1 auto',
-              minWidth: 0,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {author.name}
-          </span>
+          {!nameHidden && (
+            <span
+              data-part="parent-name"
+              style={{
+                fontWeight: 700,
+                /*
+                 * 比主貼文的名稱小一級。X 的詳情頁也是這樣——被聚焦的那一則
+                 * 名字最大，祖先的作者列整體降一級。
+                 */
+                fontSize: scale.handle,
+                flex: '0 0 auto',
+              }}
+            >
+              {author.name}
+            </span>
+          )}
           <span
             data-part="parent-handle"
             style={{
               opacity: CARD_ALPHA.handle,
               fontSize: scale.handle,
-              // grow 0：多出來的空間留在右邊，名稱／帳號／時間維持靠左成一組。
-              flex: '0 20 auto',
-              // 下限留 3em：再窄就連 `@abc…` 都不成形，那時它看起來會像欄位
-              // 整個不見，而不是被截斷。
-              minWidth: Math.round(scale.handle * 3),
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
+              flex: '0 0 auto',
             }}
           >
             {author.handleDisplay}
@@ -603,7 +638,27 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
    * 卡片的字級規格本來就是「每一項都由同一個基準推導」（見 cardScale），
    * 所以縮過的值才是真正的基準，cardScale 與引用區塊都得吃它。
    */
-  const fontSize = fitFontSize(s.fontSize, post.rawText, s.aspect)
+  /*
+   * 量到內容塞不下固定比例時的收斂係數。
+   *
+   * 先前這件事完全交給 fitPanelScale——把整張面板 `transform: scale()` 下去。
+   * 問題是那會連留白、邊框、圓角一起縮，卡片看起來像「一張卡片的縮圖」，而不是
+   * 一張卡片。實測加上父貼文之後，9:16 的面板被縮到 0.66，字級 17px 的字實際
+   * 只有 11.3px，整張卡莫名其妙地變小。
+   *
+   * 改成先用字級吸收：字縮小只讓文字變密，留白與邊框維持原尺寸，版面比例才對。
+   * 縮到下限仍塞不下時，殘餘才交給 fitPanelScale——它仍是最後那道保證不溢出的
+   * 防線，只是不該是第一線。
+   */
+  const [contentFit, setContentFit] = useState(1)
+  /*
+   * 量測用的鏡像。measure() 活在 useLayoutEffect 的閉包裡，直接讀 state 會讀到
+   * 建立那一輪的舊值——而這個值每一輪都可能變，讀錯就等於整條收斂邏輯失效，
+   * 而且失效得很安靜：卡片看起來「沒有縮」，實際上內容是溢出框外的。
+   */
+  const contentFitRef = useRef(contentFit)
+  contentFitRef.current = contentFit
+  const fontSize = fitFontSize(s.fontSize, post, s.aspect) * contentFit
 
   const canvasRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -631,6 +686,23 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
   const [canvasHeight, setCanvasHeight] = useState<number | undefined>(undefined)
   const [canvasWidth, setCanvasWidth] = useState(0)
   const [panelScale, setPanelScale] = useState(1)
+
+  /*
+   * 換了比例、換了貼文、或畫布寬度變了，先把收斂係數放回 1 再重量一次——否則會
+   * 一直停在上一次的收斂結果，而那個值是為了上一組條件算出來的。
+   *
+   * 依賴的是一個**字串**指紋，不是 settings / post 這兩個物件。呼叫端只要在
+   * render 裡現組物件（`{ ...base, aspect }` 之類），物件參照每次都不同，effect
+   * 就會每一輪都重設，收斂係數永遠回到 1——量到要縮、縮了又被重設、再量再縮，
+   * 卡片停在「沒縮」的狀態而內容其實是溢出的。字串比的是值，不受這件事影響。
+   */
+  const fitKey = [
+    s.aspect, s.padding, s.fontSize, s.show.parent, s.show.media, s.show.avatar,
+    s.show.timestamp, s.timeFormat, s.maskIdentity, post.id, weightedLength(post), canvasWidth,
+  ].join('|')
+  useLayoutEffect(() => {
+    setContentFit(1)
+  }, [fitKey])
 
   // CSS aspect-ratio 會被 flex item 的 min-content 高度撐開，所以非 auto 模式
   // 直接由 offsetWidth 算固定 px height。有主圖時面板維持滿寬滿高，讓完整
@@ -661,9 +733,25 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
       }
       const height = width / ratio
       const measuredPaddingY = canvasPaddingY(s.aspect, s.padding, width)
+      const available = height - measuredPaddingY * 2
       setCanvasHeight(height)
-      setMediaHeight(mediaBoxHeight(height - measuredPaddingY * 2))
-      setPanelScale(panel ? fitPanelScale(height - measuredPaddingY * 2, panel.offsetHeight) : 1)
+      setMediaHeight(mediaBoxHeight(available))
+      const fit = panel ? fitPanelScale(available, panel.offsetHeight) : 1
+      /*
+       * 一次只往下收，收完等 ResizeObserver 量到新的面板高度再決定要不要再收。
+       * 只減不增保證會停；而面板的上下留白是固定 px、不隨字級縮，所以每一輪算出
+       * 的係數都偏保守（收得不夠），會從上方逐步逼近，不會來回跳。
+       */
+      if (fit < 1) {
+        const current = contentFitRef.current
+        const next = Math.max(MIN_CONTENT_FIT, current * fit)
+        if (next < current - 0.005) {
+          setContentFit(next)
+          setPanelScale(1)
+          return
+        }
+      }
+      setPanelScale(fit)
     }
     measure()
     if (typeof ResizeObserver === 'undefined') return
@@ -695,7 +783,7 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
     ro.observe(footer)
     ro.observe(row)
     return () => ro.disconnect()
-  }, [settings, post, canvasWidth, panelScale, constrainedMedia])
+  }, [settings, post, canvasWidth, panelScale, constrainedMedia, contentFit])
 
   return (
     <div
@@ -802,6 +890,7 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
             fontSize={fontSize}
             accent={accent}
             show={s.show}
+            canvasWidth={canvasWidth}
           />
         )}
 

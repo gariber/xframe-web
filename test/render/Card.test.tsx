@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { render } from 'preact'
-import { Card, DEFAULT_SETTINGS } from '../../src/render/Card'
+import { Card, DEFAULT_SETTINGS, weightedLength, fitFontSize } from '../../src/render/Card'
 import { parseTweet } from '../../src/parse/microdata'
 import { CARD_ALPHA } from '../../src/render/card.css'
 import { readFileSync } from 'node:fs'
-import type { CardSettings } from '../../src/types'
+import type { CardSettings, Post } from '../../src/types'
 
 const fx = (n: string) => readFileSync(`test/fixtures/${n}.html`, 'utf8')
 
@@ -831,5 +831,44 @@ describe('Card 對話串', () => {
     const el = mount()
     expect(el.querySelector('[data-part="thread-parent"]')).toBeNull()
     expect(el.querySelector('[data-part="thread-line"]')).toBeNull()
+  })
+})
+
+describe('自動縮字級的長度估算', () => {
+  const make = (main: string, extra: Partial<Post> = {}): Post => ({
+    ...parseTweet(fx('plain'), '2083053369351090254')!,
+    rawText: main,
+    text: [{ type: 'text', value: main }],
+    ...extra,
+  })
+
+  it('中日韓字算兩倍寬 —— 同樣字數的中文佔的版面比拉丁字母多', () => {
+    expect(weightedLength(make('abcd'))).toBe(4)
+    expect(weightedLength(make('中文字'))).toBe(6)
+  })
+
+  it('引用貼文與回覆對象都算進去 —— 它們和主文擠在同一個面板裡', () => {
+    const main = make('主文')
+    const withQuote = make('主文', { quoted: { ...main, rawText: '引用文字' } as Post['quoted'] })
+    const withParent = make('主文', { replyTo: { ...main, rawText: '父貼文的文字' } as Post['replyTo'] })
+    expect(weightedLength(withQuote)).toBe(weightedLength(main) + 8)
+    expect(weightedLength(withParent)).toBe(weightedLength(main) + 12)
+  })
+
+  it('父貼文自己的引用也算', () => {
+    const base = make('主文')
+    const nested = make('主文', {
+      replyTo: { ...base, rawText: '父', quoted: { ...base, rawText: '父的引用' } } as Post['replyTo'],
+    })
+    expect(weightedLength(nested)).toBe(weightedLength(base) + 2 + 8)
+  })
+
+  it('掛上長父貼文之後字級會跟著降 —— 先前只看主文，短回覆掛長父貼文完全不觸發', () => {
+    const short = make('好吧，沒問題。')
+    const long = '好吧，Tibo，你們這週沒發佈什麼有趣的東西。你們欠我們一個存檔的重置。抱歉，我不是制定規則的人。'
+    const withParent = make('好吧，沒問題。', {
+      replyTo: { ...short, rawText: long.repeat(2) } as Post['replyTo'],
+    })
+    expect(fitFontSize(20, withParent, '9:16')).toBeLessThan(fitFontSize(20, short, '9:16'))
   })
 })
