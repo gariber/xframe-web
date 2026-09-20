@@ -1,4 +1,4 @@
-import type { Post, Metric, MetricKind, Author, Media } from '../types'
+import type { Post, Metric, MetricKind, Author, Media, QuotedPost, ParentPost } from '../types'
 import { tokenize } from './tokenize'
 import {
   parseEmbeddedCounts,
@@ -904,7 +904,7 @@ function authorFromStore(author: EmbeddedPost['author']): Author {
 function postBodyFromStore(
   stored: EmbeddedPost,
   embedded: Map<string, EmbeddedCounts>,
-): Omit<Post, 'quoted'> {
+): QuotedPost {
   const rawText = stripTrailingLink(stored.rawText)
   return {
     id: stored.id,
@@ -926,6 +926,88 @@ function postBodyFromStore(
 }
 
 /**
+ * 巢狀引用貼文的 article。
+ *
+ * 舊版頁面用 citation，2026-08 的公開頁面改成 sharedContent，再新一點的版本
+ * 連 itemprop 都拿掉了——引用貼文就只是一個巢狀的 `<article>`。前兩者仍優先，
+ * 因為那是明講出來的語意；沒有的話才退回「巢狀 article 就是引用貼文」，這在
+ * 詳情頁上成立：底下的回覆是各自獨立的同層 article，不會巢狀在主貼文裡。
+ */
+function citeElementOf(article: Element): Element | null {
+  return article.querySelector('article[itemprop="citation"], article[itemprop="sharedContent"]')
+    ?? article.querySelector('article')
+}
+
+/**
+ * 附帶顯示的貼文（引用貼文、回覆對象）共用的解析。
+ *
+ * 和主貼文的差別是沒有 title 或 og:description 可以交叉驗證——那兩者描述的是
+ * 頁面的主角，不是它。所以完整性只能靠保守的長度判斷，再由 store 補全文。
+ */
+function attachedFromArticle(
+  el: Element,
+  doc: Document,
+  outerId: string,
+  embedded: Map<string, EmbeddedCounts>,
+): QuotedPost | null {
+  const base = parseArticle(el) ?? parseVisibleQuoted(el, outerId)
+  if (!base) return null
+  const text = fullTextFromArticle(el, base.rawText)
+  return extendedByStore({
+    ...base,
+    rawText: text.text,
+    text: tokenize(text.text),
+    media: parseMedia(el),
+    metrics: mergeMetrics(base.metrics, embedded.get(base.id)),
+    textComplete: looksComplete(text.text, text.fromArticle),
+  }, doc)
+}
+
+function quotedFromStore(
+  doc: Document,
+  quotedId: string | null,
+  embedded: Map<string, EmbeddedCounts>,
+): QuotedPost | undefined {
+  if (quotedId === null) return undefined
+  const stored = parseEmbeddedPost(doc, quotedId)
+  return stored === null ? undefined : postBodyFromStore(stored, embedded)
+}
+
+/**
+ * 回覆對象（父貼文）。
+ *
+ * 「哪一則是父貼文」一律由 store 的 `reply_to_results` 決定，不靠「DOM 順序在
+ * 主貼文之前」去猜——詳情頁上方可能還有別的東西，而順序這種線索在 X 改版時
+ * 會安靜地配錯人，配錯的結果是卡片上掛著一則不相干的貼文，看不出來是錯的。
+ *
+ * 拿到 ID 之後優先用 DOM：articleForTweet 以永久連結比對，等於再確認一次
+ * 「這個 article 真的是那一則」。DOM 上找不到（X 沒渲染、或版面又變了）才退回
+ * store。兩邊都沒有就不顯示父貼文——卡片退回單則，不報錯。
+ */
+function parentFromPage(
+  doc: Document,
+  tweetId: string,
+  embedded: Map<string, EmbeddedCounts>,
+): ParentPost | undefined {
+  const parentId = parseEmbeddedPost(doc, tweetId)?.replyToId
+  if (!parentId) return undefined
+
+  const el = articleForTweet(doc, parentId)
+  const fromDom = el === null ? null : attachedFromArticle(el, doc, tweetId, embedded)
+  if (fromDom !== null && el !== null) {
+    // 父貼文自己也可能引用了別人，X 在對話串裡會一起顯示。
+    const citeEl = citeElementOf(el)
+    const quoted = citeEl === null ? null : attachedFromArticle(citeEl, doc, parentId, embedded)
+    return { ...fromDom, ...(quoted ? { quoted } : {}) }
+  }
+
+  const stored = parseEmbeddedPost(doc, parentId)
+  if (stored === null) return undefined
+  const quoted = quotedFromStore(doc, stored.quotedId, embedded)
+  return { ...postBodyFromStore(stored, embedded), ...(quoted ? { quoted } : {}) }
+}
+
+/**
  * 整條 DOM 路徑都走不通時，改由內嵌 store 生出貼文。
  *
  * 什麼時候會走到這裡：X 把 SSR 的 article 整個拿掉、或又換了一種我們還沒見過
@@ -942,10 +1024,12 @@ function postFromStore(
 ): Post | null {
   const stored = parseEmbeddedPost(doc, tweetId)
   if (stored === null) return null
-  const quotedStore = stored.quotedId === null ? null : parseEmbeddedPost(doc, stored.quotedId)
+  const quoted = quotedFromStore(doc, stored.quotedId, embedded)
+  const replyTo = parentFromPage(doc, tweetId, embedded)
   return {
     ...postBodyFromStore(stored, embedded),
-    ...(quotedStore ? { quoted: postBodyFromStore(quotedStore, embedded) } : {}),
+    ...(quoted ? { quoted } : {}),
+    ...(replyTo ? { replyTo } : {}),
   }
 }
 
@@ -987,32 +1071,9 @@ function postFromArticle(
     visibleArticleProvesComplete(article, trustedText, fullText)
   const fromFullSource = fromSelectedFullSource || fromVisibleFullSource
 
-  /*
-   * 舊版頁面用 citation，2026-08 的公開頁面改成 sharedContent，再新一點的版本
-   * 連 itemprop 都拿掉了——引用推文就只是一個巢狀的 `<article>`。前兩者仍優先，
-   * 因為那是明講出來的語意；沒有的話才退回「巢狀 article 就是引用推文」，這在
-   * 推文詳情頁上成立：底下的回覆是各自獨立的同層 article，不會巢狀在主推文裡。
-   */
-  const citeEl =
-    article.querySelector('article[itemprop="citation"], article[itemprop="sharedContent"]') ??
-    article.querySelector('article')
-  let quoted: Omit<Post, 'quoted'> | undefined
-  if (citeEl) {
-    const cbase = parseArticle(citeEl) ?? parseVisibleQuoted(citeEl, tweetId)
-    if (cbase) {
-      const quoteText = fullTextFromArticle(citeEl, cbase.rawText)
-      quoted = extendedByStore({
-        ...cbase,
-        rawText: quoteText.text,
-        text: tokenize(quoteText.text),
-        media: parseMedia(citeEl),
-        metrics: mergeMetrics(cbase.metrics, embedded.get(cbase.id)),
-        // 引用推文沒有自己的 title，但新版頁面的可見文字仍可作為第二份來源。
-        // 若找不到，就保留原本的保守長度判斷。
-        textComplete: looksComplete(quoteText.text, quoteText.fromArticle),
-      }, doc)
-    }
-  }
+  const citeEl = citeElementOf(article)
+  const quoted = citeEl === null ? null : attachedFromArticle(citeEl, doc, tweetId, embedded)
+  const replyTo = parentFromPage(doc, tweetId, embedded)
 
   return {
     ...extendedByStore({
@@ -1025,6 +1086,7 @@ function postFromArticle(
       textComplete: looksComplete(fullText, fromFullSource),
     }, doc),
     ...(quoted ? { quoted } : {}),
+    ...(replyTo ? { replyTo } : {}),
   }
 }
 

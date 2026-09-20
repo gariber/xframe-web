@@ -1012,3 +1012,58 @@ describe('explainParseFailure', () => {
     expect(explainParseFailure('', '111')).toEqual({ reason: 'empty-html' })
   })
 })
+
+/*
+ * 回覆對象（父貼文）。
+ *
+ * X 的詳情頁把直接父貼文的完整內容附在同一份 HTML 裡——DOM 上是主貼文前面的
+ * 同層 article，store 裡則是 `reply_to_results` 指到的節點。兩邊都拿得到，
+ * 但「哪一則是父貼文」只由 store 說了算。
+ */
+describe('parseTweet 回覆對象', () => {
+  const REPLY = '2089153024648425811'
+  const PARENT = '2088868860346937579'
+
+  it('從 DOM 解出父貼文，連它的圖片一起', () => {
+    const t = parseTweet(fx('visible-ssr-reply'), REPLY)!
+    expect(t.replyTo?.id).toBe(PARENT)
+    expect(t.replyTo?.author.handle).toBe('basarafire')
+    expect(t.replyTo?.rawText).toContain('お盆休み最終日')
+    expect(t.replyTo?.media).toHaveLength(1)
+    expect(t.replyTo?.media[0].url).toContain('pbs.twimg.com/media/')
+  })
+
+  it('article 全被拿掉時，父貼文改從內嵌 store 生出來', () => {
+    const t = parseTweet(withoutArticles(fx('visible-ssr-reply')), REPLY)!
+    expect(t.replyTo?.id).toBe(PARENT)
+    expect(t.replyTo?.author.handle).toBe('basarafire')
+    expect(t.replyTo?.media).toHaveLength(1)
+  })
+
+  /*
+   * 這一項守的是「不靠 DOM 順序猜」。把 script 拿掉之後 store 消失，但父貼文的
+   * article 仍原封不動待在主貼文前面——如果解析器是靠位置猜的，這裡就會照樣
+   * 生出父貼文。它必須什麼都不給。
+   */
+  it('沒有 reply_to_results 就不認父貼文，即使那個 article 還在 DOM 上', () => {
+    const domOnly = withoutScripts(fx('visible-ssr-reply'))
+    expect(domOnly).toContain(`data-tweet-id="${PARENT}"`)
+    expect(parseTweet(domOnly, REPLY)!.replyTo).toBeUndefined()
+  })
+
+  it('不是回覆的貼文沒有 replyTo', () => {
+    for (const [name, id] of [
+      ['plain', '2083053369351090254'],
+      ['quoted-embedded', '2090766694897619318'],
+      ['media-embedded', '2088868860346937579'],
+      ['visible-ssr-ellipsis', '2097043464538264003'],
+    ] as const) {
+      expect(parseTweet(fx(name), id)!.replyTo).toBeUndefined()
+    }
+  })
+
+  it('父貼文不會反過來再帶一層 —— 只往上一層', () => {
+    const t = parseTweet(fx('visible-ssr-reply'), REPLY)!
+    expect((t.replyTo as Record<string, unknown>).replyTo).toBeUndefined()
+  })
+})

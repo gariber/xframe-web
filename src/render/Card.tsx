@@ -1,7 +1,7 @@
 import { Fragment } from 'preact'
 import { useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { siX } from 'simple-icons'
-import type { Post, CardSettings, Segment, Media, Metric } from '../types'
+import type { Post, CardSettings, Segment, Media, Metric, QuotedPost, ParentPost } from '../types'
 import { generate, GRAIN_DATA_URI } from './backgrounds'
 import {
   ASPECT_VALUE,
@@ -36,7 +36,9 @@ export const DEFAULT_SETTINGS: CardSettings = {
   panelOpacity: 0.5,
   fontFamily: '-apple-system, "PingFang TC", "Noto Sans TC", system-ui, sans-serif',
   textColor: '#ffffff',
-  show: { avatar: true, stats: true, timestamp: true, media: true },
+  // parent：貼上回覆連結時自動把父貼文一起畫出來。預設開——使用者貼的是一則
+  // 回覆，少了被回覆的那一則，卡片上的話常常讀不懂。
+  show: { avatar: true, stats: true, timestamp: true, media: true, parent: true },
   // 一般推文預設不遮。鎖推貼文由 Panel 在載入完成時改為預設開啟 ——
   // 那是安全的預設，但仍然是使用者可以關掉的選擇。
   maskIdentity: false,
@@ -347,6 +349,236 @@ function fitFontSize(base: number, raw: string, aspect: CardSettings['aspect']):
   return Math.max(11, effectiveBase * 0.58)
 }
 
+/**
+ * 「翻譯自◯文」。
+ *
+ * 放在內文正上方，和 X 站上的位置一致——先知道這是譯文，再讀內容。放在內文
+ * 底下的話，讀者會先把譯文當成作者的原話讀完。
+ *
+ * 與時間、統計共用同一組低對比：它是關於這則貼文的註記，不是貼文本身。對話串
+ * 裡父貼文與主貼文各自標各自的（X 也是這樣，兩則都會標）。
+ */
+function TranslatedMark({ from, scale }: {
+  from: NonNullable<Post['translatedFrom']>
+  scale: ReturnType<typeof cardScale>
+}) {
+  return (
+    <div
+      data-part="translated-from"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.4em',
+        marginBottom: scale.timeGap,
+        opacity: CARD_ALPHA.time,
+        fontSize: scale.time,
+        flex: '0 0 auto',
+      }}
+    >
+      <GrokMark size={Math.round(scale.time * 0.95)} />
+      <span>{translatedLabel(from)}</span>
+    </div>
+  )
+}
+
+/**
+ * 被引用的貼文。主貼文與父貼文都可能引用別人，兩邊共用同一塊。
+ *
+ * 字級一律由**實際用在內文上的**字級推導（不是使用者設定值）——長貼文會自動
+ * 縮字級，引文跟著縮才不會反過來比本文大。
+ */
+function QuoteBlock({ post, masked, fontSize, accent, showMedia }: {
+  post: QuotedPost
+  masked: boolean
+  fontSize: number
+  accent: string
+  showMedia: boolean
+}) {
+  const author = masked ? MASKED_AUTHOR : post.author
+  return (
+    <div
+      data-part="quoted"
+      style={{
+        marginTop: 14,
+        padding: '12px 14px',
+        border: '1px solid rgba(255,255,255,.16)',
+        borderRadius: 12,
+        fontSize: fontSize * 0.85,
+        flex: '0 0 auto',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 6 }}>
+        <Avatar author={author} size={22} />
+        <span style={{ fontWeight: 600 }}>{author.name}</span>
+        <span style={{ opacity: 0.5 }}>{author.handleDisplay}</span>
+      </div>
+      <div
+        ref={noBrowserTranslation}
+        data-part="quote-body"
+        dir="auto"
+        style={{ lineHeight: 1.5, whiteSpace: 'pre-wrap' }}
+      >
+        <Text segments={post.text} accent={accent} />
+      </div>
+      {!post.textComplete && (
+        <div data-part="incomplete" style={{ marginTop: 8, opacity: 0.5, fontSize: fontSize * 0.72 }}>
+          內文未完整取得
+        </div>
+      )}
+      {showMedia && <MediaGrid media={post.media} />}
+    </div>
+  )
+}
+
+/**
+ * 對話串裡的父貼文。
+ *
+ * 版式照 X 的詳情頁，而 X 對「祖先」與「被聚焦的那一則」刻意用兩套排法：
+ * 祖先是單行作者列（名稱 · 帳號 · 相對時間）、內文縮排對齊名稱；被聚焦的那一則
+ * 是兩行作者列、內文滿版。差異本身就是資訊——讀的人一眼看得出哪一則是主角，
+ * 所以這裡照抄，不把兩者統一成同一種排法。
+ *
+ * 左側那條垂直線是「這兩則是同一串」的唯一訊號。它必須一路連到主貼文的頭像，
+ * 所以兩則之間的間距放在**右欄的 paddingBottom**，不是整塊的 marginBottom——
+ * 放在外面的話左欄在間距處就結束了，線會斷在半空中。
+ */
+function ThreadParent({ post, masked, scale, fontSize, accent, show }: {
+  post: ParentPost
+  masked: boolean
+  scale: ReturnType<typeof cardScale>
+  fontSize: number
+  accent: string
+  show: CardSettings['show']
+}) {
+  const author = masked ? MASKED_AUTHOR : post.author
+  const age = relTime(post.createdAt)
+  return (
+    <div data-part="thread-parent" style={{ display: 'flex', gap: scale.avatarGap, flex: '0 0 auto' }}>
+      {show.avatar && (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            flex: '0 0 auto',
+            width: scale.avatar,
+          }}
+        >
+          <Avatar author={author} size={scale.avatar} />
+          <div
+            data-part="thread-line"
+            style={{
+              flex: '1 1 auto',
+              width: Math.max(2, Math.round(scale.avatar * 0.04)),
+              marginTop: Math.round(scale.avatarGap / 2),
+              borderRadius: 999,
+              background: 'currentColor',
+              opacity: CARD_ALPHA.thread,
+            }}
+          />
+        </div>
+      )}
+      <div style={{ minWidth: 0, flex: '1 1 auto', paddingBottom: scale.headGap }}>
+        <div
+          data-part="parent-head"
+          style={{
+            display: 'flex',
+            alignItems: 'baseline',
+            gap: Math.round(scale.avatarGap / 2),
+            minWidth: 0,
+            marginBottom: scale.ruleGap,
+          }}
+        >
+          {/*
+            單行作者列在窄卡片上一定會不夠寬（實測 9:16 手機寬度下，名稱＋帳號＋
+            時間比內容欄還長）。兩個名字都設成可收縮並以刪節號收尾，但帳號留一個
+            下限——沒有下限時它會被壓成 0 寬，看起來不像「被截斷」，而像整個欄位
+            不見了。X 自己的做法也是截帳號（`@udiWerth…`），不是把它藏起來。
+          */}
+          <span
+            data-part="parent-name"
+            style={{
+              fontWeight: 700,
+              /*
+               * 比主貼文的名稱小一級。X 的詳情頁也是這樣——被聚焦的那一則名字
+               * 最大，祖先的作者列整體降一級。而且這一行要塞下名稱、帳號與時間
+               * 三樣，卡片又比 X 的介面窄，降一級同時也換到需要的空間。
+               */
+              fontSize: scale.handle,
+              // 收縮權重 1 對帳號的 20：空間不夠時幾乎全由帳號吸收，名稱撐到
+              // 最後。X 也是這個優先序——`Udi Wertheimer @udiWerth…`，而不是
+              // 反過來把名字切掉。
+              flex: '0 1 auto',
+              minWidth: 0,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {author.name}
+          </span>
+          <span
+            data-part="parent-handle"
+            style={{
+              opacity: CARD_ALPHA.handle,
+              fontSize: scale.handle,
+              // grow 0：多出來的空間留在右邊，名稱／帳號／時間維持靠左成一組。
+              flex: '0 20 auto',
+              // 下限留 3em：再窄就連 `@abc…` 都不成形，那時它看起來會像欄位
+              // 整個不見，而不是被截斷。
+              minWidth: Math.round(scale.handle * 3),
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {author.handleDisplay}
+          </span>
+          {show.timestamp && age !== '' && (
+            <span
+              data-part="parent-time"
+              style={{
+                opacity: CARD_ALPHA.time,
+                fontSize: scale.handle,
+                whiteSpace: 'nowrap',
+                flex: '0 0 auto',
+              }}
+            >
+              · {age}
+            </span>
+          )}
+        </div>
+        {post.translatedFrom && (
+          <TranslatedMark from={post.translatedFrom} scale={scale} />
+        )}
+        <div
+          ref={noBrowserTranslation}
+          data-part="parent-body"
+          dir="auto"
+          style={{ fontSize, lineHeight: 1.62, whiteSpace: 'pre-wrap' }}
+        >
+          <Text segments={post.text} accent={accent} />
+        </div>
+        {!post.textComplete && (
+          <div data-part="incomplete" style={{ marginTop: 8, opacity: 0.5, fontSize: fontSize * 0.72 }}>
+            內文未完整取得
+          </div>
+        )}
+        {show.media && <MediaGrid media={post.media} />}
+        {post.quoted && (
+          <QuoteBlock
+            post={post.quoted}
+            masked={masked}
+            fontSize={fontSize}
+            accent={accent}
+            showMedia={show.media}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
 export function Card({ post, settings }: { post: Post; settings: CardSettings }) {
   const s = settings
   const accent = accentFrom(s.textColor)
@@ -354,8 +586,11 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
   // 外層與被引用貼文的作者一起遮。遮蔽時卡片上不該出現任何帳號資訊 ——
   // 留著引用推文的帳號雖然那通常是另一個人，仍會提供辨識線索。
   const author = s.maskIdentity ? MASKED_AUTHOR : post.author
-  const quotedAuthor =
-    post.quoted && (s.maskIdentity ? MASKED_AUTHOR : post.quoted.author)
+  /*
+   * 父貼文只在使用者貼的是一則回覆、而且沒把它關掉時才出現。兩個條件都不成立
+   * 就完全不進對話串那條路——一般單則貼文的版面一個像素都不會變。
+   */
+  const parentPost = s.show.parent ? post.replyTo : undefined
   /*
    * 縮字級之後，整張卡片都要跟著縮。
    *
@@ -559,6 +794,17 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
           <XMark size={scale.logo} />
         </div>
 
+        {parentPost && (
+          <ThreadParent
+            post={parentPost}
+            masked={s.maskIdentity}
+            scale={scale}
+            fontSize={fontSize}
+            accent={accent}
+            show={s.show}
+          />
+        )}
+
         <div style={{ display: 'flex', alignItems: 'center', gap: scale.avatarGap, marginBottom: scale.headGap, flex: '0 0 auto' }}>
           {s.show.avatar && <Avatar author={author} size={scale.avatar} />}
           {/*
@@ -593,28 +839,8 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
           )}
         </div>
 
-        {/*
-          「翻譯自◯文」放在內文正上方，和 X 站上的位置一致——先知道這是譯文，
-          再讀內容。放在內文底下的話，讀者會先把譯文當成作者的原話讀完。
-
-          與時間、統計共用同一組低對比：它是關於這則貼文的註記，不是貼文本身。
-        */}
         {post.translatedFrom && (
-          <div
-            data-part="translated-from"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.4em',
-              marginBottom: scale.timeGap,
-              opacity: CARD_ALPHA.time,
-              fontSize: scale.time,
-              flex: '0 0 auto',
-            }}
-          >
-            <GrokMark size={Math.round(scale.time * 0.95)} />
-            <span>{translatedLabel(post.translatedFrom)}</span>
-          </div>
+          <TranslatedMark from={post.translatedFrom} scale={scale} />
         )}
 
         <div
@@ -656,44 +882,13 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
         )}
 
         {post.quoted && (
-          <div
-            data-part="quoted"
-            style={{
-              marginTop: 14,
-              padding: '12px 14px',
-              border: '1px solid rgba(255,255,255,.16)',
-              borderRadius: 12,
-              fontSize: fontSize * 0.85,
-              flex: '0 0 auto',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 6 }}>
-              <Avatar author={quotedAuthor!} size={22} />
-              <span style={{ fontWeight: 600 }}>{quotedAuthor!.name}</span>
-              <span style={{ opacity: 0.5 }}>{quotedAuthor!.handleDisplay}</span>
-            </div>
-            <div
-              ref={noBrowserTranslation}
-              data-part="quote-body"
-              dir="auto"
-              style={{ lineHeight: 1.5, whiteSpace: 'pre-wrap' }}
-            >
-              <Text segments={post.quoted.text} accent={accent} />
-            </div>
-            {!post.quoted.textComplete && (
-              <div
-                data-part="incomplete"
-                style={{
-                  marginTop: 8,
-                  opacity: 0.5,
-                  fontSize: fontSize * 0.72,
-                }}
-              >
-                內文未完整取得
-              </div>
-            )}
-            {s.show.media && <MediaGrid media={post.quoted.media} />}
-          </div>
+          <QuoteBlock
+            post={post.quoted}
+            masked={s.maskIdentity}
+            fontSize={fontSize}
+            accent={accent}
+            showMedia={s.show.media}
+          />
         )}
 
         {/*

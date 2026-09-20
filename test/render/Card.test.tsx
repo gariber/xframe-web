@@ -757,3 +757,79 @@ describe('來源截斷', () => {
     expect(el.querySelector('[data-part="incomplete"]')).toBeNull()
   })
 })
+
+/*
+ * 對話串：貼上一則回覆的連結時，父貼文一起畫出來。
+ *
+ * 版式照 X 的詳情頁——祖先用單行作者列、內文縮排，被聚焦的那一則維持兩行、
+ * 內文滿版，中間用一條垂直線連起來。差異本身就是資訊，所以測的是「兩者確實
+ * 不一樣」，不只是「父貼文有出現」。
+ */
+describe('Card 對話串', () => {
+  const replyPost = () => parseTweet(fx('visible-ssr-reply'), '2089153024648425811')!
+
+  it('fixture 本身就是一則回覆，且帶得出父貼文', () => {
+    const t = replyPost()
+    expect(t.replyTo?.id).toBe('2088868860346937579')
+    expect(t.replyTo?.author.handle).toBe('basarafire')
+  })
+
+  it('父貼文與連接線都畫出來', () => {
+    const el = mount(replyPost())
+    const parent = el.querySelector('[data-part="thread-parent"]') as HTMLElement
+    expect(parent).not.toBeNull()
+    expect(el.querySelector('[data-part="thread-line"]')).not.toBeNull()
+    expect(parent.textContent).toContain('basarafire')
+    expect(parent.textContent).toContain('お盆休み最終日')
+  })
+
+  it('父貼文用單行作者列，主貼文維持兩行', () => {
+    const el = mount(replyPost())
+    const parentName = el.querySelector('[data-part="parent-name"]') as HTMLElement
+    const parentHandle = el.querySelector('[data-part="parent-handle"]') as HTMLElement
+    // 單行：名稱與帳號同一個 flex 列，而且時間也跟在後面。
+    expect(parentName.parentElement).toBe(parentHandle.parentElement)
+    expect(parentName.parentElement!.style.display).toBe('flex')
+    // 兩行：主貼文的名稱與帳號各自成一個 block。
+    const name = el.querySelector('[data-part="name"]') as HTMLElement
+    const handle = el.querySelector('[data-part="handle"]') as HTMLElement
+    expect(name.parentElement).toBe(handle.parentElement)
+    expect(name.parentElement!.style.display).not.toBe('flex')
+  })
+
+  it('父貼文的作者列比主貼文小一級 —— X 也是被聚焦那一則最大', () => {
+    const el = mount(replyPost())
+    const size = (part: string) =>
+      Number.parseFloat((el.querySelector(`[data-part="${part}"]`) as HTMLElement).style.fontSize)
+    expect(size('parent-name')).toBeLessThan(size('name'))
+  })
+
+  it('父貼文沒有自己的統計列，卡片維持單一頁尾', () => {
+    const el = mount(replyPost())
+    const parent = el.querySelector('[data-part="thread-parent"]') as HTMLElement
+    expect(parent.querySelector('[data-part="stats"]')).toBeNull()
+    expect(el.querySelectorAll('[data-part="stats"]')).toHaveLength(1)
+    expect(el.querySelectorAll('[data-part="footer-meta"]')).toHaveLength(1)
+  })
+
+  it('關掉開關就完全不出現，版面回到單則', () => {
+    const el = mount(replyPost(), {
+      ...DEFAULT_SETTINGS,
+      show: { ...DEFAULT_SETTINGS.show, parent: false },
+    })
+    expect(el.querySelector('[data-part="thread-parent"]')).toBeNull()
+    expect(el.querySelector('[data-part="thread-line"]')).toBeNull()
+  })
+
+  it('遮蔽身分時父貼文的作者也一起遮', () => {
+    const el = mount(replyPost(), { ...DEFAULT_SETTINGS, maskIdentity: true })
+    const parent = el.querySelector('[data-part="thread-parent"]') as HTMLElement
+    expect(parent.textContent).not.toContain('basarafire')
+  })
+
+  it('不是回覆的貼文完全不進對話串那條路', () => {
+    const el = mount()
+    expect(el.querySelector('[data-part="thread-parent"]')).toBeNull()
+    expect(el.querySelector('[data-part="thread-line"]')).toBeNull()
+  })
+})

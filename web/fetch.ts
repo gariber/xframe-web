@@ -1,4 +1,4 @@
-import type { Post } from '../src/types'
+import type { Post, ParentPost } from '../src/types'
 import { SSR_LANGUAGE, TweetFetchError } from '../src/background/fetch-tweet'
 import { upgradeAvatarUrl, upgradeMediaUrl } from '../src/background/asset-proxy'
 
@@ -93,8 +93,29 @@ async function hydrateOne<T extends Omit<Post, 'quoted'>>(t: T): Promise<T> {
   }
 }
 
+/**
+ * 回覆對象自己也可能引用了別人，所以它要多走一層。
+ *
+ * 少了這一層，卡片上父貼文的頭像與圖片仍是跨來源網址：匯出時 canvas 會被
+ * 污染，整張圖直接失敗——不是那一張圖破圖而已。
+ */
+async function hydrateParent(parent: ParentPost): Promise<ParentPost> {
+  const [outer, quoted] = await Promise.all([
+    hydrateOne(parent),
+    parent.quoted ? hydrateOne(parent.quoted) : undefined,
+  ])
+  return { ...outer, ...(quoted ? { quoted } : {}) }
+}
+
 export async function hydrateAssets(tweet: Post): Promise<Post> {
-  const outer = await hydrateOne(tweet)
-  if (!tweet.quoted) return outer
-  return { ...outer, quoted: await hydrateOne(tweet.quoted) }
+  const [outer, quoted, replyTo] = await Promise.all([
+    hydrateOne(tweet),
+    tweet.quoted ? hydrateOne(tweet.quoted) : undefined,
+    tweet.replyTo ? hydrateParent(tweet.replyTo) : undefined,
+  ])
+  return {
+    ...outer,
+    ...(quoted ? { quoted } : {}),
+    ...(replyTo ? { replyTo } : {}),
+  }
 }

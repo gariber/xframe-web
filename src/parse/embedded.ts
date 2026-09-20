@@ -130,6 +130,8 @@ export type EmbeddedPost = {
   author: EmbeddedAuthor
   media: EmbeddedMedia[]
   quotedId: string | null
+  /** 這則貼文回覆的那一則的 ID，不是回覆就是 null。 */
+  replyToId: string | null
 }
 
 /** `Tweet:{id}` 的 base64 —— store 的節點鍵。 */
@@ -210,6 +212,16 @@ function mediaOf(store: Store, tweet: string): EmbeddedMedia[] {
     .filter((media) => media.url !== '')
 }
 
+/**
+ * 回覆對象的 ID。
+ *
+ * 和引用一樣，`reply_to_results` 的參照沒有編碼：`TweetResults:{id}`。X 的
+ * 詳情頁會把這一則的完整內容也放進同一份 store，所以拿到 ID 之後不必再抓一次。
+ */
+function replyToIdOf(tweet: string): string | null {
+  return refField(tweet, 'reply_to_results')?.match(/^TweetResults:(\d+)$/)?.[1] ?? null
+}
+
 /** `quoted_tweet_results` 的參照沒有編碼：`TweetResults:2090675027670978569`。 */
 function quotedIdOf(tweet: string): string | null {
   return refField(tweet, 'quoted_tweet_results')?.match(/^TweetResults:(\d+)$/)?.[1] ?? null
@@ -251,5 +263,6 @@ export function parseEmbeddedPost(doc: Document, tweetId: string): EmbeddedPost 
     author,
     media: mediaOf(store, tweet),
     quotedId: quotedIdOf(tweet),
+    replyToId: replyToIdOf(tweet),
   }
 }

@@ -476,6 +476,17 @@ function XFrameApp() {
               {{ avatar: '頭像', stats: '互動統計', timestamp: '時間', media: '推文圖片' }[k]}
             </label>
           ))}
+          {/*
+            只有這則貼文真的是回覆時才出現。一則沒有回覆對象的貼文上放一個
+            「顯示父貼文」的勾選框，勾了也不會有任何變化——那是在騙人。
+          */}
+          {displayedTweet?.replyTo && (
+            <label>
+              <input type="checkbox" checked={settings.show.parent}
+                onChange={(e) => patch({ show: { ...settings.show, parent: e.currentTarget.checked } })} />
+              被回覆的貼文
+            </label>
+          )}
         </Sheet>
 
         <Sheet title="隱私">

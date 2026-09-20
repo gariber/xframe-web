@@ -65,6 +65,18 @@ export type PostSource = 'fetch' | 'dom' | 'manual'
  */
 export type TranslatedFrom = 'ja' | 'ko' | 'en' | 'zh'
 
+/**
+ * 引用貼文。不帶自己的引用，也不帶回覆對象——卡片只畫一層，多存一層只會讓
+ * 呼叫端以為它有被渲染出來。
+ */
+export type QuotedPost = Omit<Post, 'quoted' | 'replyTo'>
+
+/**
+ * 回覆對象（父貼文）。保留 `quoted`：父貼文自己也可能引用了別人，X 在對話串
+ * 裡會一起顯示，卡片照做。不保留 `replyTo`——只往上帶一層。
+ */
+export type ParentPost = Omit<Post, 'replyTo'>
+
 export type Post = {
   id: string
   url: string
@@ -82,7 +94,14 @@ export type Post = {
    * true；缺少訊號時不猜測。這與資料是否來自 DOM 是兩件不同的事。
    */
   isProtected?: boolean
-  quoted?: Omit<Post, 'quoted'>
+  quoted?: QuotedPost
+  /**
+   * 這則貼文回覆的那一則。只有**直接**父貼文，不往上遞迴整條串。
+   *
+   * X 的詳情頁本來就把直接父貼文的完整內容附在同一份 HTML 裡，所以這一層不必
+   * 多抓一次；再往上就要逐層另外抓，那是另一個決定（見 replyToFromPage）。
+   */
+  replyTo?: ParentPost
   /**
    * 內文是否完整。
    *
@@ -90,7 +109,7 @@ export type Post = {
    * card.css.ts 的 canvasSizeStyle）。這個區別要傳到 UI：來源截斷換什麼比例
    * 都救不回來，不告訴使用者的話他會一直調比例。
    *
-   * 因為 quoted 的型別是 Omit<Post, 'quoted'>，引用推文自動帶有自己的
+   * 因為 QuotedPost 是由 Post 去掉巢狀欄位而來，引用推文自動帶有自己的
    * 這個旗標 —— 正好對上「主推文完整、引用推文截斷」這個 X 實際會出現的組合。
    */
   textComplete: boolean
@@ -114,7 +133,7 @@ export type CardSettings = {
   panelOpacity: number
   fontFamily: string
   textColor: string
-  show: { avatar: boolean; stats: boolean; timestamp: boolean; media: boolean }
+  show: { avatar: boolean; stats: boolean; timestamp: boolean; media: boolean; parent: boolean }
   /**
    * 遮蔽作者身分。名稱、帳號、頭像三者一起遮 —— 只遮其中一兩項是假的保護，
    * 剩下任何一項都足以認出人來，半套遮蔽只會給人錯誤的安全感。

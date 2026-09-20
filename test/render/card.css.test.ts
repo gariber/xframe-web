@@ -96,6 +96,9 @@ describe('CARD_ALPHA', () => {
     expect(CARD_ALPHA.time).toBe(CARD_ALPHA.stats)
     expect(CARD_ALPHA.brand).toBeLessThan(CARD_ALPHA.stats)
     expect(CARD_ALPHA.divider).toBeLessThan(CARD_ALPHA.brand)
+    // 對話串連接線要看得見（比分隔線重），但不能跟內容爭注意力（比統計輕）。
+    expect(CARD_ALPHA.thread).toBeGreaterThan(CARD_ALPHA.divider)
+    expect(CARD_ALPHA.thread).toBeLessThan(CARD_ALPHA.stats)
     expect(CARD_ALPHA.logo).toBeLessThan(1)
   })
 

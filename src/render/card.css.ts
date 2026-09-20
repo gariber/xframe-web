@@ -149,6 +149,11 @@ export const CARD_ALPHA = {
   handle: 0.55,
   time: 0.45,
   divider: 0.13,
+  /*
+   * 對話串的連接線。比分隔線重一點——那條線是「這兩則是同一串」的唯一視覺
+   * 訊號，看不見就等於沒有；但也不能重到跟內容爭注意力，所以仍在統計之下。
+   */
+  thread: 0.2,
   stats: 0.45,
   brand: 0.3,
 } as const
