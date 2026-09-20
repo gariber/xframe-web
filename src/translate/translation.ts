@@ -8,9 +8,18 @@ export type TextLanguage = {
   tag: 'zh' | 'en' | 'ja' | 'ko' | 'und'
 }
 
+/**
+ * 卡片上可能各自需要一份譯文的四個位置。
+ *
+ * 對話串把「被回覆的那一則」也畫進卡片，而它跟主文一樣會是外文；少了它，卡片
+ * 上就會出現一半中文一半英文，看起來像翻譯壞掉。父貼文自己的引用同理——X 站上
+ * 那一塊也是翻好的。
+ */
 export type TranslationPlan = {
   main: TextLanguage
   quoted?: TextLanguage
+  parent?: TextLanguage
+  parentQuoted?: TextLanguage
   hasForeignText: boolean
   /** 偵測到的來源語言，作為「翻譯自◯文」的預設值；使用者可以覆蓋。 */
   from: TranslatedFrom
@@ -19,6 +28,8 @@ export type TranslationPlan = {
 export type TranslationDraft = {
   main: string
   quoted: string
+  parent: string
+  parentQuoted: string
 }
 
 /**
@@ -41,7 +52,7 @@ export type TranslatedVersion = {
  * 像是哪裡出錯了。空框配 placeholder 才讀得出它在等什麼。
  */
 export function emptyTranslationDraft(): TranslationDraft {
-  return { main: '', quoted: '' }
+  return { main: '', quoted: '', parent: '', parentQuoted: '' }
 }
 
 /**
@@ -97,10 +108,18 @@ export function toTranslatedFrom(tag: TextLanguage['tag']): TranslatedFrom {
 export function buildTranslationPlan(post: Post): TranslationPlan {
   const main = detectTextLanguage(post.rawText)
   const quoted = post.quoted ? detectTextLanguage(post.quoted.rawText) : undefined
-  const firstForeign = [main, quoted].find((part) => part?.kind === 'foreign')
+  const parent = post.replyTo ? detectTextLanguage(post.replyTo.rawText) : undefined
+  const parentQuoted = post.replyTo?.quoted
+    ? detectTextLanguage(post.replyTo.quoted.rawText)
+    : undefined
+  // 主文優先決定「翻譯自◯文」——它是卡片的主角；其餘依卡片上由上而下的順序。
+  const firstForeign = [main, parent, parentQuoted, quoted]
+    .find((part) => part?.kind === 'foreign')
   return {
     main,
     quoted,
+    parent,
+    parentQuoted,
     hasForeignText: Boolean(firstForeign),
     from: toTranslatedFrom(firstForeign?.tag ?? main.tag),
   }
@@ -124,24 +143,45 @@ function cleanVisibleText(value: string): string {
  * 兩個欄位都沒有實質改變時回傳 null，呼叫端據此提示使用者，而不是靜靜地
  * 進入一個看起來已套用、實際上沒變的狀態。
  */
+/**
+ * 一個欄位的譯文，沒有實質改變時回 null。
+ *
+ * 三個條件缺一不可：那一段原本判定為外文、貼上框有東西、而且貼進來的確實和
+ * 原文不同。少了最後一個，使用者把原文原封不動貼回來也會讓卡片掛上「翻譯自
+ * ◯文」——那行字就說謊了。
+ */
+function translatedField(
+  original: string | undefined,
+  language: TextLanguage | undefined,
+  pasted: string,
+): string | null {
+  if (original === undefined || language?.kind !== 'foreign') return null
+  const cleaned = cleanVisibleText(pasted)
+  if (!cleaned || comparable(cleaned) === comparable(original)) return null
+  return cleaned
+}
+
+/** 已翻譯的欄位要蓋掉的那幾個值。抽出來是為了四個位置寫法一致。 */
+function translatedInto(text: string, from: TranslatedFrom) {
+  return { rawText: text, text: tokenize(text), translatedFrom: from, textComplete: true }
+}
+
 export function applyPastedTranslation(
   post: Post,
   plan: TranslationPlan,
   draft: TranslationDraft,
   from: TranslatedFrom,
 ): Post | null {
-  const main = cleanVisibleText(draft.main)
-  const quoted = cleanVisibleText(draft.quoted)
+  const main = translatedField(post.rawText, plan.main, draft.main)
+  const quoted = translatedField(post.quoted?.rawText, plan.quoted, draft.quoted)
+  const parent = translatedField(post.replyTo?.rawText, plan.parent, draft.parent)
+  const parentQuoted = translatedField(
+    post.replyTo?.quoted?.rawText,
+    plan.parentQuoted,
+    draft.parentQuoted,
+  )
 
-  const mainChanged =
-    plan.main.kind === 'foreign' && Boolean(main) && comparable(main) !== comparable(post.rawText)
-  const quotedChanged =
-    Boolean(post.quoted) &&
-    plan.quoted?.kind === 'foreign' &&
-    Boolean(quoted) &&
-    comparable(quoted) !== comparable(post.quoted!.rawText)
-
-  if (!mainChanged && !quotedChanged) return null
+  if (main === null && quoted === null && parent === null && parentQuoted === null) return null
 
   /*
    * 套用譯文時要一併清掉「內文未完整取得」。
@@ -153,17 +193,21 @@ export function applyPastedTranslation(
   return {
     ...post,
     translatedFrom: from,
-    ...(mainChanged ? { rawText: main, text: tokenize(main), textComplete: true } : {}),
+    ...(main !== null ? translatedInto(main, from) : {}),
     ...(post.quoted
+      ? { quoted: { ...post.quoted, ...(quoted !== null ? translatedInto(quoted, from) : {}) } }
+      : {}),
+    ...(post.replyTo
       ? {
-          quoted: {
-            ...post.quoted,
-            ...(quotedChanged
+          replyTo: {
+            ...post.replyTo,
+            ...(parent !== null ? translatedInto(parent, from) : {}),
+            ...(post.replyTo.quoted
               ? {
-                  rawText: quoted,
-                  text: tokenize(quoted),
-                  translatedFrom: from,
-                  textComplete: true,
+                  quoted: {
+                    ...post.replyTo.quoted,
+                    ...(parentQuoted !== null ? translatedInto(parentQuoted, from) : {}),
+                  },
                 }
               : {}),
           },

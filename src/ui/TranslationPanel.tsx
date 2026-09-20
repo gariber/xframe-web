@@ -76,7 +76,27 @@ export function TranslationPanel({
         在 X 上點推文的「翻譯貼文」，把翻好的文字複製後貼到下面，再套用到卡片。
       </p>
 
+      {/*
+        順序照卡片由上而下：回覆對象、回覆對象的引用、主文、主文的引用。貼上框
+        的排序和卡片對不上的話，使用者得一邊對照一邊猜哪一格是哪一段。
+      */}
       <div class="translation-source" ref={disableBrowserTranslation} aria-label="原文">
+        {plan.parent?.kind === 'foreign' && post.replyTo && (
+          <div class="translation-source-part">
+            <span class="translation-kicker">回覆對象原文</span>
+            <div data-part="parent-body" lang={plan.parent.tag} dir="auto">
+              <TranslationSourceText segments={post.replyTo.text} />
+            </div>
+          </div>
+        )}
+        {plan.parentQuoted?.kind === 'foreign' && post.replyTo?.quoted && (
+          <div class="translation-source-part">
+            <span class="translation-kicker">回覆對象引用原文</span>
+            <div data-part="parent-quote-body" lang={plan.parentQuoted.tag} dir="auto">
+              <TranslationSourceText segments={post.replyTo.quoted.text} />
+            </div>
+          </div>
+        )}
         {plan.main.kind === 'foreign' && (
           <div class="translation-source-part">
             <span class="translation-kicker">主文原文</span>
@@ -96,6 +116,30 @@ export function TranslationPanel({
       </div>
 
       <div class="translation-editors">
+        {plan.parent?.kind === 'foreign' && (
+          <label for="translation-parent">
+            回覆對象譯文
+            <textarea
+              id="translation-parent"
+              dir="auto"
+              placeholder="貼上 X 翻好的譯文"
+              value={draft.parent}
+              onInput={(event) => onDraft({ ...draft, parent: event.currentTarget.value })}
+            />
+          </label>
+        )}
+        {plan.parentQuoted?.kind === 'foreign' && (
+          <label for="translation-parent-quoted">
+            回覆對象引用譯文
+            <textarea
+              id="translation-parent-quoted"
+              dir="auto"
+              placeholder="貼上 X 翻好的譯文"
+              value={draft.parentQuoted}
+              onInput={(event) => onDraft({ ...draft, parentQuoted: event.currentTarget.value })}
+            />
+          </label>
+        )}
         {plan.main.kind === 'foreign' && (
           <label for="translation-main">
             主文譯文

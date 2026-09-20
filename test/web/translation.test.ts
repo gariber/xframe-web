@@ -4,7 +4,9 @@ import {
   applyPastedTranslation,
   buildTranslationPlan,
   detectTextLanguage,
+  emptyTranslationDraft,
   toTranslatedFrom,
+  type TranslationDraft,
 } from '../../src/translate/translation'
 import { translatedLabel } from '../../src/render/translated'
 
@@ -101,6 +103,12 @@ describe('translatedLabel', () => {
   })
 })
 
+/** 測試只關心自己那幾個欄位，其餘用空字串補滿。 */
+const draft = (part: Partial<TranslationDraft>): TranslationDraft => ({
+  ...emptyTranslationDraft(),
+  ...part,
+})
+
 describe('applyPastedTranslation', () => {
   it('只更新外文欄位，rawText 與 tokenize 後的 segments 同步', () => {
     const original = makePost('Read @openai at https://example.com', '這是中文引用。')
@@ -108,7 +116,7 @@ describe('applyPastedTranslation', () => {
     const next = applyPastedTranslation(
       original,
       plan,
-      { main: '請閱讀 @openai 的內容：https://example.com', quoted: '不應採用的中文改寫' },
+      draft({ main: '請閱讀 @openai 的內容：https://example.com', quoted: '不應採用的中文改寫' }),
       'en',
     )!
 
@@ -126,7 +134,7 @@ describe('applyPastedTranslation', () => {
     const next = applyPastedTranslation(
       original,
       buildTranslationPlan(original),
-      { main: '充電中。充飽之前不會動。', quoted: '' },
+      draft({ main: '充電中。充飽之前不會動。', quoted: '' }),
       'ja',
     )!
     expect(next.translatedFrom).toBe('ja')
@@ -136,19 +144,107 @@ describe('applyPastedTranslation', () => {
   it('貼上框留空時不套用，也不把卡片標成譯文', () => {
     const original = makePost('This is still English.')
     const plan = buildTranslationPlan(original)
-    expect(applyPastedTranslation(original, plan, { main: '', quoted: '' }, 'en')).toBeNull()
+    expect(applyPastedTranslation(original, plan, draft({ main: '', quoted: '' }), 'en')).toBeNull()
   })
 
   it('把原文原封不動貼回來時不算譯文——標示不能說謊', () => {
     const original = makePost('This is still English.')
     const plan = buildTranslationPlan(original)
     expect(
-      applyPastedTranslation(original, plan, { main: original.rawText, quoted: '' }, 'en'),
+      applyPastedTranslation(original, plan, draft({ main: original.rawText, quoted: '' }), 'en'),
     ).toBeNull()
   })
 
   it('原文未被取代時不會殘留 translatedFrom', () => {
     const original = makePost('This is still English.')
     expect(original.translatedFrom).toBeUndefined()
+  })
+})
+
+/*
+ * 對話串：卡片上還畫著「被回覆的那一則」，它跟主文一樣會是外文。
+ * 少了這一段，卡片會一半中文一半英文，看起來像翻譯壞掉。
+ */
+describe('翻譯回覆對象', () => {
+  const withParent = (parentText: string, parentQuotedText?: string): Post => {
+    const base = makePost('Fine. But it still lands on Tuesday.')
+    const parent = { ...makePost(parentText), id: 'p', url: 'https://x.com/p/status/p' }
+    return {
+      ...base,
+      replyTo: parentQuotedText
+        ? {
+            ...parent,
+            quoted: { ...makePost(parentQuotedText), id: 'pq', url: 'https://x.com/pq/status/pq' },
+          }
+        : parent,
+    }
+  }
+
+  it('外文的回覆對象會被列進計畫', () => {
+    const plan = buildTranslationPlan(withParent('You owe us a banked reset.'))
+    expect(plan.parent?.kind).toBe('foreign')
+    expect(plan.hasForeignText).toBe(true)
+  })
+
+  it('中文的回覆對象不列入 —— 產品規則是中文不翻', () => {
+    const plan = buildTranslationPlan(withParent('你們欠我們一個存檔的重置。'))
+    expect(plan.parent?.kind).toBe('chinese')
+  })
+
+  it('沒有回覆對象時 plan.parent 是 undefined，不是空的語言物件', () => {
+    expect(buildTranslationPlan(makePost('Hello there.')).parent).toBeUndefined()
+  })
+
+  it('套用譯文時回覆對象一起換掉，並標上來源語言與完整旗標', () => {
+    const original = withParent('You owe us a banked reset.')
+    const next = applyPastedTranslation(
+      original,
+      buildTranslationPlan(original),
+      draft({ main: '好吧，沒問題。但它還是會在星期二到達。', parent: '你們欠我們一個存檔的重置。' }),
+      'en',
+    )!
+
+    expect(next.replyTo?.rawText).toBe('你們欠我們一個存檔的重置。')
+    expect(next.replyTo?.text.map((part) => part.value).join('')).toBe(next.replyTo?.rawText)
+    expect(next.replyTo?.translatedFrom).toBe('en')
+    expect(next.replyTo?.textComplete).toBe(true)
+  })
+
+  it('回覆對象自己的引用也翻得到 —— X 站上那一塊也是翻好的', () => {
+    const original = withParent('You owe us a banked reset.', 'This week will also be wild.')
+    const next = applyPastedTranslation(
+      original,
+      buildTranslationPlan(original),
+      draft({ parent: '你們欠我們一個存檔的重置。', parentQuoted: '本週也將很瘋狂。' }),
+      'en',
+    )!
+
+    expect(next.replyTo?.quoted?.rawText).toBe('本週也將很瘋狂。')
+    expect(next.replyTo?.quoted?.translatedFrom).toBe('en')
+  })
+
+  it('只貼回覆對象那一格也算有套用，不會被當成什麼都沒改', () => {
+    const original = withParent('You owe us a banked reset.')
+    const next = applyPastedTranslation(
+      original,
+      buildTranslationPlan(original),
+      draft({ parent: '你們欠我們一個存檔的重置。' }),
+      'en',
+    )
+    expect(next).not.toBeNull()
+    // 主文沒貼就維持原文，不會被連帶改掉。
+    expect(next!.rawText).toBe(original.rawText)
+  })
+
+  it('把回覆對象的原文原封不動貼回來時不算譯文', () => {
+    const original = withParent('You owe us a banked reset.')
+    expect(
+      applyPastedTranslation(
+        original,
+        buildTranslationPlan(original),
+        draft({ parent: 'You owe us a banked reset.' }),
+        'en',
+      ),
+    ).toBeNull()
   })
 })
