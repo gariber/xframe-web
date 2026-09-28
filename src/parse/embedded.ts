@@ -1,4 +1,4 @@
-import type { MetricKind } from '../types'
+import type { MediaKind, MetricKind } from '../types'
 import {
   findTweetObjects,
   intField as storeInt,
@@ -150,7 +150,7 @@ export function parseEmbeddedCounts(doc: Document): Map<string, EmbeddedCounts> 
 }
 
 export type EmbeddedAuthor = { name: string; handle: string; avatarUrl: string }
-export type EmbeddedMedia = { url: string; alt: string }
+export type EmbeddedMedia = { url: string; alt: string; kind: MediaKind }
 
 export type EmbeddedPost = {
   id: string
@@ -229,18 +229,34 @@ function authorOf(store: Store, tweet: string): EmbeddedAuthor | null {
   }
 }
 
+/**
+ * store 的 `type` 對到卡片的媒體種類。
+ *
+ * 這裡曾經只收 `photo`，理由寫的是「影片與 GIF 沒有可用的畫格」—— 那句話是
+ * 錯的：影片項目的 `media_url_https` 指向 X 自己產的封面畫格（放在
+ * pbs.twimg.com/amplify_video_thumb/），跟照片同一個主機、同一條 hydrate
+ * 路徑。濾掉的結果是一則純影片的推文整張卡片連一張圖都沒有，不會報錯，
+ * 就是靜靜地少了東西。
+ */
+const STORE_MEDIA_KIND: Record<string, MediaKind | undefined> = {
+  photo: 'photo',
+  video: 'video',
+  animated_gif: 'gif',
+}
+
+function embeddedMedia(node: string): EmbeddedMedia | null {
+  const kind = STORE_MEDIA_KIND[stringField(node, 'type') ?? '']
+  const url = stringField(node, 'media_url_https') ?? ''
+  if (kind === undefined || url === '') return null
+  return { url, alt: stringField(node, 'ext_alt_text') ?? '', kind }
+}
+
 function mediaOf(store: Store, tweet: string): EmbeddedMedia[] {
   return refsField(tweet, 'media_entities2')
     .map((ref) => store.node(ref))
     .filter((node): node is string => node !== null)
-    // 卡片只放靜態圖片，影片與 GIF 沒有可用的畫格。DOM 那條路同樣只收
-    // pbs.twimg.com/media 的 <img>，兩邊維持一致。
-    .filter((node) => stringField(node, 'type') === 'photo')
-    .map((node) => ({
-      url: stringField(node, 'media_url_https') ?? '',
-      alt: stringField(node, 'ext_alt_text') ?? '',
-    }))
-    .filter((media) => media.url !== '')
+    .map(embeddedMedia)
+    .filter((media): media is EmbeddedMedia => media !== null)
 }
 
 /**
@@ -315,12 +331,8 @@ function inlinePost(doc: Document, tweetId: string): EmbeddedPost | null {
       avatarUrl: (avatar === null ? null : stringField(avatar, 'image_url')) ?? '',
     },
     media: objectsField(tweet, 'media_entities2')
-      .filter((item) => stringField(item, 'type') === 'photo')
-      .map((item) => ({
-        url: stringField(item, 'media_url_https') ?? '',
-        alt: stringField(item, 'ext_alt_text') ?? '',
-      }))
-      .filter((item) => item.url !== ''),
+      .map(embeddedMedia)
+      .filter((item): item is EmbeddedMedia => item !== null),
     quotedId: restIdOf('quoted_tweet_results'),
     replyToId: restIdOf('reply_to_results'),
   }

@@ -32,10 +32,20 @@ export type Author = {
   avatarDataUrl?: string
 }
 
+/**
+ * 這則媒體是什麼。
+ *
+ * 影片與 GIF 在卡片上畫的是 X 提供的封面畫格（`amplify_video_thumb` 等），
+ * 不是一張普通照片 —— 不標出來的話，一則影片推文的卡片看起來就只是一張
+ * 靜止的圖，讀的人不會知道原推文是會動的。
+ */
+export type MediaKind = 'photo' | 'video' | 'gif'
+
 export type Media = {
   url: string
   dataUrl?: string
   alt: string
+  kind: MediaKind
 }
 
 /**

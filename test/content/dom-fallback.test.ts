@@ -132,7 +132,7 @@ describe('extractFromDom', () => {
   it('抓到這則推文自己的圖片，連同 alt', () => {
     buildPage({ images: [{ src: 'https://pbs.twimg.com/media/AAA?format=jpg&name=small', alt: '一隻貓' }] })
     expect(extractFromDom(PERMALINK)!.media).toEqual([
-      { url: 'https://pbs.twimg.com/media/AAA?format=jpg&name=small', alt: '一隻貓' },
+      { url: 'https://pbs.twimg.com/media/AAA?format=jpg&name=small', alt: '一隻貓', kind: 'photo' },
     ])
   })
 
@@ -152,14 +152,28 @@ describe('extractFromDom', () => {
     expect(media[0].url).toContain('MINE')
   })
 
-  it('頭像與影片縮圖都不算推文圖片', () => {
+  it('頭像不算推文圖片 —— 它有自己的欄位', () => {
+    buildPage({ images: [{ src: 'https://pbs.twimg.com/profile_images/123/abc_x96.jpg' }] })
+    expect(extractFromDom(PERMALINK)!.media).toEqual([])
+  })
+
+  /*
+   * 影片封面以前跟頭像一起被排除，理由是「影片沒有可用的畫格」—— 那句話是錯的。
+   * X 自己產的封面畫格就放在 pbs.twimg.com/amplify_video_thumb/，跟照片同一個
+   * 主機、同一條 hydrate 路徑。排除掉的結果是一則純影片的推文整張卡片連一張圖
+   * 都沒有，不會報錯，就是靜靜地少了東西。
+   */
+  it('影片與 GIF 的封面畫格算推文圖片，並標出種類', () => {
     buildPage({
       images: [
-        { src: 'https://pbs.twimg.com/profile_images/123/abc_x96.jpg' },
-        { src: 'https://pbs.twimg.com/amplify_video_thumb/456/img/def.jpg' },
+        { src: 'https://pbs.twimg.com/amplify_video_thumb/456/img/def.jpg', alt: '一段影片' },
+        { src: 'https://pbs.twimg.com/tweet_video_thumb/789.jpg' },
       ],
     })
-    expect(extractFromDom(PERMALINK)!.media).toEqual([])
+    expect(extractFromDom(PERMALINK)!.media).toEqual([
+      { url: 'https://pbs.twimg.com/amplify_video_thumb/456/img/def.jpg', alt: '一段影片', kind: 'video' },
+      { url: 'https://pbs.twimg.com/tweet_video_thumb/789.jpg', alt: '', kind: 'gif' },
+    ])
   })
 
   // 同一張圖在 DOM 裡可能縮圖與放大版並存，卡片不該排出兩張一樣的。

@@ -1,7 +1,7 @@
 import { Fragment } from 'preact'
 import { useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { siX } from 'simple-icons'
-import type { Post, CardSettings, Segment, Media, Metric, QuotedPost, ParentPost } from '../types'
+import type { Post, CardSettings, Segment, Media, MediaKind, Metric, QuotedPost, ParentPost } from '../types'
 import { generate, GRAIN_DATA_URI } from './backgrounds'
 import {
   ASPECT_VALUE,
@@ -229,6 +229,46 @@ function XMark({ size }: { size: number }) {
   )
 }
 
+/**
+ * 「這一格是會動的」的標記。
+ *
+ * 卡片上畫的是 X 提供的封面畫格，不是照片。不標出來的話，一則影片推文的卡片
+ * 看起來就只是一張靜止的圖 —— 讀的人不會知道原推文是會動的，而那件事有時候
+ * 正是這則推文的全部內容。
+ *
+ * 位置比照 X 自己：影片是置中的播放鍵，GIF 是左下角的標籤。純 SVG 與純 CSS，
+ * 沒有任何需要字型或外部資源的東西，光柵化時不會有變數。
+ */
+function MotionBadge({ kind, size }: { kind: MediaKind; size: number }) {
+  if (kind === 'photo') return null
+  if (kind === 'gif') {
+    return (
+      <span
+        data-part="media-badge"
+        style={{
+          position: 'absolute', left: Math.round(size * 0.22), bottom: Math.round(size * 0.22),
+          zIndex: 2, padding: `${Math.round(size * 0.07)}px ${Math.round(size * 0.16)}px`,
+          borderRadius: Math.round(size * 0.1), background: 'rgba(0,0,0,.65)',
+          color: '#fff', fontSize: Math.round(size * 0.3), fontWeight: 700,
+          letterSpacing: '.04em', lineHeight: 1,
+        }}
+      >
+        GIF
+      </span>
+    )
+  }
+  return (
+    <svg
+      data-part="media-badge"
+      width={size} height={size} viewBox="0 0 48 48" aria-hidden="true"
+      style={{ position: 'absolute', left: '50%', top: '50%', zIndex: 2, marginLeft: -size / 2, marginTop: -size / 2 }}
+    >
+      <circle cx="24" cy="24" r="24" fill="rgba(0,0,0,.55)" />
+      <path d="M19 15.5 34 24 19 32.5Z" fill="#fff" />
+    </svg>
+  )
+}
+
 function MediaGrid({
   media,
   constrained = false,
@@ -243,6 +283,8 @@ function MediaGrid({
   // 同 Avatar：抓取失敗（無 dataUrl）的圖位直接隱藏，不可退回跨域網址
   const usable = media.filter((m) => m.dataUrl)
   if (usable.length === 0) return null
+  // 多格時每一格只有一半寬，播放鍵跟著收斂，否則小格子會被它佔掉一大塊
+  const badgeSize = usable.length > 1 ? 30 : 44
   return (
     <div
       data-part="media"
@@ -299,15 +341,18 @@ function MediaGrid({
               borderRadius: 12,
             }}
           />
+          <MotionBadge kind={m.kind} size={badgeSize} />
         </div>
       ) : (
-        <img
-          key={i}
-          data-part="media-image"
-          src={m.dataUrl}
-          alt={m.alt}
-          style={{ width: '100%', display: 'block' }}
-        />
+        <div key={i} data-part="media-tile" style={{ position: 'relative', minWidth: 0 }}>
+          <img
+            data-part="media-image"
+            src={m.dataUrl}
+            alt={m.alt}
+            style={{ width: '100%', display: 'block' }}
+          />
+          <MotionBadge kind={m.kind} size={badgeSize} />
+        </div>
       ))}
     </div>
   )

@@ -33,7 +33,7 @@ function placeholder(w: number, h: number): string {
 async function hydrateMedia(media: Post['media']): Promise<Post['media']> {
   const list = media.length
     ? media
-    : [{ url: '', alt: '開發用佔位圖', width: 670, height: 1200 } as Post['media'][number]]
+    : [{ url: '', alt: '開發用佔位圖', kind: 'photo', width: 670, height: 1200 } as Post['media'][number]]
   return Promise.all(
     list.map(async (m) => {
       const url = m.url ? upgradeMediaUrl(m.url) : ''

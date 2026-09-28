@@ -387,6 +387,40 @@ describe('比例的版面樣式與字級收斂（Fix 1）', () => {
 })
 
 describe('固定比例的媒體填滿版面', () => {
+  /*
+   * 影片與 GIF 在卡片上畫的是 X 提供的封面畫格，不是照片。不標出來的話，一則
+   * 影片推文的卡片看起來就只是一張靜止的圖 —— 讀的人不會知道原推文是會動的，
+   * 而那件事有時候正是這則推文的全部內容。
+   */
+  describe('會動的媒體要標出來', () => {
+    const withKind = (kind: Post['media'][number]['kind']) => {
+      const t = parseTweet(fx('media'), '2083061426923475451')!
+      return { ...t, media: t.media.map((m) => ({ ...m, kind, dataUrl: 'data:image/png;base64,eA==' })) }
+    }
+
+    it('照片沒有任何標記', () => {
+      expect(mount(withKind('photo')).querySelector('[data-part="media-badge"]')).toBeNull()
+    })
+
+    it('影片有播放鍵', () => {
+      const badge = mount(withKind('video')).querySelector('[data-part="media-badge"]')
+      expect(badge).not.toBeNull()
+      expect(badge!.tagName.toLowerCase()).toBe('svg')
+    })
+
+    it('GIF 標的是 GIF 兩個字，不是播放鍵 —— X 自己就是這樣分的', () => {
+      const badge = mount(withKind('gif')).querySelector('[data-part="media-badge"]')
+      expect(badge?.textContent).toBe('GIF')
+    })
+
+    it('固定比例與自動高度兩條分支都標得到', () => {
+      for (const aspect of ['auto', '9:16'] as const) {
+        const el = mount(withKind('video'), { ...DEFAULT_SETTINGS, aspect })
+        expect(el.querySelector('[data-part="media-badge"]')).not.toBeNull()
+      }
+    })
+  })
+
   const mediaTweet = () => {
     const t = parseTweet(fx('media'), '2083061426923475451')!
     return { ...t, media: t.media.map((m) => ({ ...m, dataUrl: 'data:image/png;base64,eA==' })) }

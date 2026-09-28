@@ -146,6 +146,7 @@ describe('parseEmbeddedPost', () => {
       {
         url: 'https://pbs.twimg.com/media/HP8wyBkXUAArI7e.jpg',
         alt: "A vet's office with a white cat peeking over the desk.",
+        kind: 'photo',
       },
     ])
   })

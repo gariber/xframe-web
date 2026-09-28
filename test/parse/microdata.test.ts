@@ -955,7 +955,7 @@ describe('parseTweet 內嵌 store 後備', () => {
 
     expect(t.author.handle).toBe('wa_cats')
     expect(t.media).toEqual([
-      { url: 'https://pbs.twimg.com/media/HPzzMRcaQAA8Dnb.jpg', alt: '' },
+      { url: 'https://pbs.twimg.com/media/HPzzMRcaQAA8Dnb.jpg', alt: '', kind: 'photo' },
     ])
     expect(t.metrics).toEqual([
       { kind: 'views', value: 34_410 },

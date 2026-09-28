@@ -1,5 +1,6 @@
 import type { Post } from '../types'
 import { tokenize } from '../parse/tokenize'
+import { TWEET_MEDIA_SELECTOR, mediaDedupeKey, mediaKindOfUrl } from '../parse/media'
 import { findPermalink, findTweetRoots } from './permalink'
 
 /**
@@ -108,8 +109,9 @@ export function parseUserName(raw: string): { name: string; handle: string } | n
  * parseMedia 用的正是同一招。既然歸屬能保證正確，就沒有再少給的理由：降級後
  * 那張卡片少了圖，對使用者而言就是「明明有圖卻沒有圖」。
  *
- * 只認 `pbs.twimg.com/media/`：頭像在 profile_images、影片縮圖在
- * amplify_video_thumb，兩者都不是推文圖片，比照公開路徑一併排除。
+ * 收照片、影片封面與 GIF 封面，不收頭像 —— 頭像在 profile_images，有自己的
+ * 欄位，混進來會在卡片上多出一張作者大頭照。這份定義與公開抓取路徑共用
+ * （TWEET_MEDIA_SELECTOR），兩邊不會再各自漂移。
  *
  * 同一張圖在 DOM 裡可能出現不只一次（例如縮圖與放大版並存），依 media key
  * 去重，否則卡片會排出兩張一模一樣的圖。
@@ -117,12 +119,13 @@ export function parseUserName(raw: string): { name: string; handle: string } | n
 function domMedia(article: Element): Post['media'] {
   const seen = new Set<string>()
   const media: Post['media'] = []
-  for (const img of ownedElements<HTMLImageElement>(article, 'img[src*="pbs.twimg.com/media/"]')) {
+  for (const img of ownedElements<HTMLImageElement>(article, TWEET_MEDIA_SELECTOR)) {
     const url = img.getAttribute('src') ?? ''
-    const key = url.match(/\/media\/([^/?#.]+)/)?.[1]
-    if (!url || !key || seen.has(key)) continue
+    const key = mediaDedupeKey(url)
+    const kind = mediaKindOfUrl(url)
+    if (!url || key === null || kind === null || seen.has(key)) continue
     seen.add(key)
-    media.push({ url, alt: img.getAttribute('alt') ?? '' })
+    media.push({ url, alt: img.getAttribute('alt') ?? '', kind })
   }
   return media
 }

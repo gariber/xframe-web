@@ -1,5 +1,6 @@
 import type { Post, Metric, MetricKind, Author, Media, QuotedPost, ParentPost } from '../types'
 import { tokenize } from './tokenize'
+import { TWEET_MEDIA_SELECTOR, mediaKindOfUrl } from './media'
 import {
   parseEmbeddedCounts,
   parseEmbeddedPost,
@@ -444,13 +445,14 @@ function mergeMetrics(dom: Metric[], embedded: EmbeddedCounts | undefined): Metr
  * 引用推文內，其最近的 article 祖先會是引用推文而非外層推文。
  */
 function parseMedia(article: Element): Media[] {
-  return [...article.querySelectorAll('img[src*="pbs.twimg.com/media/"]')]
+  return [...article.querySelectorAll(TWEET_MEDIA_SELECTOR)]
     .filter((img) => img.closest('article') === article)
-    .map((img) => ({
-      url: img.getAttribute('src') ?? '',
-      alt: img.getAttribute('alt') ?? '',
-    }))
-    .filter((m) => m.url !== '')
+    .map((img) => {
+      const url = img.getAttribute('src') ?? ''
+      const kind = mediaKindOfUrl(url)
+      return kind === null ? null : { url, alt: img.getAttribute('alt') ?? '', kind }
+    })
+    .filter((m): m is Media => m !== null)
 }
 
 // iPhone Safari 的未登入 SSR 會把主貼文永久連結改成 m.x.com，並附上
@@ -915,7 +917,7 @@ function postBodyFromStore(
     rawText,
     text: tokenize(rawText),
     createdAt: stored.createdAt,
-    media: stored.media.map((media) => ({ url: media.url, alt: media.alt })),
+    media: stored.media.map((media) => ({ url: media.url, alt: media.alt, kind: media.kind })),
     // store 沒有互動數；那一份由 parseEmbeddedCounts 從同一頁另外讀出來。
     metrics: mergeMetrics(
       X_METRIC_ORDER.map((kind) => ({ kind, value: null })),
