@@ -65,20 +65,50 @@ function validAspect(v: unknown): v is CardSettings['aspect'] {
   return typeof v === 'string' && Object.prototype.hasOwnProperty.call(ASPECT_VALUE, v)
 }
 
+/**
+ * 存檔裡唯一還算數的顯示選擇。
+ *
+ * 「顯示項目」那一區已經移除（頭像、互動統計、時間、推文圖片四個開關），
+ * 但存檔是使用者裝置上的舊資料，裡面可能還留著當初關掉的選擇 —— 例如把推文
+ * 圖片關掉。介面上沒有地方可以打開了，那個人就再也看不到圖片，而且找不到
+ * 原因。所以讀回存檔時只認 parent，其餘一律回到預設值。
+ *
+ * parent（要不要一起畫出被回覆的貼文）留著，因為它現在在預覽底下有自己的
+ * 控制項，關掉之後打得開。
+ */
+const PERSISTED_SHOW_KEYS = ['parent'] as const
+
+/**
+ * 把存檔套回預設值上。抽成純函式是為了讓上面那段遷移邏輯可以被斷言 ——
+ * 它保護的是「使用者再也打不開某個東西」這種無聲的壞掉，靠人工點一遍發現
+ * 不了，因為要先有一份含著舊選擇的存檔才看得出來。
+ */
+export function settingsFromSaved(saved: Partial<CardSettings>): CardSettings {
+  const out: CardSettings = {
+    ...WEB_DEFAULTS,
+    show: { ...WEB_DEFAULTS.show },
+    background: { ...WEB_DEFAULTS.background },
+  }
+  for (const k of Object.keys(WEB_DEFAULTS) as (keyof CardSettings)[]) {
+    const v = saved[k]
+    if (v === undefined) continue
+    if (k === 'aspect' && !validAspect(v)) continue
+    if (k === 'show') {
+      for (const key of PERSISTED_SHOW_KEYS) {
+        const flag = (v as CardSettings['show'])[key]
+        if (typeof flag === 'boolean') out.show[key] = flag
+      }
+    } else if (k === 'background') Object.assign(out[k], v)
+    else out[k] = v as never
+  }
+  return out
+}
+
 function loadSettings(): CardSettings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return { ...WEB_DEFAULTS }
-    const saved = JSON.parse(raw) as Partial<CardSettings>
-    const out: CardSettings = { ...WEB_DEFAULTS, show: { ...WEB_DEFAULTS.show }, background: { ...WEB_DEFAULTS.background } }
-    for (const k of Object.keys(WEB_DEFAULTS) as (keyof CardSettings)[]) {
-      const v = saved[k]
-      if (v === undefined) continue
-      if (k === 'aspect' && !validAspect(v)) continue
-      if (k === 'show' || k === 'background') Object.assign(out[k], v)
-      else out[k] = v as never
-    }
-    return out
+    return settingsFromSaved(JSON.parse(raw) as Partial<CardSettings>)
   } catch {
     return { ...WEB_DEFAULTS }
   }
@@ -360,23 +390,23 @@ function XFrameApp() {
         </div>
       </div>
 
-      {status.phase === 'ready' && translationPlan?.hasForeignText && translationDraft && (
-        <TranslationPanel
-          post={status.tweet}
-          plan={translationPlan}
-          draft={translationDraft}
-          from={translatedFrom}
-          applied={translatedVersion}
-          feedback={translationFeedback}
-          busy={busy}
-          onDraft={(draft) => { setTranslationDraft(draft); setTranslationFeedback(null) }}
-          onFrom={(from) => { setTranslatedFrom(from); setTranslationFeedback(null) }}
-          onApply={applyDraftTranslation}
-          onView={showTranslatedVersion}
-          onRestore={restoreOriginal}
-        />
+      {/*
+        這則是回覆時才出現。一則沒有回覆對象的貼文上放一個「被回覆的貼文」
+        勾選框，勾了也不會有任何變化 —— 那是在騙人。
+      */}
+      {status.phase === 'ready' && displayedTweet?.replyTo && (
+        <label class="thread-choice">
+          <input type="checkbox" checked={settings.show.parent} disabled={busy}
+            onChange={(e) => patch({ show: { ...settings.show, parent: e.currentTarget.checked } })} />
+          一起帶上被回覆的那一則
+        </label>
       )}
 
+      {/*
+        主要動作緊跟在預覽底下。它原本排在翻譯區之後 —— 而翻譯區在外文推文上
+        佔掉半個畫面，等於把「存成圖片」推到看不見的地方，第一次用的人得先捲過
+        一整段用不到的說明才找得到那顆按鈕。
+      */}
       {status.phase === 'ready' && (
         <button class="primary export-btn" type="button" disabled={busy} onClick={() => void doExport()}>
           {busy ? '產生中…' : '存成圖片'}
@@ -402,8 +432,31 @@ function XFrameApp() {
         </div>
       )}
 
+      {status.phase === 'ready' && translationPlan?.hasForeignText && translationDraft && (
+        <TranslationPanel
+          post={status.tweet}
+          plan={translationPlan}
+          draft={translationDraft}
+          from={translatedFrom}
+          applied={translatedVersion}
+          feedback={translationFeedback}
+          busy={busy}
+          onDraft={(draft) => { setTranslationDraft(draft); setTranslationFeedback(null) }}
+          onFrom={(from) => { setTranslatedFrom(from); setTranslationFeedback(null) }}
+          onApply={applyDraftTranslation}
+          onView={showTranslatedVersion}
+          onRestore={restoreOriginal}
+        />
+      )}
+
       <fieldset disabled={busy} style={{ border: 0, padding: 0, margin: 0 }}>
-        <Sheet title="背景紙張">
+        {/*
+          背景與畫布排版合成一區「樣式」。這兩區本來是分開的兩個收合分區，
+          但它們要回答的是同一個問題 —— 這張卡片長什麼樣子 —— 使用者調完背景
+          常常緊接著要調留白，中間卻隔著一次收合、一次展開。
+        */}
+        <Sheet title="樣式">
+          <h3 class="sheet-sub">背景紙張</h3>
           <button type="button" onClick={() => patch({ background: randomPreset() })}>隨機生成一張</button>
           <div class="swatches">
             {PRESETS.map((p) => (
@@ -415,9 +468,8 @@ function XFrameApp() {
               />
             ))}
           </div>
-        </Sheet>
 
-        <Sheet title="畫布與排版">
+          <h3 class="sheet-sub">畫布與排版</h3>
           <label>留白<input type="range" min={16} max={120} value={settings.padding}
             onInput={(e) => patch({ padding: +e.currentTarget.value })} /></label>
           <label>文字尺寸<input type="range" min={13} max={40} value={settings.fontSize}
@@ -465,27 +517,6 @@ function XFrameApp() {
               {settings.aspect === '9:16' && ' 已保留 IG 限動上下安全區。'}
               預覽只是縮小顯示，不影響輸出。
             </p>
-          )}
-        </Sheet>
-
-        <Sheet title="顯示項目">
-          {(['avatar', 'stats', 'timestamp', 'media'] as const).map((k) => (
-            <label key={k}>
-              <input type="checkbox" checked={settings.show[k]}
-                onChange={(e) => patch({ show: { ...settings.show, [k]: e.currentTarget.checked } })} />
-              {{ avatar: '頭像', stats: '互動統計', timestamp: '時間', media: '推文圖片' }[k]}
-            </label>
-          ))}
-          {/*
-            只有這則貼文真的是回覆時才出現。一則沒有回覆對象的貼文上放一個
-            「顯示父貼文」的勾選框，勾了也不會有任何變化——那是在騙人。
-          */}
-          {displayedTweet?.replyTo && (
-            <label>
-              <input type="checkbox" checked={settings.show.parent}
-                onChange={(e) => patch({ show: { ...settings.show, parent: e.currentTarget.checked } })} />
-              被回覆的貼文
-            </label>
           )}
         </Sheet>
 
