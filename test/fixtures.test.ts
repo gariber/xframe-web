@@ -154,3 +154,30 @@ describe('2026-09-07 刪節號錨點 fixture', () => {
     expect(html).toContain('__typename:"ApiCounts"')
   })
 })
+
+/*
+ * 2026-09-28 實抓。它存在的理由是「內嵌 store 換形狀了」：正規化節點圖
+ * （__id / __ref）整個消失，改成巢狀物件樹，而 DOM 上連 data-tweet-id 與
+ * SocialMediaPosting 都沒有了。這三件事一起構成解析器現在必須面對的頁面。
+ */
+describe('2026-09-28 內嵌樹版 fixture', () => {
+  const html = readFileSync('test/fixtures/inline-store-reply.html', 'utf8')
+
+  it('正規化節點圖已經不見', () => {
+    expect(html).not.toContain('__id:')
+    expect(html).not.toContain('__ref:')
+    expect(html).not.toContain('"client:')
+  })
+
+  it('改成貼文自報 rest_id 的巢狀物件樹', () => {
+    expect(html).toContain('rest_id:"2104313777013526880"')
+    expect(html).toContain('reply_to_results:')
+    expect(html).toMatch(/counts:\$R\[\d+\]=\{/)
+  })
+
+  it('DOM 上已無 data-tweet-id 與 microdata，只剩永久連結可認人', () => {
+    expect(html).not.toContain('data-tweet-id')
+    expect(html).not.toContain('SocialMediaPosting')
+    expect(html).toContain('/Vincent_AINotes/status/2104135763256566000')
+  })
+})

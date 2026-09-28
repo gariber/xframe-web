@@ -202,6 +202,119 @@ export function refsField(body: string, field: string): string[] {
   return [...match[1].matchAll(/"([^"]*)"/g)].map((m) => m[1])
 }
 
+/**
+ * 內嵌樹版的物件欄位：`field:$R[n]={…}`，或直接 `field:{…}`。
+ *
+ * 和 refField 的差別是這裡的值**就是物件本身**，不是指向別處的參照。
+ */
+export function objectField(body: string, field: string): string | null {
+  const at = fieldAt(body, field)
+  if (at < 0) return null
+  const open = body.slice(at).match(/^(?:\$R\[\d+\]=)?\{/)
+  return open === null ? null : objectAt(body, at + open[0].length - 1)
+}
+
+/** 內嵌樹版的物件陣列：`field:$R[n]=[$R[m]={…},…]`。 */
+export function objectsField(body: string, field: string): string[] {
+  const at = fieldAt(body, field)
+  if (at < 0) return []
+  const open = body.slice(at).match(/^(?:\$R\[\d+\]=)?\[/)
+  if (open === null) return []
+  const out: string[] = []
+  let depth = 0
+  for (let i = at + open[0].length - 1; i < body.length; i++) {
+    const ch = body[i]
+    if (ch === '"' || ch === "'" || ch === '`') {
+      const end = skipString(body, i)
+      if (end < 0) break
+      i = end
+      continue
+    }
+    if (ch === '[') depth++
+    else if (ch === ']') {
+      depth--
+      if (depth === 0) break
+    } else if (ch === '{' && depth === 1) {
+      const item = objectAt(body, i)
+      if (item === null) break
+      out.push(item)
+      i += item.length - 1
+    }
+  }
+  return out
+}
+
+/**
+ * 內嵌樹版：掃出頁面上每一個自報 `rest_id` 的貼文物件，以該 ID 為鍵。
+ *
+ * 2026-09 底 X 把內嵌 store 從「正規化節點圖」（`__id` 命名、`__ref` 連結）換成
+ * 一棵普通的巢狀物件樹：沒有 `__id`、沒有 `__ref`，每個物件就地展開。舊的
+ * openStore 在這種頁面上一個節點都找不到——而且是安靜地找不到，卡片照樣做得
+ * 出來，只是精確計數、轉推＋引用、回覆對象、以及整條 store 後備全部默默失效。
+ *
+ * 同一個 ID 會出現好幾次：`reply_to_results` 那種只有 `{__typename,id,rest_id}`
+ * 的殘根，以及帶著完整內容的本體。取**最長**的那一份，殘根就自然被蓋掉。
+ */
+export function findTweetObjects(sources: readonly string[]): Map<string, string> {
+  const found = new Map<string, string>()
+  for (const source of sources) {
+    // 先把所有 `rest_id:"` 的位置記下來，之後判斷「這個物件裡有沒有」就只是
+    // 一次二分搜尋。少了這一步，每個右大括號都要重新掃一次整份字串，一份
+    // 160KB 的頁面裡物件數以千計，會變成平方級。
+    const marks: number[] = []
+    for (let at = source.indexOf(REST_ID); at >= 0; at = source.indexOf(REST_ID, at + 1)) {
+      marks.push(at)
+    }
+    if (marks.length === 0) continue
+
+    const stack: number[] = []
+    for (let i = 0; i < source.length; i++) {
+      const ch = source[i]
+      if (ch === '"' || ch === "'" || ch === '`') {
+        const end = skipString(source, i)
+        if (end < 0) break
+        i = end
+        continue
+      }
+      if (ch === '{') {
+        stack.push(i)
+        continue
+      }
+      if (ch !== '}') continue
+      const start = stack.pop()
+      if (start === undefined) continue
+      if (!containsMark(marks, start, i)) continue
+      const body = source.slice(start, i + 1)
+      const id = stringField(body, 'rest_id')
+      if (id === null || !/^\d+$/.test(id)) continue
+      const previous = found.get(id)
+      if (previous === undefined || body.length > previous.length) found.set(id, body)
+    }
+  }
+  return found
+}
+
+const REST_ID = 'rest_id:"'
+
+/** marks 已排序：有沒有任何一個落在 (start, end) 之間。 */
+function containsMark(marks: readonly number[], start: number, end: number): boolean {
+  let low = 0
+  let high = marks.length
+  while (low < high) {
+    const mid = (low + high) >> 1
+    if (marks[mid] < start) low = mid + 1
+    else high = mid
+  }
+  return low < marks.length && marks[low] < end
+}
+
+/** 只掃 `<script>` 的內容。理由見 openStore。 */
+export function storeSources(doc: Document): string[] {
+  return [...doc.querySelectorAll('script')]
+    .map((script) => script.textContent ?? '')
+    .filter((source) => source.includes('rest_id:') || source.includes('__id:'))
+}
+
 export type Store = {
   /** 依 `__id` 取出節點的物件字面值；找不到或對不上就回 null。 */
   node(id: string): string | null
@@ -216,9 +329,7 @@ export type Store = {
  * 範圍就從根本上排除了這件事。
  */
 export function openStore(doc: Document): Store {
-  const sources = [...doc.querySelectorAll('script')]
-    .map((script) => script.textContent ?? '')
-    .filter((source) => source.includes('__id:'))
+  const sources = storeSources(doc).filter((source) => source.includes('__id:'))
   const cache = new Map<string, string | null>()
 
   return {

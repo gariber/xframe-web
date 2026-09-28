@@ -1,8 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import {
   decodeJsString,
+  findTweetObjects,
   intField,
   intsField,
+  objectField,
+  objectsField,
   openStore,
   refField,
   refsField,
@@ -136,5 +139,49 @@ describe('openStore().node', () => {
   it('找不到就回 null，不會丟例外', () => {
     expect(openStore(page('x={}')).node('T:1')).toBeNull()
     expect(openStore(page()).node('T:1')).toBeNull()
+  })
+})
+
+/*
+ * 2026-09 底 X 把內嵌 store 從「正規化節點圖」換成一棵普通的巢狀物件樹：
+ * 沒有 __id、沒有 __ref，每個物件就地展開，貼文靠自己的 rest_id 認人。
+ */
+describe('內嵌樹版', () => {
+  it('objectField 取出就地展開的物件', () => {
+    const body = '{rest_id:"1",counts:$R[3]={reply_count:187,quote_count:52},views:{count:"384258"}}'
+    expect(intField(objectField(body, 'counts')!, 'reply_count')).toBe(187)
+    expect(intField(objectField(body, 'views')!, 'count')).toBe(384258)
+    expect(objectField(body, 'missing')).toBeNull()
+  })
+
+  it('objectField 不會把參照當成物件 —— 那是另一種形狀', () => {
+    expect(objectField('{a:$R[1]={__ref:"X"}}', 'a')).toBe('{__ref:"X"}')
+  })
+
+  it('objectsField 取出物件陣列，空陣列回空', () => {
+    const body = '{media_entities2:$R[9]=[$R[10]={type:"photo",media_url_https:"a"},$R[11]={type:"video"}],empty:$R[12]=[]}'
+    const items = objectsField(body, 'media_entities2')
+    expect(items).toHaveLength(2)
+    expect(stringField(items[0], 'type')).toBe('photo')
+    expect(stringField(items[1], 'type')).toBe('video')
+    expect(objectsField(body, 'empty')).toEqual([])
+  })
+
+  it('findTweetObjects 以 rest_id 為鍵，殘根被完整的本體蓋掉', () => {
+    // reply_to_results 只給 {__typename,id,rest_id}；本體在別處，內容完整。
+    const source = 'x={a:{__typename:"TweetResults",rest_id:"222"},b:{rest_id:"222",result:{rest_id:"222",details:{full_text:"hi"}}}}'
+    const found = findTweetObjects([source])
+    expect([...found.keys()]).toEqual(['222'])
+    expect(stringField(objectField(found.get('222')!, 'result')!, 'rest_id')).toBe('222')
+  })
+
+  it('字串裡的大括號不會把掃描帶歪', () => {
+    const source = 'x={a:{rest_id:"1",details:{full_text:"function(){ } // }"}}}'
+    const tweet = findTweetObjects([source]).get('1')!
+    expect(stringField(objectField(tweet, 'details')!, 'full_text')).toBe('function(){ } // }')
+  })
+
+  it('沒有 rest_id 的頁面回空表', () => {
+    expect(findTweetObjects(['x={a:{b:1}}']).size).toBe(0)
   })
 })

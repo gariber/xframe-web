@@ -1067,3 +1067,50 @@ describe('parseTweet 回覆對象', () => {
     expect((t.replyTo as Record<string, unknown>).replyTo).toBeUndefined()
   })
 })
+
+/*
+ * 2026-09-28 實抓：X 把內嵌 store 換成巢狀物件樹，同時 DOM 上連
+ * data-tweet-id 與 SocialMediaPosting 都拿掉了。這一份鎖住的是那種頁面，
+ * 以及在上面「回覆對象仍然帶得出來、統計仍然是精確值」這兩件事。
+ */
+describe('parseTweet 內嵌樹版 store', () => {
+  const ID = '2104313777013526880'
+  const PARENT = '2104135763256566000'
+  const t = parseTweet(fx('inline-store-reply'), ID)!
+
+  it('解析得出來', () => {
+    expect(t).not.toBeNull()
+    expect(t.author.handle).toBe('thsottiaux')
+    // display_text_range 切掉開頭的 @Vincent_AINotes
+    expect(t.rawText).toBe('Hitting the gym, brb on Tuesday')
+  })
+
+  it('回覆對象帶得出來，連它的圖片一起', () => {
+    expect(t.replyTo?.id).toBe(PARENT)
+    expect(t.replyTo?.author.handle).toBe('Vincent_AINotes')
+    expect(t.replyTo?.author.name).toBe('Vincent')
+    expect(t.replyTo?.rawText).toContain('这是哪个人才做的')
+    expect(t.replyTo?.media).toHaveLength(1)
+  })
+
+  it('統計是 store 的精確值，轉推數含引用', () => {
+    const by = (kind: string) => t.metrics.find((m) => m.kind === kind)!.value
+    expect(by('views')).toBe(384_258)
+    expect(by('replies')).toBe(187)
+    expect(by('likes')).toBe(4_375)
+    expect(by('bookmarks')).toBe(123)
+    // 操作列只印 77；引用的 52 只有 store 有。
+    expect(by('reposts')).toBe(77 + 52)
+  })
+
+  it('回覆對象也拿得到自己的精確統計', () => {
+    const by = (kind: string) => t.replyTo!.metrics.find((m) => m.kind === kind)!.value
+    expect(by('replies')).toBe(173)
+    expect(by('reposts')).toBe(274 + 75)
+  })
+
+  it('父貼文的時間從 store 補 —— DOM 上只有「17h」這種相對時間文字', () => {
+    expect(t.replyTo?.createdAt).not.toBe('')
+    expect(Number.isFinite(Date.parse(t.replyTo!.createdAt))).toBe(true)
+  })
+})

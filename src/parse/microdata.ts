@@ -998,7 +998,16 @@ function parentFromPage(
     // 父貼文自己也可能引用了別人，X 在對話串裡會一起顯示。
     const citeEl = citeElementOf(el)
     const quoted = citeEl === null ? null : attachedFromArticle(citeEl, doc, parentId, embedded)
-    return { ...fromDom, ...(quoted ? { quoted } : {}) }
+    /*
+     * 時間從 store 補。父貼文的 article 上沒有 dateCreated（那是主貼文才有的
+     * 結構化欄位），只有一個「17h」之類的相對時間文字——而卡片要的是可以自己
+     * 算的時間戳。缺了它，對話串的作者列就只剩名稱與帳號，少掉 X 一定會印的
+     * 那個「· 17h」。
+     */
+    const createdAt = fromDom.createdAt
+      || parseEmbeddedPost(doc, parentId)?.createdAt
+      || ''
+    return { ...fromDom, createdAt, ...(quoted ? { quoted } : {}) }
   }
 
   const stored = parseEmbeddedPost(doc, parentId)

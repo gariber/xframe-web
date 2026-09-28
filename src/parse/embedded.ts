@@ -1,10 +1,14 @@
 import type { MetricKind } from '../types'
 import {
+  findTweetObjects,
   intField as storeInt,
   intsField,
+  objectField,
+  objectsField,
   openStore,
   refField,
   refsField,
+  storeSources,
   stringField,
   type Store,
 } from './store'
@@ -115,6 +119,33 @@ export function parseEmbeddedCounts(doc: Document): Map<string, EmbeddedCounts> 
       return views === null ? {} : { views }
     }, found)
   }
+
+  /*
+   * 內嵌樹版：計數不再是獨立節點，而是掛在貼文物件底下的 `counts` 與 `views`。
+   * 上面那個正規化版本在這種頁面上一筆都收不到，於是四項統計整個退回操作列的
+   * 縮寫，轉推數也少掉引用數——安靜地退化，卡片看起來照樣正常。
+   */
+  for (const [id, body] of findTweetObjects(storeSources(doc))) {
+    const tweet = objectField(body, 'result') ?? body
+    const counts = objectField(tweet, 'counts')
+    const views = objectField(tweet, 'views')
+    const parsed: EmbeddedCounts = {}
+    if (counts !== null) {
+      const replies = storeInt(counts, 'reply_count')
+      const likes = storeInt(counts, 'favorite_count')
+      const bookmarks = storeInt(counts, 'bookmark_count')
+      const reposts = storeInt(counts, 'retweet_count')
+      if (replies !== null) parsed.replies = replies
+      if (likes !== null) parsed.likes = likes
+      if (bookmarks !== null) parsed.bookmarks = bookmarks
+      // 轉推 ＋ 引用，理由同上面那一段。
+      if (reposts !== null) parsed.reposts = reposts + (storeInt(counts, 'quote_count') ?? 0)
+    }
+    const viewCount = views === null ? null : storeInt(views, 'count')
+    if (viewCount !== null) parsed.views = viewCount
+    if (Object.keys(parsed).length > 0) found.set(id, { ...found.get(id), ...parsed })
+  }
+
   return found
 }
 
@@ -236,8 +267,71 @@ function quotedIdOf(tweet: string): string | null {
  * 等於我們要的貼文 ID——確保拿到的是這一則，不是同一頁上的別人。作者名稱或
  * 帳號缺一不可，缺了就整筆放棄，不輸出半成品。
  */
+/**
+ * 2026-09 底起 X 的內嵌 store 換成一棵普通的巢狀物件樹（見 findTweetObjects）。
+ * 欄位名稱一模一樣，只是從「跟著 __ref 走」變成「就地展開」，所以這一份和上面
+ * 那份是同一套讀法的兩種走位，不是兩套邏輯。
+ */
+function inlinePost(doc: Document, tweetId: string): EmbeddedPost | null {
+  const found = findTweetObjects(storeSources(doc)).get(tweetId)
+  if (found === undefined) return null
+  // TweetResults 外殼把本體包在 result 底下；殘根沒有 result，那種情況下外殼
+  // 自己就是我們能拿到的全部，但它沒有內容，下面的檢查會把它擋掉。
+  const tweet = objectField(found, 'result') ?? found
+  if (stringField(tweet, 'rest_id') !== tweetId) return null
+
+  const user = objectField(objectField(tweet, 'core') ?? '', 'user_results')
+  const profile = user === null ? null : objectField(user, 'result')
+  const core = profile === null ? null : objectField(profile, 'core')
+  const name = core === null ? null : stringField(core, 'name')
+  const handle = core === null ? null : stringField(core, 'screen_name')
+  if (!name || !handle || profile === null) return null
+  const avatar = objectField(profile, 'avatar')
+
+  const details = objectField(tweet, 'details')
+  const fullText = details === null ? null : stringField(details, 'full_text')
+  const noteResults = objectField(objectField(tweet, 'note_tweet') ?? '', 'note_tweet_results')
+  const noteResult = noteResults === null ? null : objectField(noteResults, 'result')
+  const noteText = noteResult === null ? null : stringField(noteResult, 'text')
+  const expectsNote = objectField(tweet, 'note_tweet') !== null
+
+  const rawText = noteText
+    ?? (details === null || fullText === null ? null : displayText(details, fullText))
+  if (rawText === null) return null
+
+  const createdAtMs = details === null ? null : storeInt(details, 'created_at_ms')
+  const restIdOf = (field: string) => {
+    const node = objectField(tweet, field)
+    return node === null ? null : stringField(node, 'rest_id')
+  }
+  return {
+    id: tweetId,
+    rawText,
+    textComplete: noteText !== null || !expectsNote,
+    createdAt: createdAtMs === null ? '' : new Date(createdAtMs).toISOString(),
+    author: {
+      name,
+      handle,
+      avatarUrl: (avatar === null ? null : stringField(avatar, 'image_url')) ?? '',
+    },
+    media: objectsField(tweet, 'media_entities2')
+      .filter((item) => stringField(item, 'type') === 'photo')
+      .map((item) => ({
+        url: stringField(item, 'media_url_https') ?? '',
+        alt: stringField(item, 'ext_alt_text') ?? '',
+      }))
+      .filter((item) => item.url !== ''),
+    quotedId: restIdOf('quoted_tweet_results'),
+    replyToId: restIdOf('reply_to_results'),
+  }
+}
+
 export function parseEmbeddedPost(doc: Document, tweetId: string): EmbeddedPost | null {
   if (!/^\d+$/.test(tweetId)) return null
+  return normalizedPost(doc, tweetId) ?? inlinePost(doc, tweetId)
+}
+
+function normalizedPost(doc: Document, tweetId: string): EmbeddedPost | null {
   const nodeId = tweetNodeId(tweetId)
   if (nodeId === null) return null
 
