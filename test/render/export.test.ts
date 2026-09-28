@@ -1,10 +1,13 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
   buildFilename,
+  cropTo,
   exportScale,
   exportLayoutHeight,
+  exportPixelSize,
   exportWidth,
   exportWidthBelowTarget,
+  rasterLayoutHeight,
   EXPORT_WIDTH,
   MAX_EXPORT_PIXELS,
 } from '../../src/render/export'
@@ -146,30 +149,118 @@ describe('exportLayoutHeight：固定比例輸出精確平台尺寸', () => {
   })
 })
 
+/*
+ * 圖片底部那條白線。
+ *
+ * 瀏覽器把 SVG 圖片的內在尺寸四捨五入成整數 CSS px，所以 390px 寬的 9:16
+ * 卡片（版面高度 693.333…px）被包成 SVG 後只剩 693px 高，最後 0.333px 的
+ * 內容在光柵化的當下就被裁掉；modern-screenshot 仍照 693.333 算出 1920 列的
+ * canvas，於是最後一列整條 alpha = 0。分享時轉成 JPEG 或貼在白底上，那條
+ * 全透明的列就變成一條白線。
+ *
+ * 這組斷言鎖住的是「交出去的高度必須是整數」這個因果，而不是白線本身 ——
+ * 白線只有真的版面引擎量得到（實測是用 headless Chromium 讀匯出 PNG 最後
+ * 一列的 alpha 確認的），happy-dom 看不到。
+ */
+describe('rasterLayoutHeight：交給光柵化器的高度一律是整數', () => {
+  it.each([
+    ['9:16 @390', 693.3333333333334, 694],
+    ['9:16 @430', 764.4444444444445, 765],
+    ['4:5 @390', 487.5, 488],
+    ['9:16 @360 本來就是整數', 640, 640],
+  ])('%s → %d', (_label, layoutHeight, expected) => {
+    expect(rasterLayoutHeight(layoutHeight)).toBe(expected)
+  })
+
+  it('一律往上取整，內容才不可能被裁掉', () => {
+    for (const h of [100.01, 100.4, 100.5, 100.99]) {
+      expect(rasterLayoutHeight(h)).toBeGreaterThanOrEqual(h)
+      expect(Number.isInteger(rasterLayoutHeight(h))).toBe(true)
+    }
+  })
+
+  it('量到 0 時至少還是 1，不會做出零尺寸畫布', () => {
+    expect(rasterLayoutHeight(0)).toBe(1)
+  })
+})
+
+describe('exportPixelSize：輸出仍是平台原生尺寸', () => {
+  it.each([
+    ['1:1', 1, 1080],
+    ['4:5', 4 / 5, 1350],
+    ['9:16', 9 / 16, 1920],
+  ])('%s @390 → 1080×%d', (_label, ratio, expectedHeight) => {
+    expect(exportPixelSize(390, 390 / ratio)).toEqual([EXPORT_WIDTH, expectedHeight])
+  })
+
+  it('刻意吃分數版高度 —— 拿取整過的 693 去算會掉到 1919，那就不是原生尺寸了', () => {
+    expect(exportPixelSize(390, 693.3333333333334)[1]).toBe(1920)
+    expect(exportPixelSize(390, 693)[1]).toBe(1919)
+  })
+
+  it('量不到尺寸時回傳 0 而非 NaN', () => {
+    expect(exportPixelSize(0, 500)).toEqual([0, 0])
+  })
+})
+
+describe('cropTo：把多出來的那一列切掉', () => {
+  const canvas = (w: number, h: number) => {
+    const el = document.createElement('canvas')
+    el.width = w
+    el.height = h
+    return el
+  }
+
+  it('尺寸已經吻合時原樣回傳，不白白多配一張畫布', () => {
+    const el = canvas(1080, 1920)
+    expect(cropTo(el, 1080, 1920)).toBe(el)
+  })
+
+  it('多出來的列被裁掉，回傳的是新畫布', () => {
+    const el = canvas(1080, 1921)
+    const out = cropTo(el, 1080, 1920)
+    expect(out).not.toBe(el)
+    expect([out.width, out.height]).toEqual([1080, 1920])
+  })
+})
+
 // 行動網頁版把卡片包在 scale() 裡讓整張塞進預覽框。modern-screenshot 的
 // resolveBoundingBox 只在沒收到尺寸時才用 getBoundingClientRect()，而那個會
 // 被祖先 transform 影響 —— 不明確給值的話匯出圖會縮成預覽大小且不報錯。
-describe('匯出尺寸不受祖先 transform 影響', () => {
-  it('明確傳入版面尺寸而非讓 modern-screenshot 自己量', async () => {
-    const { domToBlob } = await import('modern-screenshot')
-    const spy = vi.spyOn({ domToBlob }, 'domToBlob')
-    void spy
+describe('exportPng 交給 modern-screenshot 的尺寸', () => {
+  async function capture(width: number, height: number, aspect?: string) {
     const calls: Array<Record<string, unknown>> = []
     vi.doMock('modern-screenshot', () => ({
-      domToBlob: (_n: HTMLElement, o: Record<string, unknown>) => {
+      domToCanvas: (_n: HTMLElement, o: Record<string, unknown>) => {
         calls.push(o)
-        return Promise.resolve(new Blob(['x'], { type: 'image/png' }))
+        const el = document.createElement('canvas')
+        el.width = Math.floor((o.width as number) * (o.scale as number))
+        el.height = Math.floor((o.height as number) * (o.scale as number))
+        el.toBlob = (cb: BlobCallback) => cb(new Blob(['x'], { type: 'image/png' }))
+        return Promise.resolve(el)
       },
     }))
     vi.resetModules()
-    const { exportPng } = await import('../../src/render/export')
+    const mod = await import('../../src/render/export')
     const node = document.createElement('div')
-    Object.defineProperty(node, 'offsetWidth', { value: 720, configurable: true })
-    Object.defineProperty(node, 'offsetHeight', { value: 1280, configurable: true })
-    await exportPng(node)
-    expect(calls[0].width).toBe(720)
-    expect(calls[0].height).toBe(1280)
+    Object.defineProperty(node, 'offsetWidth', { value: width, configurable: true })
+    Object.defineProperty(node, 'offsetHeight', { value: height, configurable: true })
+    if (aspect) node.dataset.aspect = aspect
+    await mod.exportPng(node)
     vi.doUnmock('modern-screenshot')
     vi.resetModules()
+    return calls[0]
+  }
+
+  it('明確傳入版面尺寸而非讓 modern-screenshot 自己量', async () => {
+    const opts = await capture(720, 1280)
+    expect(opts.width).toBe(720)
+    expect(opts.height).toBe(1280)
+  })
+
+  it('固定比例的分數高度先取整才交出去', async () => {
+    const opts = await capture(390, 693, '9:16')
+    expect(opts.height).toBe(694)
+    expect(Number.isInteger(opts.height)).toBe(true)
   })
 })

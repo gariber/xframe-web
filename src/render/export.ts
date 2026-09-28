@@ -1,4 +1,4 @@
-import { domToBlob } from 'modern-screenshot'
+import { domToCanvas } from 'modern-screenshot'
 import type { Post } from '../types'
 import { ASPECT_VALUE } from './card.css'
 
@@ -39,15 +39,28 @@ export function exportScale(layoutWidth: number, layoutHeight: number): number {
 }
 
 /**
- * 這張卡片實際會輸出的像素寬度。
+ * 這張卡片實際會輸出的像素尺寸。
  *
- * 正常情況等於 EXPORT_WIDTH。只有在畫布高到讓總像素數撞上 MAX_EXPORT_PIXELS
- * 時，exportScale 會整體縮小以避開 iOS Safari 的全白畫布，輸出寬度才會低於
- * 1080 —— 那是正確的取捨（無聲全白更糟），但使用者看不出來，所以要有辦法問。
+ * 正常情況寬度等於 EXPORT_WIDTH。只有在畫布高到讓總像素數撞上
+ * MAX_EXPORT_PIXELS 時，exportScale 會整體縮小以避開 iOS Safari 的全白畫布，
+ * 輸出寬度才會低於 1080 —— 那是正確的取捨（無聲全白更糟），但使用者看不
+ * 出來，所以要有辦法問。
+ *
+ * 這裡刻意吃「理想的分數版高度」（693.333…）而不是光柵化時實際用的整數高度，
+ * 9:16 才會得到剛好的 1920 而不是 1918。
  */
+export function exportPixelSize(
+  layoutWidth: number,
+  layoutHeight: number,
+): [number, number] {
+  if (layoutWidth <= 0 || layoutHeight <= 0) return [0, 0]
+  const k = exportScale(layoutWidth, layoutHeight)
+  return [Math.round(layoutWidth * k), Math.round(layoutHeight * k)]
+}
+
+/** 這張卡片實際會輸出的像素寬度。 */
 export function exportWidth(layoutWidth: number, layoutHeight: number): number {
-  if (layoutWidth <= 0 || layoutHeight <= 0) return 0
-  return Math.round(exportScale(layoutWidth, layoutHeight) * layoutWidth)
+  return exportPixelSize(layoutWidth, layoutHeight)[0]
 }
 
 /**
@@ -77,6 +90,54 @@ export function exportLayoutHeight(
 }
 
 /**
+ * 交給光柵化器的版面高度必須是整數 CSS px —— 這是圖片底部那條白線的成因。
+ *
+ * 瀏覽器會把 SVG 圖片的**內在尺寸四捨五入成整數 CSS px**。modern-screenshot
+ * 把卡片包成一張 390×693.333… 的 SVG，Chrome 量到的內在高度是 693，最後
+ * 0.333px 的內容在畫進 <img> 的當下就被裁掉了；接著它把這張圖拉伸填滿
+ * 1080×1920 的 canvas，比例仍算自 693.333，於是只蓋到第 1918.96 列，
+ * 第 1919 列（最後一列）整條 alpha = 0。PNG 自己看不出來，一旦分享出去被
+ * 轉成 JPEG 或貼在白底上，那條全透明的列就現形成一條白線。
+ *
+ * 只有「小數部分小於 0.5、會被捨去」的高度會中招，所以它跟裝置寬度有關：
+ * 390px 寬（693.333→693）與 430px 寬（764.444→764）會出現，393px 寬
+ * （698.667→699）與 360px 寬（640）不會 —— 回報起來像個時有時無的幽靈。
+ * 實測（headless Chromium，量匯出 PNG 最後一列的 alpha）確認了這條因果。
+ *
+ * 往上取整而不是四捨五入：只要 SVG 表面比內容大，內容就不可能被裁掉，
+ * 多出來的不到一列會在下面 cropTo 裁掉。
+ */
+export function rasterLayoutHeight(layoutHeight: number): number {
+  return Math.max(1, Math.ceil(layoutHeight))
+}
+
+/**
+ * 裁成目標尺寸。
+ *
+ * modern-screenshot 的 canvas 尺寸是 `floor(邊長 × scale)`，兩軸共用一個
+ * scale，所以把高度往上取整之後畫布會多出一列（9:16 是 1921、4:5 是 1351）。
+ * 多的那一列是背景漸層的延伸，裁掉看不出來；留著卻會讓輸出不再是平台的
+ * 原生尺寸，害平台再壓縮一次。
+ *
+ * 尺寸已經吻合時原樣回傳，不白白多配一張畫布。
+ */
+export function cropTo(canvas: HTMLCanvasElement, width: number, height: number): HTMLCanvasElement {
+  if (canvas.width === width && canvas.height === height) return canvas
+  const out = canvas.ownerDocument.createElement('canvas')
+  out.width = width
+  out.height = height
+  // 原尺寸貼上，超出目的畫布的部分自然被裁掉 —— 不縮放，像素一一對應。
+  out.getContext('2d')?.drawImage(canvas, 0, 0)
+  return out
+}
+
+function canvasToPng(canvas: HTMLCanvasElement): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('光柵化失敗'))), 'image/png')
+  })
+}
+
+/**
  * 對預覽節點本身光柵化。
  * 預覽即輸出 —— 不存在第二套渲染路徑，因此不可能出現「下載的圖跟預覽不一樣」。
  */
@@ -92,20 +153,24 @@ export async function exportPng(node: HTMLElement): Promise<Blob> {
   // 而且不會報錯，只會默默產出一張又小又糊的圖。
   // offsetWidth/offsetHeight 是版面尺寸，不受 transform 影響；擴充功能沒有
   // 縮放祖先，傳這兩個值對它而言等同原本行為。
-  const layoutHeight = exportLayoutHeight(
-    node.offsetWidth,
-    node.offsetHeight,
-    node.dataset.aspect,
-  )
-  const blob = await domToBlob(node, {
-    scale: exportScale(node.offsetWidth, layoutHeight),
-    type: 'image/png',
+  const layoutWidth = node.offsetWidth
+  const layoutHeight = exportLayoutHeight(layoutWidth, node.offsetHeight, node.dataset.aspect)
+  const canvas = await domToCanvas(node, {
+    scale: exportScale(layoutWidth, layoutHeight),
     font: false,
-    width: node.offsetWidth,
-    height: layoutHeight,
+    width: layoutWidth,
+    // 見 rasterLayoutHeight：分數高度會讓 SVG 內在尺寸四捨五入時裁掉內容，
+    // 在圖的最下緣留一條全透明的列。
+    height: rasterLayoutHeight(layoutHeight),
   })
-  if (!blob) throw new Error('光柵化失敗')
-  return blob
+  const [outWidth, outHeight] = exportPixelSize(layoutWidth, layoutHeight)
+  // min 是保險：光柵化結果一定不小於目標，但浮點若讓它少一個像素，寧可原樣
+  // 輸出也不要把裁切放大成一條真的空白邊。
+  return canvasToPng(cropTo(
+    canvas,
+    Math.min(outWidth, canvas.width),
+    Math.min(outHeight, canvas.height),
+  ))
 }
 
 /** 將字串中的非法檔名字元替換為底線 */
