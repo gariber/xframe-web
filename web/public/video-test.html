@@ -111,7 +111,8 @@
     <video id="vid2" controls playsinline hidden></video>
     <p class="note">
       這才是 XFrame 真正要走的路：抓 X 的 MP4 → 逐幀畫進卡片版面 → 連同原聲一起錄。
-      同時驗了跨來源抓取、逐幀合成的速度，以及音訊軌接不接得上。
+      抓取會跑兩次：X 的影片 CDN 對帶著 Referer 的請求一律回 403，所以第一次測撞上了；
+      這次先試不送 Referer 的版本，再試預設版本，好在這台裝置上直接分辨。
     </p>
   </section>
 
@@ -354,18 +355,36 @@
 
     btn.textContent = '抓影片中…'
     let objectUrl
-    try {
-      const t0 = performance.now()
-      const res = await fetch(SAMPLE_MP4)
-      if (!res.ok) throw new Error('HTTP ' + res.status)
-      const blob = await res.blob()
-      objectUrl = URL.createObjectURL(blob)
-      notes.push(log('跨來源抓取', '成功，' + (blob.size / 1024).toFixed(0) + ' KB，'
-        + ((performance.now() - t0) / 1000).toFixed(1) + ' 秒', 'ok'))
-    } catch (e) {
+    /*
+     * X 的影片 CDN 有防盜連：帶著 Referer 的請求一律 403，不帶就給。瀏覽器預設
+     * 會送（跨來源時送的是來源網域），所以第一次測就撞上了。referrerPolicy
+     * 'no-referrer' 讓瀏覽器整個不送那個標頭。
+     *
+     * 兩種都跑一次，是為了在這台裝置上直接分出「防盜連」與「其他原因」——
+     * 只跑修好的那一版，萬一還是失敗就不知道是修錯了還是另有問題。
+     */
+    const attempts = [
+      ['no-referrer（不送 Referer）', { referrerPolicy: 'no-referrer', credentials: 'omit' }],
+      ['瀏覽器預設（會送 Referer）', { credentials: 'omit' }],
+    ]
+    for (const [label, opts] of attempts) {
+      try {
+        const t0 = performance.now()
+        const res = await fetch(SAMPLE_MP4, opts)
+        if (!res.ok) throw new Error('HTTP ' + res.status)
+        const blob = await res.blob()
+        if (!objectUrl) objectUrl = URL.createObjectURL(blob)
+        notes.push(log(label, '成功，' + (blob.size / 1024).toFixed(0) + ' KB，'
+          + ((performance.now() - t0) / 1000).toFixed(1) + ' 秒', 'ok'))
+      } catch (e) {
+        notes.push(log(label, '失敗：' + (e && e.message || e), objectUrl ? 'warn' : 'bad'))
+      }
+    }
+    if (!objectUrl) {
       put('out2', [
-        log('跨來源抓取', '失敗：' + (e && e.message || e), 'bad'),
-        log('說明', '可能是網址過期，也可能是 Safari 擋了跨來源讀取。兩者差很多，我會分辨。'),
+        ...notes,
+        log('說明', '兩種都抓不到。若兩邊都是 HTTP 403，大概是這支範例網址過期了；'
+          + '若是「Load failed」「TypeError」那類，才是瀏覽器擋了跨來源讀取。'),
       ])
       btn.disabled = false; btn.textContent = '再試一次'
       return
