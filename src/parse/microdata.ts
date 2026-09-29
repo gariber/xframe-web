@@ -1,6 +1,6 @@
 import type { Post, Metric, MetricKind, Author, Media, QuotedPost, ParentPost } from '../types'
 import { tokenize } from './tokenize'
-import { TWEET_MEDIA_SELECTOR, mediaKindOfUrl } from './media'
+import { TWEET_MEDIA_SELECTOR, mediaDedupeKey, mediaKindOfUrl } from './media'
 import {
   parseEmbeddedCounts,
   parseEmbeddedPost,
@@ -885,13 +885,49 @@ export function explainParseFailure(html: string, tweetId: string): Record<strin
  * 這修好的是引用貼文：X 在引用區塊只印前 276 字，全文只在 store 裡。先前卡片
  * 會在一段看起來完整的引文底下掛著「內文未完整取得」。
  */
-function extendedByStore<T extends Omit<Post, 'quoted'>>(post: T, doc: Document): T {
-  if (post.textComplete) return post
-  const stored = parseEmbeddedPost(doc, post.id)
-  if (stored === null || !stored.textComplete) return post
+/**
+ * DOM 認得出「這一格是影片」（封面網址的路徑就寫著），但認不出影片本身放在
+ * 哪裡 —— 那支 MP4 的網址只存在於內嵌 store 的 video_info.variants 裡。
+ *
+ * 症狀很好認也很難查：卡片上封面與播放鍵都對，只是「存成影片」那顆按鈕不出現，
+ * 而且只在某些推文上不出現（走 store 那條路的就正常）。實際被回報過一次。
+ *
+ * 用去重鍵配對而不是直接比網址：DOM 上的是 `?name=small` 之類帶著查詢字串的
+ * 版本，store 給的是原始網址，字串比不相等。
+ */
+function withStoredVideo<T extends Omit<Post, 'quoted'>>(post: T, stored: EmbeddedPost): T {
+  const byKey = new Map<string, NonNullable<Media['video']>>()
+  for (const media of stored.media) {
+    const key = mediaDedupeKey(media.url)
+    if (key !== null && media.video !== undefined) byKey.set(key, media.video)
+  }
+  if (byKey.size === 0) return post
+  return {
+    ...post,
+    media: post.media.map((media) => {
+      if (media.video !== undefined) return media
+      const key = mediaDedupeKey(media.url)
+      const video = key === null ? undefined : byKey.get(key)
+      return video === undefined ? media : { ...media, video }
+    }),
+  }
+}
+
+function extendedText<T extends Omit<Post, 'quoted'>>(post: T, stored: EmbeddedPost): T {
+  if (post.textComplete || !stored.textComplete) return post
   const extended = stripTrailingLink(stored.rawText)
   if (extended.length <= post.rawText.length || !extended.startsWith(post.rawText)) return post
   return { ...post, rawText: extended, text: tokenize(extended), textComplete: true }
+}
+
+function extendedByStore<T extends Omit<Post, 'quoted'>>(post: T, doc: Document): T {
+  // store 要整份掃過才讀得到，所以先確認真的有東西要補。沒有影片、內文也完整的
+  // 貼文是多數，那些不該為此多付一次掃描。
+  const wantsVideo = post.media.some((m) => m.kind !== 'photo' && m.video === undefined)
+  if (post.textComplete && !wantsVideo) return post
+  const stored = parseEmbeddedPost(doc, post.id)
+  if (stored === null) return post
+  return withStoredVideo(extendedText(post, stored), stored)
 }
 
 function authorFromStore(author: EmbeddedPost['author']): Author {

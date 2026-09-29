@@ -1138,6 +1138,30 @@ describe('影片一路帶到 Post', () => {
     expect(t.author.handle).toBe('mirochill')
   })
 
+  /*
+   * 實際被回報的那個症狀：卡片上封面與播放鍵都對，只是「存成影片」那顆按鈕
+   * 不出現，而且只在某些推文上不出現。
+   *
+   * 成因是這則貼文的媒體來自 DOM 而不是 store：DOM 認得出「這一格是影片」
+   * （封面網址的路徑就寫著），但認不出那支 MP4 放在哪裡 —— 網址只存在於內嵌
+   * store 裡。兩條路各給一半，合起來才是完整的。
+   */
+  it('媒體來自 DOM 的貼文，影片網址從 store 補上', () => {
+    const t = parseTweet(readFileSync('test/fixtures/quoted-with-media.html', 'utf8'),
+      '2082855170296205719')!
+    expect(t.media[0].kind).toBe('video')
+    expect(t.media[0].video?.url).toMatch(/\.mp4/)
+    expect(t.media[0].video?.durationMs).toBe(103228)
+  })
+
+  it('配對靠去重鍵而不是字串相等 —— DOM 上的網址帶著 ?name= 查詢字串', () => {
+    const html = readFileSync('test/fixtures/quoted-with-media.html', 'utf8')
+    const t = parseTweet(html, '2082855170296205719')!
+    // 封面網址（DOM 版）與影片網址（store 版）本來就不是同一個字串
+    expect(t.media[0].url).toContain('pbs.twimg.com')
+    expect(t.media[0].video?.url).toContain('video.twimg.com')
+  })
+
   it('照片的 video 是 undefined，不是空物件', () => {
     const t = parseTweet(readFileSync('test/fixtures/media.html', 'utf8'), '2083061426923475451')!
     expect(t.media[0].kind).toBe('photo')
