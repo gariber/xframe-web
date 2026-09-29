@@ -89,22 +89,17 @@ export function opaqueBounds(
   return { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 }
 }
 
-export type VideoExportOptions = {
-  /** 與卡片設定同一個值；決定裁切保留原片縱向的哪個位置 */
-  focusY: number
-  signal?: AbortSignal
-  /** 0 到 1。錄製是即時的，使用者需要知道還要多久。 */
-  onProgress?: (fraction: number) => void
+export type Rect = { x: number; y: number; width: number; height: number }
+
+/** 卡片光柵化之後的三樣東西：底板、遮罩、遮罩的範圍。兩條匯出路線共用。 */
+export type Composition = {
+  plate: HTMLCanvasElement
+  mask: HTMLCanvasElement
+  box: Rect
 }
 
 /**
- * 把卡片與影片合成成一支可以分享的影片。
- *
- * ## 為什麼不是「每一幀都重畫一次卡片」
- *
- * 卡片是 DOM，光柵化一次要走 DOM → SVG → <img> → canvas 一整趟，一幀上百
- * 毫秒。三十秒的影片有九百幀，那樣要跑好幾十分鐘。所以卡片只光柵化一次當底板，
- * 每一幀只有兩件事：畫底板、把影片那一格畫上去。
+ * 把卡片光柵化成底板與遮罩。
  *
  * ## 影片框的位置怎麼來的
  *
@@ -115,21 +110,11 @@ export type VideoExportOptions = {
  * 改成再光柵化一次，但這一次把**除了影片封面以外的所有東西**都設成
  * `visibility: hidden`。剩下的那張圖畫在哪裡、圓角多大、邊緣怎麼反鋸齒，
  * 全部是瀏覽器自己算的，跟我們對版面的理解無關。它的 alpha 就是遮罩。
- *
- * ## 顆粒層
- *
- * 卡片的顆粒層是疊在所有東西之上的，包含圖片。影片畫上去之後那一格就沒有
- * 顆粒了。在會動的畫面上看不出來，而要保住它得為此每一幀多做一次全畫面的
- * overlay 混色 —— 不值得。
  */
-export async function exportVideo(
+export async function prepareComposition(
   node: HTMLElement,
-  videoUrl: string,
-  options: VideoExportOptions,
-): Promise<Blob> {
-  if (!canRecordVideo()) throw new Error('這個瀏覽器不能錄影片')
-  const container = pickContainer()
-
+  signal?: AbortSignal,
+): Promise<Composition> {
   const geom = exportGeometry(node)
   const raster = async (maskOnly: boolean) => {
     const canvas = await domToCanvas(node, {
@@ -155,17 +140,142 @@ export async function exportVideo(
     )
   }
 
-  const [plate, maskPlate] = [await raster(false), await raster(true)]
-  if (options.signal?.aborted) throw new Error('已取消')
+  const plate = await raster(false)
+  const mask = await raster(true)
+  if (signal?.aborted) throw new Error('已取消')
 
-  const maskCtx = maskPlate.getContext('2d')
+  const maskCtx = mask.getContext('2d')
   if (maskCtx === null) throw new Error('取不到繪圖環境')
-  const box = opaqueBounds(
-    maskCtx.getImageData(0, 0, maskPlate.width, maskPlate.height).data,
-    maskPlate.width,
-    maskPlate.height,
-  )
+  const box = opaqueBounds(maskCtx.getImageData(0, 0, mask.width, mask.height).data, mask.width, mask.height)
   if (box === null) throw new Error('卡片上找不到影片框')
+  return { plate, mask, box }
+}
+
+export type Compositor = {
+  /** 每一幀畫完之後的成果。錄製與編碼都吃這一張。 */
+  canvas: HTMLCanvasElement
+  /**
+   * 畫一格。`paint` 只負責把來源畫進給定的矩形 —— 兩條路線的來源型別不同
+   * （一邊是 <video>，一邊是 WebCodecs 的 VideoSample），但擺法必須一模一樣，
+   * 所以擺法在這裡、畫法交給呼叫端。
+   */
+  draw(
+    source: { width: number; height: number },
+    paint: (ctx: CanvasRenderingContext2D, dx: number, dy: number, dW: number, dH: number) => void,
+  ): void
+}
+
+/**
+ * 每一幀只有兩件事：畫底板、把影片那一格畫上去。
+ *
+ * 卡片不會每幀重畫 —— 它是 DOM，光柵化一次要走 DOM → SVG → <img> → canvas
+ * 一整趟，一幀上百毫秒，三十秒的影片有九百幀。
+ *
+ * 代價是顆粒層在影片那一格上沒有了（它原本疊在所有東西之上）。在會動的畫面
+ * 上看不出來，而要保住它得每一幀多做一次全畫面的 overlay 混色。
+ */
+export function createCompositor({ plate, mask, box }: Composition, focusY: number): Compositor {
+  const canvas = document.createElement('canvas')
+  canvas.width = plate.width
+  canvas.height = plate.height
+  const ctx = canvas.getContext('2d')
+  if (ctx === null) throw new Error('取不到繪圖環境')
+
+  const patch = document.createElement('canvas')
+  patch.width = box.width
+  patch.height = box.height
+  const patchCtx = patch.getContext('2d')
+  if (patchCtx === null) throw new Error('取不到繪圖環境')
+
+  // 底板整張只畫這一次。影片框之外的每一個像素從頭到尾都不會變。
+  ctx.drawImage(plate, 0, 0)
+
+  return {
+    canvas,
+    draw(source, paint) {
+      const fit = coverRect(box, source, focusY)
+      patchCtx.clearRect(0, 0, box.width, box.height)
+      patchCtx.globalCompositeOperation = 'source-over'
+      paint(patchCtx, fit.x - box.x, fit.y - box.y, fit.width, fit.height)
+      // 只留遮罩有東西的地方，圓角與反鋸齒因此跟靜圖完全一致
+      patchCtx.globalCompositeOperation = 'destination-in'
+      patchCtx.drawImage(mask, -box.x, -box.y)
+      /*
+       * 只重畫影片框那一塊，不重畫整張。逐幀的成本是整支匯出的天花板 ——
+       * 合成再慢，編碼器也只能等它。框通常只有畫面的三成，這裡省下的是另外
+       * 那七成的像素搬運。
+       *
+       * 先把底板那一塊蓋回去再疊 patch：圓角的反鋸齒讓 patch 的邊緣是半透明
+       * 的，底下必須是底板原本的樣子，不能是上一幀留下的影像。
+       */
+      ctx.clearRect(box.x, box.y, box.width, box.height)
+      ctx.drawImage(plate, box.x, box.y, box.width, box.height, box.x, box.y, box.width, box.height)
+      ctx.drawImage(patch, box.x, box.y)
+    },
+  }
+}
+
+/** 走哪條路。慢路綁著真實時間，介面得據此換掉提示文字。 */
+export type VideoExportMode = 'fast' | 'realtime'
+
+export type VideoExportOptions = {
+  /** 與卡片設定同一個值；決定裁切保留原片縱向的哪個位置 */
+  focusY: number
+  signal?: AbortSignal
+  /** 0 到 1。 */
+  onProgress?: (fraction: number) => void
+  /** 走哪條路定案時通知一次。 */
+  onMode?: (mode: VideoExportMode) => void
+}
+
+/**
+ * 把卡片與影片合成成一支可以分享的影片。
+ *
+ * 先試快路（WebCodecs，快於即時），不行才退回即時錄製。
+ *
+ * 之所以是「試試看」而不是「事先判斷」：能不能編碼問得到（VideoEncoder 有
+ * isConfigSupported），但能不能解碼、這支特定的檔案拆不拆得開、記憶體夠不夠，
+ * 都只有真的跑一次才知道。退路本來就在，讓它接手比多寫一套猜測可靠。
+ */
+export async function exportVideo(
+  node: HTMLElement,
+  source: Blob,
+  options: VideoExportOptions,
+): Promise<Blob> {
+  const composition = await prepareComposition(node, options.signal)
+  try {
+    // 動態載入把 mediabunny 那一包留在主程式之外，同時也切斷這兩個模組的循環相依
+    const { exportVideoFast } = await import('./video-fast')
+    // onMode 由快路自己在確定跑得起來之後才回報，不在這裡搶先講 —— 先講的話
+    // 介面會閃一下「轉檔中」再跳成「錄製中」。
+    return await exportVideoFast(composition, source, options)
+  } catch (error) {
+    // 使用者自己按停止的，不要再用慢路跑一次
+    if (options.signal?.aborted) throw error
+  }
+  options.onMode?.('realtime')
+  const url = URL.createObjectURL(source)
+  try {
+    return await recordVideo(composition, url, options)
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
+/**
+ * 退路：即時錄製。
+ *
+ * 靠 MediaRecorder 從 canvas 的串流錄下來，所以它綁著牆上的時鐘 —— 一分鐘的
+ * 影片就要錄一分鐘，而且畫面不能離開。快路（WebCodecs）跑不起來時才走這裡：
+ * 慢，但它在 iPhone 上實測過，什麼都不需要多載。
+ */
+export async function recordVideo(
+  composition: Composition,
+  videoUrl: string,
+  options: VideoExportOptions,
+): Promise<Blob> {
+  if (!canRecordVideo()) throw new Error('這個瀏覽器不能錄影片')
+  const container = pickContainer()
 
   const video = document.createElement('video')
   video.src = videoUrl
@@ -176,27 +286,12 @@ export async function exportVideo(
     video.onerror = () => reject(new Error('影片解不開'))
   })
 
-  const frame = document.createElement('canvas')
-  frame.width = plate.width
-  frame.height = plate.height
-  const ctx = frame.getContext('2d')
-  const patch = document.createElement('canvas')
-  patch.width = box.width
-  patch.height = box.height
-  const patchCtx = patch.getContext('2d')
-  if (ctx === null || patchCtx === null) throw new Error('取不到繪圖環境')
-
-  const draw = () => {
-    const fit = coverRect(box, { width: video.videoWidth, height: video.videoHeight }, options.focusY)
-    patchCtx.clearRect(0, 0, patch.width, patch.height)
-    patchCtx.globalCompositeOperation = 'source-over'
-    patchCtx.drawImage(video, fit.x - box.x, fit.y - box.y, fit.width, fit.height)
-    // 只留遮罩有東西的地方，圓角與反鋸齒因此跟靜圖完全一致
-    patchCtx.globalCompositeOperation = 'destination-in'
-    patchCtx.drawImage(maskPlate, -box.x, -box.y)
-    ctx.drawImage(plate, 0, 0)
-    ctx.drawImage(patch, box.x, box.y)
-  }
+  const compositor = createCompositor(composition, options.focusY)
+  const frame = compositor.canvas
+  const draw = () => compositor.draw(
+    { width: video.videoWidth, height: video.videoHeight },
+    (ctx, dx, dy, dW, dH) => ctx.drawImage(video, dx, dy, dW, dH),
+  )
 
   draw()
   const stream = frame.captureStream(VIDEO_FPS)

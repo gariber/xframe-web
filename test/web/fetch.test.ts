@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { fetchTweetHtml, fetchVideoBlobUrl, hydrateAssets } from '../../web/fetch'
+import { fetchTweetHtml, fetchVideoBlob, hydrateAssets } from '../../web/fetch'
 import { TweetFetchError } from '../../src/background/fetch-tweet'
 import type { Post } from '../../src/types'
 
@@ -152,45 +152,35 @@ describe('hydrateAssets', () => {
  *
  * 這一組斷言存在的唯一理由，就是不讓那一行在未來被人順手拿掉。
  */
-describe('fetchVideoBlobUrl', () => {
+describe('fetchVideoBlob', () => {
   const VIDEO = 'https://video.twimg.com/amplify_video/1/vid/avc1/630x360/a.mp4?tag=29'
-
-  /* 只換掉 createObjectURL 這一個方法。整個 URL 換成物件的話，hostAllowed 裡的
-     `new URL(...)` 會一起壞掉，測試就變成在驗一個不存在的失敗。 */
-  const withObjectUrl = (value: string) => {
-    const original = URL.createObjectURL
-    URL.createObjectURL = () => value
-    return () => { URL.createObjectURL = original }
-  }
 
   it('明寫 referrerPolicy: no-referrer —— 拿掉就 403', async () => {
     let seen: RequestInit | undefined
     stubFetch(async (_i, init) => { seen = init; return new Response(new Blob(['x']), { status: 200 }) })
-    const restore = withObjectUrl('blob:fake')
-    try {
-      await fetchVideoBlobUrl(VIDEO)
-    } finally { restore() }
+    await fetchVideoBlob(VIDEO)
     expect(seen?.referrerPolicy).toBe('no-referrer')
     expect(seen?.credentials).toBe('omit')
   })
 
-  it('回傳同源的 blob URL —— <video> 讀它才不會污染 canvas', async () => {
-    stubFetch(async () => new Response(new Blob(['x']), { status: 200 }))
-    const restore = withObjectUrl('blob:made-one')
-    try {
-      expect(await fetchVideoBlobUrl(VIDEO)).toBe('blob:made-one')
-    } finally { restore() }
+  /* 回傳 blob 本身而不是 blob URL：快路要直接拆它的位元組，慢路才需要包成
+     URL 給 <video> 讀，那一步留給用得到的人自己做。 */
+  it('回傳 blob 本身', async () => {
+    stubFetch(async () => new Response(new Blob(['hello']), { status: 200 }))
+    const blob = await fetchVideoBlob(VIDEO)
+    expect(blob).toBeInstanceOf(Blob)
+    expect(await blob.text()).toBe('hello')
   })
 
   it('只允許 video.twimg.com —— 別的主機連打都不打', async () => {
     const spy = vi.fn(async () => new Response(new Blob(['x']), { status: 200 }))
     stubFetch(spy)
-    await expect(fetchVideoBlobUrl('https://evil.example.com/a.mp4')).rejects.toBeInstanceOf(TweetFetchError)
+    await expect(fetchVideoBlob('https://evil.example.com/a.mp4')).rejects.toBeInstanceOf(TweetFetchError)
     expect(spy).not.toHaveBeenCalled()
   })
 
   it('403 會丟出來而不是靜靜回一個壞掉的網址', async () => {
     stubFetch(async () => new Response('', { status: 403 }))
-    await expect(fetchVideoBlobUrl(VIDEO)).rejects.toThrow(/403/)
+    await expect(fetchVideoBlob(VIDEO)).rejects.toThrow(/403/)
   })
 })

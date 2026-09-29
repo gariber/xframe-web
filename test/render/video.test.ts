@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { bitrateFor } from '../../src/render/video-fast'
 import {
   VIDEO_FPS,
   buildVideoFilename,
@@ -143,5 +144,23 @@ describe('buildVideoFilename', () => {
 describe('VIDEO_FPS', () => {
   it('30 —— 高於它只是讓檔案變大，社群平台一律會壓回去', () => {
     expect(VIDEO_FPS).toBe(30)
+  })
+})
+
+describe('bitrateFor', () => {
+  it('1080×1920 / 30fps 約 6 Mbps —— 社群平台重壓之前看不出差別的分水嶺', () => {
+    expect(bitrateFor(1080, 1920)).toBeCloseTo(6_220_800, -5)
+  })
+
+  it('小畫面不會低到糊掉', () => {
+    expect(bitrateFor(320, 240)).toBe(2_000_000)
+  })
+
+  it('大畫面有上限 —— 再高只是讓上傳變慢，平台照樣壓回去', () => {
+    expect(bitrateFor(3840, 2160)).toBe(12_000_000)
+  })
+
+  it('跟著像素數走，不是跟著某一邊', () => {
+    expect(bitrateFor(1080, 1080)).toBeLessThan(bitrateFor(1080, 1920))
   })
 })

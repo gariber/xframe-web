@@ -133,14 +133,15 @@ export async function hydrateAssets(tweet: Post): Promise<Post> {
  * 而且症狀是「影片抓不到」，看起來很像 CORS，會把人引去查錯的方向。
  *
  * **不轉 data URL。** 一支五秒的影片就 220KB，長一點的好幾 MB；轉成 base64
- * 還要再脹三分之一，而且字串會整份留在記憶體裡。blob URL 是同源的，
- * <video> 讀它不會污染 canvas，這正是轉 data URL 原本要解決的問題。
+ * 還要再脹三分之一，而且字串會整份留在記憶體裡。回傳 blob 本身：快路直接
+ * 拆它的位元組，慢路自己包成同源的 blob URL 給 <video> 讀（同源才不會污染
+ * canvas，那正是轉 data URL 原本要解決的問題）。
  *
  * **不在 hydrateAssets 裡做。** 卡片只顯示封面圖就夠了；影片只有在使用者真的
  * 按下「存成影片」時才需要。放進 hydrate 等於每一則影片推文都先下載好幾 MB，
  * 而絕大多數人只是要一張圖。
  */
-export async function fetchVideoBlobUrl(url: string): Promise<string> {
+export async function fetchVideoBlob(url: string): Promise<Blob> {
   if (!hostAllowed(url, VIDEO_HOSTS)) {
     throw new TweetFetchError('badurl', `不允許的影片來源：${url}`)
   }
@@ -154,5 +155,5 @@ export async function fetchVideoBlobUrl(url: string): Promise<string> {
   // 403 在這裡幾乎一定是防盜連。留著這句是因為它看起來像權限問題，
   // 而真正的原因是上面那個 referrerPolicy 哪天被人拿掉了。
   if (!res.ok) throw new TweetFetchError('network', `影片 HTTP ${res.status}`)
-  return URL.createObjectURL(await res.blob())
+  return res.blob()
 }

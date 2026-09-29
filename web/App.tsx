@@ -3,10 +3,10 @@ import type { CardSettings, Post, TranslatedFrom } from '../src/types'
 import { Card, DEFAULT_SETTINGS } from '../src/render/Card'
 import { PRESETS, generate, randomPreset } from '../src/render/backgrounds'
 import { exportPng, buildFilename, downloadBlob, EXPORT_WIDTH } from '../src/render/export'
-import { buildVideoFilename, canRecordVideo, exportVideo } from '../src/render/video'
+import { buildVideoFilename, canRecordVideo, exportVideo, type VideoExportMode } from '../src/render/video'
 import { ASPECT_VALUE } from '../src/render/card.css'
 import { parseTweet, extractTweetId } from '../src/parse/microdata'
-import { fetchTweetHtml, fetchVideoBlobUrl, hydrateAssets } from './fetch'
+import { fetchTweetHtml, fetchVideoBlob, hydrateAssets } from './fetch'
 import { Sheet } from '../src/ui/Sheet'
 import { canShareFile, createShareFile, shareFile } from './share'
 import { TranslationPanel } from '../src/ui/TranslationPanel'
@@ -149,6 +149,7 @@ function XFrameApp() {
   /* 錄製中與否要用 state 不能用 ref 推導：ref 改了不會重繪，進度百分比會
      永遠停在 0%，看起來像當掉了。 */
   const [recording, setRecording] = useState(false)
+  const [videoMode, setVideoMode] = useState<VideoExportMode | null>(null)
   const [videoProgress, setVideoProgress] = useState(0)
 
   const [exportErr, setExportErr] = useState<string | null>(null)
@@ -365,13 +366,13 @@ function XFrameApp() {
     setRecording(true)
     setExportErr(null)
     setVideoProgress(0)
-    let src: string | null = null
+    setVideoMode(null)
     try {
-      src = await fetchVideoBlobUrl(video.url)
-      const blob = await exportVideo(node, src, {
+      const blob = await exportVideo(node, await fetchVideoBlob(video.url), {
         focusY: settings.mediaFocusY,
         signal: controller.signal,
         onProgress: setVideoProgress,
+        onMode: setVideoMode,
       })
       if (controller.signal.aborted) return
       // 同靜圖：預覽是一種文字、分享出去卻是另一種，是最不該發生的結果。
@@ -384,7 +385,6 @@ function XFrameApp() {
       const kind = e instanceof Error ? (e as { kind?: string }).kind : undefined
       setExportErr(kind ? ERROR_TEXT[kind] ?? ERROR_TEXT.videoExport : ERROR_TEXT.videoExport)
     } finally {
-      if (src) URL.revokeObjectURL(src)
       videoAbortRef.current = null
       setRecording(false)
       setBusy(false)
@@ -490,12 +490,17 @@ function XFrameApp() {
       {status.phase === 'ready' && videoMedia && canRecordVideo() && (
         <>
           <button class="export-btn" type="button" disabled={busy} onClick={() => void doExportVideo()}>
-            {recording ? `錄製中… ${Math.round(videoProgress * 100)}%` : `存成影片（${videoSeconds} 秒）`}
+            {recording
+              ? `${videoMode === 'realtime' ? '錄製中' : '轉檔中'}… ${Math.round(videoProgress * 100)}%`
+              : `存成影片（${videoSeconds} 秒）`}
           </button>
           {recording && (
             <>
-              {/* 錄製是即時的，畫面離開就會掉幀 —— 這句話得在他離開之前看到 */}
-              <p class="hint">錄製跟著影片即時進行，請讓畫面留在這一頁。</p>
+              {/* 慢路綁著真實時間，畫面離開就會掉幀 —— 這句話得在他離開之前看到。
+                  快路不跟著跑，講這句只會讓人白等在那裡看著。 */}
+              {videoMode === 'realtime' && (
+                <p class="hint">這支影片走的是即時錄製，請讓畫面留在這一頁。</p>
+              )}
               <button class="export-btn" type="button"
                 onClick={() => videoAbortRef.current?.abort()}>停止</button>
             </>
