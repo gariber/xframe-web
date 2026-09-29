@@ -41,11 +41,27 @@ export type Author = {
  */
 export type MediaKind = 'photo' | 'video' | 'gif'
 
+/**
+ * 影片本身。只有 kind 是 video 或 gif 時才有，而且也不保證有 —— 有些貼文
+ * 只給得到封面。
+ *
+ * 刻意不存尺寸：匯出時要的是「把影片填滿卡片上那個框」，而 <video> 元素
+ * 自己就會報 videoWidth / videoHeight，那是實際解碼出來的真相，比 store 裡
+ * 宣告的值可靠。長度留著，因為錄製是即時的 —— 使用者按下去之前有權知道
+ * 要等多久。
+ */
+export type MediaVideo = {
+  /** 可直接下載的 progressive MP4 */
+  url: string
+  durationMs: number
+}
+
 export type Media = {
   url: string
   dataUrl?: string
   alt: string
   kind: MediaKind
+  video?: MediaVideo
 }
 
 /**

@@ -64,3 +64,50 @@ export function mediaDedupeKey(url: string): string | null {
   if (thumb === null || mediaKindOfUrl(url) === null) return null
   return `${thumb.path}:${thumb.id}`
 }
+
+/**
+ * 一支影片的其中一種畫質。X 會同時給 HLS 播放清單與數種 progressive MP4。
+ * 尺寸不在欄位裡，藏在網址路徑（`/vid/avc1/630x360/`）。
+ */
+export type VideoVariant = { url: string; bitrate: number | null; contentType: string }
+
+/**
+ * 挑哪一支下載的上限。
+ *
+ * 卡片輸出 1080 寬，影片框最多也就一千出頭的像素。X 最高那支是 1344×768 /
+ * 10.4 Mbps —— 比 1260×720 那支（2.2 Mbps）多五倍的位元組，而兩者都會被我們
+ * 重新編碼一次，畫面上看不出差別。這是手機的行動網路，多下載四倍的東西只是
+ * 讓使用者多等。
+ */
+export const MAX_VIDEO_WIDTH = 1280
+
+/** 由網址路徑取出這支變體的畫面寬度；X 的命名一向是 `/{寬}x{高}/`。 */
+function widthOfVariant(url: string): number | null {
+  const m = url.match(/\/(\d+)x(\d+)\//)
+  return m === null ? null : Number(m[1])
+}
+
+/**
+ * 挑一支能直接下載的 MP4。
+ *
+ * 只收 progressive MP4：HLS（`application/x-mpegURL`）是一份播放清單，Safari
+ * 的 <video> 播得動，但我們要的是「抓成一個檔案、轉成 blob URL、畫進 canvas」
+ * —— 那條路需要單一檔案，播放清單給不了。
+ *
+ * 在寬度上限以內取位元率最高的那支；全部都超過上限時取最小的那支，因為那時候
+ * 「別讓使用者等太久」比畫質重要。
+ */
+export function pickVideoVariant(variants: readonly VideoVariant[]): string | null {
+  const mp4 = variants.filter((v) => v.contentType === 'video/mp4' && v.url !== '')
+  if (mp4.length === 0) return null
+  const rank = (v: VideoVariant) => v.bitrate ?? 0
+  const withinCap = mp4.filter((v) => {
+    const w = widthOfVariant(v.url)
+    return w === null || w <= MAX_VIDEO_WIDTH
+  })
+  const pool = withinCap.length > 0 ? withinCap : mp4
+  const best = withinCap.length > 0
+    ? pool.reduce((a, b) => (rank(b) > rank(a) ? b : a))
+    : pool.reduce((a, b) => (rank(b) < rank(a) ? b : a))
+  return best.url
+}

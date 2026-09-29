@@ -269,13 +269,24 @@ function MotionBadge({ kind, size }: { kind: MediaKind; size: number }) {
   )
 }
 
+/**
+ * 這一格媒體是誰的。
+ *
+ * 影片匯出要把影片畫進**主貼文**的那個框，而引用推文與父貼文也可能有圖 ——
+ * 三者用的是同一個元件，光看 data-part 分不出來。這個標記讓匯出那邊指得到
+ * 正確的框，不必去猜 DOM 結構。
+ */
+type MediaOwner = 'main' | 'quoted' | 'parent'
+
 function MediaGrid({
   media,
+  owner,
   constrained = false,
   focusY = 50,
   height,
 }: {
   media: Media[]
+  owner: MediaOwner
   constrained?: boolean
   focusY?: number
   height?: number
@@ -325,6 +336,7 @@ function MediaGrid({
         >
           <img
             data-part="media-image"
+            data-owner={owner}
             src={m.dataUrl}
             alt={m.alt}
             style={{
@@ -347,6 +359,7 @@ function MediaGrid({
         <div key={i} data-part="media-tile" style={{ position: 'relative', minWidth: 0 }}>
           <img
             data-part="media-image"
+            data-owner={owner}
             src={m.dataUrl}
             alt={m.alt}
             style={{ width: '100%', display: 'block' }}
@@ -494,7 +507,7 @@ function QuoteBlock({ post, masked, fontSize, accent, showMedia }: {
           內文未完整取得
         </div>
       )}
-      {showMedia && <MediaGrid media={post.media} />}
+      {showMedia && <MediaGrid media={post.media} owner="quoted" />}
     </div>
   )
 }
@@ -644,7 +657,7 @@ function ThreadParent({ post, masked, scale, fontSize, accent, show, canvasWidth
             內文未完整取得
           </div>
         )}
-        {show.media && <MediaGrid media={post.media} />}
+        {show.media && <MediaGrid media={post.media} owner="parent" />}
         {post.quoted && (
           <QuoteBlock
             post={post.quoted}
@@ -1009,6 +1022,7 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
         {s.show.media && (
           <MediaGrid
             media={post.media}
+            owner="main"
             constrained={constrainedMedia}
             focusY={s.mediaFocusY}
             height={mediaHeight}

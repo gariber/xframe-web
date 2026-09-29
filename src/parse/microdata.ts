@@ -917,7 +917,15 @@ function postBodyFromStore(
     rawText,
     text: tokenize(rawText),
     createdAt: stored.createdAt,
-    media: stored.media.map((media) => ({ url: media.url, alt: media.alt, kind: media.kind })),
+    // 逐一列欄位而不是整包展開，是為了讓 EmbeddedMedia 多出來的東西不會無聲
+    // 地漏進 Post。反過來也成立：這裡漏列一個欄位，型別不會報錯，只會讓那個
+    // 欄位在卡片上消失 —— video 就這樣漏過一次。
+    media: stored.media.map((media) => ({
+      url: media.url,
+      alt: media.alt,
+      kind: media.kind,
+      video: media.video,
+    })),
     // store 沒有互動數；那一份由 parseEmbeddedCounts 從同一頁另外讀出來。
     metrics: mergeMetrics(
       X_METRIC_ORDER.map((kind) => ({ kind, value: null })),

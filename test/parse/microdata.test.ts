@@ -1114,3 +1114,33 @@ describe('parseTweet 內嵌樹版 store', () => {
     expect(Number.isFinite(Date.parse(t.replyTo!.createdAt))).toBe(true)
   })
 })
+
+/*
+ * 影片必須一路走到 Post。
+ *
+ * postBodyFromStore 是逐一列欄位轉過去的，不是整包展開 —— 漏列一個欄位型別
+ * 不會報錯，只會讓那個欄位在卡片上消失。video 就這樣漏過一次：解析層明明讀
+ * 到了，Post 上卻沒有。
+ */
+describe('影片一路帶到 Post', () => {
+  const html = readFileSync('test/fixtures/inline-store-video.html', 'utf8')
+
+  it('主貼文的影片有網址也有長度', () => {
+    const t = parseTweet(html, '2097052743252783448')!
+    expect(t.media[0].kind).toBe('video')
+    expect(t.media[0].video?.url).toMatch(/^https:\/\/video\.twimg\.com\/.*\.mp4/)
+    expect(t.media[0].video?.durationMs).toBeGreaterThan(0)
+  })
+
+  it('只有影片沒有文字的貼文，內文是空的而不是那條 t.co 連結', () => {
+    const t = parseTweet(html, '2097052743252783448')!
+    expect(t.rawText).toBe('')
+    expect(t.author.handle).toBe('mirochill')
+  })
+
+  it('照片的 video 是 undefined，不是空物件', () => {
+    const t = parseTweet(readFileSync('test/fixtures/media.html', 'utf8'), '2083061426923475451')!
+    expect(t.media[0].kind).toBe('photo')
+    expect(t.media[0].video).toBeUndefined()
+  })
+})

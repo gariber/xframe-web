@@ -181,3 +181,34 @@ describe('2026-09-28 內嵌樹版 fixture', () => {
     expect(html).toContain('/Vincent_AINotes/status/2104135763256566000')
   })
 })
+
+/*
+ * 主貼文本身帶影片的那一份，而且是新的巢狀物件樹形狀。
+ *
+ * 需要它的理由很具體：手上兩份含影片的 fixture，影片都掛在**引用**推文上，
+ * 而引用推文走的是 DOM 那條路，DOM 上根本沒有影片網址 —— 所以它們證明不了
+ * 「主貼文的影片抓得到」。而且兩份都是舊的正規化節點圖，新形狀下影片欄位
+ * 長什麼樣，在這之前只能用猜的。
+ */
+describe('inline-store-video fixture（2026-09-28 實抓）', () => {
+  const html = readFileSync('test/fixtures/inline-store-video.html', 'utf8')
+
+  it('是新形狀', () => {
+    expect(html).not.toContain('__ref:')
+    expect(html).toContain('rest_id:"2097052743252783448"')
+  })
+
+  it('主貼文的媒體是影片，而且帶著 progressive MP4 變體', () => {
+    expect(html).toContain('type:"video"')
+    expect(html).toMatch(/video_info:\$R\[\d+\]=\{duration_millis:\d+/)
+    expect(html).toContain('content_type:"video/mp4"')
+    // HLS 也在同一份清單裡；解析必須挑得出來哪個能直接下載
+    expect(html).toContain('content_type:"application/x-mpegURL"')
+  })
+
+  it('同時給了數種畫質 —— 挑哪一支是我們要做的決定', () => {
+    const bitrates = [...html.matchAll(/bitrate:(\d+)/g)].map((m) => Number(m[1]))
+    expect(new Set(bitrates).size).toBeGreaterThan(2)
+    expect(Math.max(...bitrates)).toBeGreaterThan(5_000_000)
+  })
+})

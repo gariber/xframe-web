@@ -392,6 +392,34 @@ describe('固定比例的媒體填滿版面', () => {
    * 影片推文的卡片看起來就只是一張靜止的圖 —— 讀的人不會知道原推文是會動的，
    * 而那件事有時候正是這則推文的全部內容。
    */
+  /*
+   * 影片匯出靠 data-owner 找到「主貼文的那個影片框」—— 引用推文與父貼文也可能
+   * 有圖，三者用的是同一個元件。這個標記改了名字或漏掉的話，匯出時遮罩會是空的，
+   * 使用者看到的是「錄製影片失敗」，而沒有任何測試會先講話。
+   */
+  describe('媒體格標著自己屬於誰', () => {
+    const owners = (el: HTMLElement) =>
+      [...el.querySelectorAll('[data-part="media-image"]')].map((n) => (n as HTMLElement).dataset.owner)
+
+    it('主貼文的圖是 main', () => {
+      expect(owners(mount(mediaTweet()))).toEqual(['main'])
+    })
+
+    it('引用推文的圖是 quoted，不會被誤認成主貼文的', () => {
+      const t = parseTweet(fx('quoted-with-media'), '2082981910209540352')!
+      const withData = (m: Post['media']) => m.map((x) => ({ ...x, dataUrl: 'data:image/png;base64,eA==' }))
+      const el = mount({ ...t, quoted: { ...t.quoted!, media: withData(t.quoted!.media) } })
+      expect(owners(el)).toEqual(['quoted'])
+    })
+
+    it('父貼文的圖是 parent', () => {
+      const t = parseTweet(fx('inline-store-reply'), '2104313777013526880')!
+      const withData = (m: Post['media']) => m.map((x) => ({ ...x, dataUrl: 'data:image/png;base64,eA==' }))
+      const el = mount({ ...t, replyTo: { ...t.replyTo!, media: withData(t.replyTo!.media) } })
+      expect(owners(el)).toEqual(['parent'])
+    })
+  })
+
   describe('會動的媒體要標出來', () => {
     const withKind = (kind: Post['media'][number]['kind']) => {
       const t = parseTweet(fx('media'), '2083061426923475451')!

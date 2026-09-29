@@ -3,11 +3,12 @@ import type { CardSettings, Post, TranslatedFrom } from '../src/types'
 import { Card, DEFAULT_SETTINGS } from '../src/render/Card'
 import { PRESETS, generate, randomPreset } from '../src/render/backgrounds'
 import { exportPng, buildFilename, downloadBlob, EXPORT_WIDTH } from '../src/render/export'
+import { buildVideoFilename, canRecordVideo, exportVideo } from '../src/render/video'
 import { ASPECT_VALUE } from '../src/render/card.css'
 import { parseTweet, extractTweetId } from '../src/parse/microdata'
-import { fetchTweetHtml, hydrateAssets } from './fetch'
+import { fetchTweetHtml, fetchVideoBlobUrl, hydrateAssets } from './fetch'
 import { Sheet } from '../src/ui/Sheet'
-import { canShareImageFile, createPngFile, shareImageFile } from './share'
+import { canShareFile, createShareFile, shareFile } from './share'
 import { TranslationPanel } from '../src/ui/TranslationPanel'
 import {
   applyPastedTranslation,
@@ -32,6 +33,7 @@ const ERROR_TEXT: Record<string, string> = {
   badurl: '這看起來不是推文網址',
   export: '產生圖片失敗，請重試',
   share: '這個瀏覽器目前無法分享圖片，請改用下載或長按圖片',
+  videoExport: '錄製影片失敗，請重試',
 }
 
 type Status =
@@ -41,6 +43,19 @@ type Status =
   | { phase: 'error'; message: string }
 
 const TEXT_CHANGED_DURING_EXPORT = '卡片文字剛更新，請再存一次。'
+
+/** 成品。一次只有一份 —— 見 output 那個 state 的說明。 */
+type Output = { kind: 'png' | 'video'; blob: Blob; url: string }
+
+function outputName(output: Output, post: Post): string {
+  const png = buildFilename(post)
+  return output.kind === 'png' ? png : buildVideoFilename(png, output.blob.type)
+}
+
+/** 卡片上那支可以錄成影片的媒體。沒有就是沒有，不猜。 */
+function playableVideo(post: Post | null): { url: string; durationMs: number } | null {
+  return post?.media.find((m) => m.video)?.video ?? null
+}
 
 /**
  * 卡片上可見文字的指紋，用來在匯出前後比對內容有沒有被換掉。
@@ -128,9 +143,14 @@ function XFrameApp() {
   const [status, setStatus] = useState<Status>({ phase: 'idle' })
   const [settings, setSettings] = useState<CardSettings>(loadSettings)
   const [busy, setBusy] = useState(false)
-  const [pngUrl, setPngUrl] = useState<string | null>(null)
-  // 桌面下載需要原始 blob；只留 objectURL 是拿不回 blob 的
-  const [pngBlob, setPngBlob] = useState<Blob | null>(null)
+  /* 一次只有一份成品。PNG 與影片各存一份的話，兩者可能同時存在而畫面只顯示
+     其中一個 —— 使用者按下「分享」拿到的會是另一個。 */
+  const [output, setOutput] = useState<Output | null>(null)
+  /* 錄製中與否要用 state 不能用 ref 推導：ref 改了不會重繪，進度百分比會
+     永遠停在 0%，看起來像當掉了。 */
+  const [recording, setRecording] = useState(false)
+  const [videoProgress, setVideoProgress] = useState(0)
+
   const [exportErr, setExportErr] = useState<string | null>(null)
   const [translatedVersion, setTranslatedVersion] = useState<TranslatedVersion | null>(null)
   const [translationDraft, setTranslationDraft] = useState<TranslationDraft | null>(null)
@@ -149,7 +169,8 @@ function XFrameApp() {
   const [cardSize, setCardSize] = useState<[number, number] | null>(null)
   // 用 ref 而非讀 state 來撤銷 —— state 在非同步 callback 裡可能是舊的閉包值，
   // ref 永遠是「目前真正存活的那個 URL」，撤銷才不會漏掉或撤錯。
-  const pngUrlRef = useRef<string | null>(null)
+  const outputRef = useRef<Output | null>(null)
+  const videoAbortRef = useRef<AbortController | null>(null)
   const requestRef = useRef(0)
   const translationRevisionRef = useRef(0)
 
@@ -166,11 +187,18 @@ function XFrameApp() {
   )
   // createObjectURL 產生的 URL 不會自動回收，整個分頁生命週期都會佔住記憶體，
   // 除非明確 revokeObjectURL —— 每次換圖前先撤銷舊的，卸載時再撤銷最後一個。
-  const releasePng = () => {
-    if (pngUrlRef.current) URL.revokeObjectURL(pngUrlRef.current)
-    pngUrlRef.current = null
-    setPngUrl(null)
-    setPngBlob(null)
+  const keepOutput = (made: { kind: Output['kind']; blob: Blob }) => {
+    if (outputRef.current) URL.revokeObjectURL(outputRef.current.url)
+    const next = { ...made, url: URL.createObjectURL(made.blob) }
+    outputRef.current = next
+    setOutput(next)
+  }
+
+  const releaseOutput = () => {
+    if (outputRef.current) URL.revokeObjectURL(outputRef.current.url)
+    outputRef.current = null
+    setOutput(null)
+    setVideoProgress(0)
   }
 
   const resetTranslationState = () => {
@@ -180,7 +208,7 @@ function XFrameApp() {
     translationRevisionRef.current += 1
   }
 
-  useEffect(() => () => { if (pngUrlRef.current) URL.revokeObjectURL(pngUrlRef.current) }, [])
+  useEffect(() => () => { if (outputRef.current) URL.revokeObjectURL(outputRef.current.url) }, [])
 
   useEffect(() => {
     if (status.phase !== 'ready' || !translationPlan?.hasForeignText) {
@@ -199,7 +227,7 @@ function XFrameApp() {
 
   const patch = (p: Partial<CardSettings>) => {
     // 設定一變，舊 PNG 就不再代表目前預覽；移除它可避免誤分享舊圖。
-    releasePng()
+    releaseOutput()
     setExportErr(null)
     const next = { ...settings, ...p }
     setSettings(next)
@@ -209,7 +237,7 @@ function XFrameApp() {
   async function go(target = url) {
     const request = ++requestRef.current
     setStatus({ phase: 'loading' })
-    releasePng()
+    releaseOutput()
     resetTranslationState()
     try {
       const tweet = await loadTweet(target.trim())
@@ -244,7 +272,7 @@ function XFrameApp() {
       return
     }
 
-    releasePng()
+    releaseOutput()
     translationRevisionRef.current += 1
     setTranslatedVersion({ original: status.tweet, translated, view: 'translated' })
     setTranslationFeedback('譯文已套用到卡片。')
@@ -252,7 +280,7 @@ function XFrameApp() {
 
   function showTranslatedVersion(view: TranslatedVersion['view']) {
     if (!translatedVersion || translatedVersion.view === view) return
-    releasePng()
+    releaseOutput()
     translationRevisionRef.current += 1
     setTranslatedVersion({ ...translatedVersion, view })
     setTranslationFeedback(null)
@@ -260,7 +288,7 @@ function XFrameApp() {
 
   function restoreOriginal() {
     if (status.phase !== 'ready' || !translationPlan) return
-    releasePng()
+    releaseOutput()
     translationRevisionRef.current += 1
     setTranslatedVersion(null)
     setTranslationDraft(emptyTranslationDraft())
@@ -310,11 +338,7 @@ function XFrameApp() {
         setExportErr(TEXT_CHANGED_DURING_EXPORT)
         return
       }
-      if (pngUrlRef.current) URL.revokeObjectURL(pngUrlRef.current)
-      const url = URL.createObjectURL(blob)
-      pngUrlRef.current = url
-      setPngBlob(blob)
-      setPngUrl(url)
+      keepOutput({ kind: 'png', blob })
     } catch {
       setExportErr(ERROR_TEXT.export)
     } finally {
@@ -322,13 +346,57 @@ function XFrameApp() {
     }
   }
 
+  /**
+   * 錄成影片。
+   *
+   * 錄製是即時的 —— 十五秒的影片就要錄十五秒，中途畫面不能離開。所以這裡
+   * 一路回報進度，也留一個中止的出口；沒有那兩樣東西的話，使用者只會看到
+   * 一顆按不動的按鈕，不知道是在跑還是壞了。
+   */
+  async function doExportVideo() {
+    const node = cardRef.current?.querySelector('[data-part="canvas"]') as HTMLElement | null
+    const video = playableVideo(displayedTweet)
+    if (!node || !video || status.phase !== 'ready' || !displayedTweet) return
+    const revision = translationRevisionRef.current
+    const signature = cardTextSignature(node)
+    const controller = new AbortController()
+    videoAbortRef.current = controller
+    setBusy(true)
+    setRecording(true)
+    setExportErr(null)
+    setVideoProgress(0)
+    let src: string | null = null
+    try {
+      src = await fetchVideoBlobUrl(video.url)
+      const blob = await exportVideo(node, src, {
+        focusY: settings.mediaFocusY,
+        signal: controller.signal,
+        onProgress: setVideoProgress,
+      })
+      if (controller.signal.aborted) return
+      // 同靜圖：預覽是一種文字、分享出去卻是另一種，是最不該發生的結果。
+      if (revision !== translationRevisionRef.current || signature !== cardTextSignature(node)) {
+        setExportErr(TEXT_CHANGED_DURING_EXPORT)
+        return
+      }
+      keepOutput({ kind: 'video', blob })
+    } catch (e) {
+      const kind = e instanceof Error ? (e as { kind?: string }).kind : undefined
+      setExportErr(kind ? ERROR_TEXT[kind] ?? ERROR_TEXT.videoExport : ERROR_TEXT.videoExport)
+    } finally {
+      if (src) URL.revokeObjectURL(src)
+      videoAbortRef.current = null
+      setRecording(false)
+      setBusy(false)
+    }
+  }
+
   async function doShare() {
-    if (!pngBlob || status.phase !== 'ready' || !displayedTweet) return
-    const file = createPngFile(pngBlob, buildFilename(displayedTweet))
+    if (!outputFile) return
     setBusy(true)
     setExportErr(null)
     try {
-      const result = await shareImageFile(file)
+      const result = await shareFile(outputFile)
       if (result === 'unsupported') setExportErr(ERROR_TEXT.share)
     } catch {
       setExportErr(ERROR_TEXT.share)
@@ -337,10 +405,12 @@ function XFrameApp() {
     }
   }
 
-  const shareFile = pngBlob && status.phase === 'ready' && displayedTweet
-    ? createPngFile(pngBlob, buildFilename(displayedTweet))
+  const videoMedia = playableVideo(displayedTweet)
+  const videoSeconds = videoMedia ? Math.max(1, Math.round(videoMedia.durationMs / 1000)) : 0
+  const outputFile = output && displayedTweet
+    ? createShareFile(output.blob, outputName(output, displayedTweet))
     : null
-  const shareSupported = shareFile !== null && canShareImageFile(shareFile)
+  const shareSupported = outputFile !== null && canShareFile(outputFile)
   const fixedRatio = ASPECT_VALUE[settings.aspect]
   const downloadHeight = cardSize
     ? Math.round(fixedRatio
@@ -362,7 +432,7 @@ function XFrameApp() {
             requestRef.current += 1
             setUrl(e.currentTarget.value)
             setStatus({ phase: 'idle' })
-            releasePng()
+            releaseOutput()
             resetTranslationState()
             setExportErr(null)
           }}
@@ -412,21 +482,43 @@ function XFrameApp() {
           {busy ? '產生中…' : '存成圖片'}
         </button>
       )}
+
+      {/*
+        只有這則貼文真的帶著可下載的影片、而且這個瀏覽器錄得出來時才出現。
+        兩個條件缺一不可：按了才發現不能錄，比沒有這顆按鈕更糟。
+      */}
+      {status.phase === 'ready' && videoMedia && canRecordVideo() && (
+        <>
+          <button class="export-btn" type="button" disabled={busy} onClick={() => void doExportVideo()}>
+            {recording ? `錄製中… ${Math.round(videoProgress * 100)}%` : `存成影片（${videoSeconds} 秒）`}
+          </button>
+          {recording && (
+            <>
+              {/* 錄製是即時的，畫面離開就會掉幀 —— 這句話得在他離開之前看到 */}
+              <p class="hint">錄製跟著影片即時進行，請讓畫面留在這一頁。</p>
+              <button class="export-btn" type="button"
+                onClick={() => videoAbortRef.current?.abort()}>停止</button>
+            </>
+          )}
+        </>
+      )}
       {exportErr && <div class="err" role="alert">{exportErr}</div>}
 
-      {pngUrl && status.phase === 'ready' && (
+      {output && status.phase === 'ready' && (
         <div class="result">
-          <img src={pngUrl} alt="產生的分享圖" />
+          {output.kind === 'video'
+            ? <video src={output.url} controls playsInline loop />
+            : <img src={output.url} alt="產生的分享圖" />}
           <p>
             {shareSupported
-              ? '可直接分享，或長按圖片加入照片。'
-              : '可下載圖片；在 iPhone 上也能長按圖片加入照片。'}
+              ? '可直接分享，或長按加入照片。'
+              : '可下載；在 iPhone 上也能長按加入照片。'}
           </p>
           <div class="result-actions">
-            <button type="button" disabled={!pngBlob}
-              onClick={() => pngBlob && displayedTweet && downloadBlob(pngBlob, buildFilename(displayedTweet))}>下載</button>
+            <button type="button"
+              onClick={() => displayedTweet && downloadBlob(output.blob, outputName(output, displayedTweet))}>下載</button>
             {shareSupported && (
-              <button type="button" disabled={busy || !pngBlob} onClick={() => void doShare()}>分享</button>
+              <button type="button" disabled={busy} onClick={() => void doShare()}>分享</button>
             )}
           </div>
         </div>

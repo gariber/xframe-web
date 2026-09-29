@@ -10,6 +10,8 @@ import { upgradeAvatarUrl, upgradeMediaUrl } from '../src/background/asset-proxy
  */
 const TWEET_HOSTS = new Set(['x.com', 'www.x.com', 'twitter.com', 'www.twitter.com', 'mobile.twitter.com'])
 const ASSET_HOSTS = new Set(['pbs.twimg.com', 'abs.twimg.com'])
+/** 影片自己一組。它走的是另一條路（不轉 data URL、不送 Referer），分開列才看得出來。 */
+const VIDEO_HOSTS = new Set(['video.twimg.com'])
 
 function hostAllowed(url: string, allowed: ReadonlySet<string>): boolean {
   try {
@@ -118,4 +120,39 @@ export async function hydrateAssets(tweet: Post): Promise<Post> {
     ...(quoted ? { quoted } : {}),
     ...(replyTo ? { replyTo } : {}),
   }
+}
+
+/**
+ * 抓推文的影片，轉成同源的 blob URL。
+ *
+ * 三件事跟抓圖不一樣：
+ *
+ * **不送 Referer。** X 的影片 CDN 有防盜連：帶著 Referer 的請求一律回 403，
+ * 不帶就給。實測過各種標頭組合，只有 Referer 會觸發 —— Origin 與 Sec-Fetch-*
+ * 都無所謂。瀏覽器跨來源請求預設會送來源網域，所以不明寫這一行就一定 403，
+ * 而且症狀是「影片抓不到」，看起來很像 CORS，會把人引去查錯的方向。
+ *
+ * **不轉 data URL。** 一支五秒的影片就 220KB，長一點的好幾 MB；轉成 base64
+ * 還要再脹三分之一，而且字串會整份留在記憶體裡。blob URL 是同源的，
+ * <video> 讀它不會污染 canvas，這正是轉 data URL 原本要解決的問題。
+ *
+ * **不在 hydrateAssets 裡做。** 卡片只顯示封面圖就夠了；影片只有在使用者真的
+ * 按下「存成影片」時才需要。放進 hydrate 等於每一則影片推文都先下載好幾 MB，
+ * 而絕大多數人只是要一張圖。
+ */
+export async function fetchVideoBlobUrl(url: string): Promise<string> {
+  if (!hostAllowed(url, VIDEO_HOSTS)) {
+    throw new TweetFetchError('badurl', `不允許的影片來源：${url}`)
+  }
+  let res: Response
+  try {
+    res = await fetch(url, { credentials: 'omit', referrerPolicy: 'no-referrer' })
+  } catch (e) {
+    const offline = typeof navigator !== 'undefined' && navigator.onLine === false
+    throw new TweetFetchError(offline ? 'network' : 'cors', String(e))
+  }
+  // 403 在這裡幾乎一定是防盜連。留著這句是因為它看起來像權限問題，
+  // 而真正的原因是上面那個 referrerPolicy 哪天被人拿掉了。
+  if (!res.ok) throw new TweetFetchError('network', `影片 HTTP ${res.status}`)
+  return URL.createObjectURL(await res.blob())
 }

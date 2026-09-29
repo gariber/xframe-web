@@ -138,6 +138,38 @@ function canvasToPng(canvas: HTMLCanvasElement): Promise<Blob> {
 }
 
 /**
+ * 一次算好光柵化要用的全部尺寸。
+ *
+ * 靜圖與影片共用同一份，這樣影片的底板跟「存成圖片」的結果會是逐像素一致的
+ * —— 兩邊各算一次的話，差一個像素也不會有人發現，直到有人把兩個檔案疊起來
+ * 看為止。
+ */
+export type ExportGeometry = {
+  layoutWidth: number
+  /** 理想的分數高度，用來算原生輸出尺寸 */
+  layoutHeight: number
+  /** 真正交給光柵化器的整數高度（見 rasterLayoutHeight） */
+  rasterHeight: number
+  scale: number
+  outWidth: number
+  outHeight: number
+}
+
+export function exportGeometry(node: HTMLElement): ExportGeometry {
+  const layoutWidth = node.offsetWidth
+  const layoutHeight = exportLayoutHeight(layoutWidth, node.offsetHeight, node.dataset.aspect)
+  const [outWidth, outHeight] = exportPixelSize(layoutWidth, layoutHeight)
+  return {
+    layoutWidth,
+    layoutHeight,
+    rasterHeight: rasterLayoutHeight(layoutHeight),
+    scale: exportScale(layoutWidth, layoutHeight),
+    outWidth,
+    outHeight,
+  }
+}
+
+/**
  * 對預覽節點本身光柵化。
  * 預覽即輸出 —— 不存在第二套渲染路徑，因此不可能出現「下載的圖跟預覽不一樣」。
  */
@@ -153,23 +185,21 @@ export async function exportPng(node: HTMLElement): Promise<Blob> {
   // 而且不會報錯，只會默默產出一張又小又糊的圖。
   // offsetWidth/offsetHeight 是版面尺寸，不受 transform 影響；擴充功能沒有
   // 縮放祖先，傳這兩個值對它而言等同原本行為。
-  const layoutWidth = node.offsetWidth
-  const layoutHeight = exportLayoutHeight(layoutWidth, node.offsetHeight, node.dataset.aspect)
+  const geom = exportGeometry(node)
   const canvas = await domToCanvas(node, {
-    scale: exportScale(layoutWidth, layoutHeight),
+    scale: geom.scale,
     font: false,
-    width: layoutWidth,
+    width: geom.layoutWidth,
     // 見 rasterLayoutHeight：分數高度會讓 SVG 內在尺寸四捨五入時裁掉內容，
     // 在圖的最下緣留一條全透明的列。
-    height: rasterLayoutHeight(layoutHeight),
+    height: geom.rasterHeight,
   })
-  const [outWidth, outHeight] = exportPixelSize(layoutWidth, layoutHeight)
   // min 是保險：光柵化結果一定不小於目標，但浮點若讓它少一個像素，寧可原樣
   // 輸出也不要把裁切放大成一條真的空白邊。
   return canvasToPng(cropTo(
     canvas,
-    Math.min(outWidth, canvas.width),
-    Math.min(outHeight, canvas.height),
+    Math.min(geom.outWidth, canvas.width),
+    Math.min(geom.outHeight, canvas.height),
   ))
 }
 

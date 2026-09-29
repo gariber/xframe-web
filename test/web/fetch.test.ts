@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { fetchTweetHtml, hydrateAssets } from '../../web/fetch'
+import { fetchTweetHtml, fetchVideoBlobUrl, hydrateAssets } from '../../web/fetch'
 import { TweetFetchError } from '../../src/background/fetch-tweet'
 import type { Post } from '../../src/types'
 
@@ -142,5 +142,55 @@ describe('hydrateAssets', () => {
     const q = { ...tweet(), author: { name: 'B', handle: 'b', handleDisplay: '@b', avatarUrl: 'https://pbs.twimg.com/profile_images/2/b_normal.png' } }
     const t = await hydrateAssets(tweet({ quoted: q }))
     expect(t.quoted!.author.avatarDataUrl).toMatch(/^data:image\/png;base64,/)
+  })
+})
+
+/*
+ * X 的影片 CDN 有防盜連：帶著 Referer 的請求一律回 403，不帶就給。實測過各種
+ * 標頭組合，只有 Referer 會觸發。瀏覽器跨來源請求預設會送來源網域，所以不明寫
+ * referrerPolicy 就一定 403 —— 而且症狀看起來很像 CORS，會把人引去查錯的方向。
+ *
+ * 這一組斷言存在的唯一理由，就是不讓那一行在未來被人順手拿掉。
+ */
+describe('fetchVideoBlobUrl', () => {
+  const VIDEO = 'https://video.twimg.com/amplify_video/1/vid/avc1/630x360/a.mp4?tag=29'
+
+  /* 只換掉 createObjectURL 這一個方法。整個 URL 換成物件的話，hostAllowed 裡的
+     `new URL(...)` 會一起壞掉，測試就變成在驗一個不存在的失敗。 */
+  const withObjectUrl = (value: string) => {
+    const original = URL.createObjectURL
+    URL.createObjectURL = () => value
+    return () => { URL.createObjectURL = original }
+  }
+
+  it('明寫 referrerPolicy: no-referrer —— 拿掉就 403', async () => {
+    let seen: RequestInit | undefined
+    stubFetch(async (_i, init) => { seen = init; return new Response(new Blob(['x']), { status: 200 }) })
+    const restore = withObjectUrl('blob:fake')
+    try {
+      await fetchVideoBlobUrl(VIDEO)
+    } finally { restore() }
+    expect(seen?.referrerPolicy).toBe('no-referrer')
+    expect(seen?.credentials).toBe('omit')
+  })
+
+  it('回傳同源的 blob URL —— <video> 讀它才不會污染 canvas', async () => {
+    stubFetch(async () => new Response(new Blob(['x']), { status: 200 }))
+    const restore = withObjectUrl('blob:made-one')
+    try {
+      expect(await fetchVideoBlobUrl(VIDEO)).toBe('blob:made-one')
+    } finally { restore() }
+  })
+
+  it('只允許 video.twimg.com —— 別的主機連打都不打', async () => {
+    const spy = vi.fn(async () => new Response(new Blob(['x']), { status: 200 }))
+    stubFetch(spy)
+    await expect(fetchVideoBlobUrl('https://evil.example.com/a.mp4')).rejects.toBeInstanceOf(TweetFetchError)
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('403 會丟出來而不是靜靜回一個壞掉的網址', async () => {
+    stubFetch(async () => new Response('', { status: 403 }))
+    await expect(fetchVideoBlobUrl(VIDEO)).rejects.toThrow(/403/)
   })
 })

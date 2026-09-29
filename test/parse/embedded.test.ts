@@ -217,3 +217,37 @@ describe('parseEmbeddedPost', () => {
     expect(parseEmbeddedPost(asDoc('plain'), 'not-a-number')).toBeNull()
   })
 })
+
+/*
+ * 影片。兩種 store 形狀的巢狀方式不一樣 —— 舊的把 video_info 拆成獨立節點用
+ * __ref 指過去，新的就地展開 —— 所以兩邊都要驗，不然只會有一半能用，而且
+ * 壞掉的那一半不會報錯，只會讓「存成影片」那顆按鈕不出現。
+ */
+describe('影片變體', () => {
+  it('巢狀物件樹（新形狀）', () => {
+    const post = parseEmbeddedPost(asDoc('inline-store-video'), '2097052743252783448')!
+    expect(post.media).toHaveLength(1)
+    expect(post.media[0].kind).toBe('video')
+    expect(post.media[0].video?.url).toContain('video.twimg.com')
+    expect(post.media[0].video?.url).toContain('.mp4')
+    expect(post.media[0].video?.durationMs).toBe(5184)
+  })
+
+  it('正規化節點圖（舊形狀）', () => {
+    const post = parseEmbeddedPost(asDoc('visible-ssr-ellipsis'), '2097052743252783448')!
+    expect(post.media[0]?.video?.url).toContain('.mp4')
+    expect(post.media[0]?.video?.durationMs).toBe(5184)
+  })
+
+  it('兩種形狀挑到同一支 —— 同一則貼文，挑選規則不該因為頁面形狀而不同', () => {
+    const a = parseEmbeddedPost(asDoc('inline-store-video'), '2097052743252783448')!
+    const b = parseEmbeddedPost(asDoc('visible-ssr-ellipsis'), '2097052743252783448')!
+    expect(a.media[0].video?.url).toBe(b.media[0].video?.url)
+  })
+
+  it('照片沒有 video 欄位', () => {
+    const post = parseEmbeddedPost(asDoc('visible-ssr-localized'), '2089442390805233999')!
+    expect(post.media[0].kind).toBe('photo')
+    expect(post.media[0].video).toBeUndefined()
+  })
+})

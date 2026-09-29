@@ -1,4 +1,4 @@
-import type { MediaKind, MetricKind } from '../types'
+import type { MediaKind, MediaVideo, MetricKind } from '../types'
 import {
   findTweetObjects,
   intField as storeInt,
@@ -12,6 +12,7 @@ import {
   stringField,
   type Store,
 } from './store'
+import { pickVideoVariant } from './media'
 
 export type EmbeddedCounts = Partial<Record<MetricKind, number>>
 
@@ -150,7 +151,7 @@ export function parseEmbeddedCounts(doc: Document): Map<string, EmbeddedCounts> 
 }
 
 export type EmbeddedAuthor = { name: string; handle: string; avatarUrl: string }
-export type EmbeddedMedia = { url: string; alt: string; kind: MediaKind }
+export type EmbeddedMedia = { url: string; alt: string; kind: MediaKind; video?: MediaVideo }
 
 export type EmbeddedPost = {
   id: string
@@ -244,18 +245,59 @@ const STORE_MEDIA_KIND: Record<string, MediaKind | undefined> = {
   animated_gif: 'gif',
 }
 
-function embeddedMedia(node: string): EmbeddedMedia | null {
+/**
+ * 讀巢狀結構的兩種方式。
+ *
+ * 兩種 store 形狀的差別全部集中在這裡：正規化節點圖把每個子物件拆成獨立節點、
+ * 用 `__ref` 指過去；巢狀物件樹就地展開。上層的解析邏輯因此只寫一次。
+ */
+type Nested = {
+  object(parent: string, field: string): string | null
+  list(parent: string, field: string): string[]
+}
+
+const byRef = (store: Store): Nested => ({
+  object: (parent, field) => {
+    const ref = refField(parent, field)
+    return ref === null ? null : store.node(ref)
+  },
+  list: (parent, field) => refsField(parent, field)
+    .map((ref) => store.node(ref))
+    .filter((node): node is string => node !== null),
+})
+
+const inline: Nested = { object: objectField, list: objectsField }
+
+/** 這則媒體的影片，取不到就沒有 —— 有些貼文只給得到封面。 */
+function videoOf(node: string, nested: Nested): MediaVideo | undefined {
+  const info = nested.object(node, 'video_info')
+  if (info === null) return undefined
+  // storeInt 而不是這個檔案裡的 intField：後者的前綴是 `(?:^|,)`，讀不到
+  // 物件開頭那一個欄位（`{bitrate:256000,…}` 前面是 `{` 不是逗號），而型別
+  // 一模一樣，寫錯了編譯器不會吭聲，只會讓長度永遠是 0。
+  const url = pickVideoVariant(nested.list(info, 'variants').map((v) => ({
+    url: stringField(v, 'url') ?? '',
+    bitrate: storeInt(v, 'bitrate'),
+    contentType: stringField(v, 'content_type') ?? '',
+  })))
+  return url === null ? undefined : { url, durationMs: storeInt(info, 'duration_millis') ?? 0 }
+}
+
+function embeddedMedia(node: string, nested: Nested): EmbeddedMedia | null {
   const kind = STORE_MEDIA_KIND[stringField(node, 'type') ?? '']
   const url = stringField(node, 'media_url_https') ?? ''
   if (kind === undefined || url === '') return null
-  return { url, alt: stringField(node, 'ext_alt_text') ?? '', kind }
+  const media: EmbeddedMedia = { url, alt: stringField(node, 'ext_alt_text') ?? '', kind }
+  const video = kind === 'photo' ? undefined : videoOf(node, nested)
+  return video === undefined ? media : { ...media, video }
 }
 
 function mediaOf(store: Store, tweet: string): EmbeddedMedia[] {
+  const nested = byRef(store)
   return refsField(tweet, 'media_entities2')
     .map((ref) => store.node(ref))
     .filter((node): node is string => node !== null)
-    .map(embeddedMedia)
+    .map((node) => embeddedMedia(node, nested))
     .filter((media): media is EmbeddedMedia => media !== null)
 }
 
@@ -331,7 +373,7 @@ function inlinePost(doc: Document, tweetId: string): EmbeddedPost | null {
       avatarUrl: (avatar === null ? null : stringField(avatar, 'image_url')) ?? '',
     },
     media: objectsField(tweet, 'media_entities2')
-      .map(embeddedMedia)
+      .map((item) => embeddedMedia(item, inline))
       .filter((item): item is EmbeddedMedia => item !== null),
     quotedId: restIdOf('quoted_tweet_results'),
     replyToId: restIdOf('reply_to_results'),
