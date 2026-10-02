@@ -530,6 +530,13 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
               被回覆的貼文
             </label>
           )}
+          {status.phase === 'ready' && status.tweet?.quoted && (
+            <label>
+              <input type="checkbox" checked={settings.show.quoted}
+                onChange={(e) => patch({ show: { ...settings.show, quoted: e.currentTarget.checked } })} />
+              被引用的貼文
+            </label>
+          )}
         </Sheet>
 
         <Sheet title="隱私">

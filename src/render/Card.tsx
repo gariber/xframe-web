@@ -38,7 +38,7 @@ export const DEFAULT_SETTINGS: CardSettings = {
   textColor: '#ffffff',
   // parent：貼上回覆連結時自動把父貼文一起畫出來。預設開——使用者貼的是一則
   // 回覆，少了被回覆的那一則，卡片上的話常常讀不懂。
-  show: { avatar: true, stats: true, timestamp: true, media: true, parent: true },
+  show: { avatar: true, stats: true, timestamp: true, media: true, parent: true, quoted: true },
   // 一般推文預設不遮。鎖推貼文由 Panel 在載入完成時改為預設開啟 ——
   // 那是安全的預設，但仍然是使用者可以關掉的選擇。
   maskIdentity: false,
@@ -406,12 +406,23 @@ const ASPECT_SHRINK: Record<CardSettings['aspect'], number> = {
  * 文字變密，卡片的留白與邊框維持原尺寸；縮面板則是連留白一起縮，整張卡看起來
  * 像一張卡片的縮圖，而不是一張卡片。
  */
-export function weightedLength(post: Post): number {
+/**
+ * 目前看得見的可選區塊。
+ *
+ * 藏起來的區塊不該參與字級計算 —— 把引用或父貼文關掉之後，字沒有跟著變大的話，
+ * 使用者會以為那個開關沒作用：卡片上明明空出一大塊，字卻還是擠成那樣。
+ */
+export type VisibleParts = { quoted: boolean; parent: boolean }
+const ALL_PARTS: VisibleParts = { quoted: true, parent: true }
+
+export function weightedLength(post: Post, parts: VisibleParts = ALL_PARTS): number {
   const count = (raw: string) => raw.length + (raw.match(/[一-鿿぀-ヿ가-힯]/g) ?? []).length
-  return count(post.rawText)
-    + (post.quoted ? count(post.quoted.rawText) : 0)
-    + (post.replyTo ? count(post.replyTo.rawText) : 0)
-    + (post.replyTo?.quoted ? count(post.replyTo.quoted.rawText) : 0)
+  const quoted = parts.quoted && post.quoted ? count(post.quoted.rawText) : 0
+  const parent = parts.parent && post.replyTo ? count(post.replyTo.rawText) : 0
+  const parentQuote = parts.parent && parts.quoted && post.replyTo?.quoted
+    ? count(post.replyTo.quoted.rawText)
+    : 0
+  return count(post.rawText) + quoted + parent + parentQuote
 }
 
 /**
@@ -422,9 +433,14 @@ export function weightedLength(post: Post): number {
  */
 const MIN_CONTENT_FIT = 0.5
 
-export function fitFontSize(base: number, post: Post, aspect: CardSettings['aspect']): number {
+export function fitFontSize(
+  base: number,
+  post: Post,
+  aspect: CardSettings['aspect'],
+  parts: VisibleParts = ALL_PARTS,
+): number {
   const effectiveBase = base * ASPECT_SHRINK[aspect]
-  const weighted = weightedLength(post)
+  const weighted = weightedLength(post, parts)
   if (weighted <= 140) return effectiveBase
   if (weighted <= 240) return Math.max(13, effectiveBase * 0.85)
   if (weighted <= 380) return Math.max(12, effectiveBase * 0.7)
@@ -658,7 +674,7 @@ function ThreadParent({ post, masked, scale, fontSize, accent, show, canvasWidth
           </div>
         )}
         {show.media && <MediaGrid media={post.media} owner="parent" />}
-        {post.quoted && (
+        {show.quoted && post.quoted && (
           <QuoteBlock
             post={post.quoted}
             masked={masked}
@@ -716,7 +732,10 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
    */
   const contentFitRef = useRef(contentFit)
   contentFitRef.current = contentFit
-  const fontSize = fitFontSize(s.fontSize, post, s.aspect) * contentFit
+  // 藏起來的區塊不參與字級計算：關掉引用之後字要跟著變大，不然使用者會以為
+  // 那個開關沒作用 —— 卡片上空出一大塊，字卻還是擠成那樣。
+  const visibleParts = { quoted: s.show.quoted, parent: s.show.parent }
+  const fontSize = fitFontSize(s.fontSize, post, s.aspect, visibleParts) * contentFit
 
   const canvasRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -756,7 +775,8 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
    */
   const fitKey = [
     s.aspect, s.padding, s.fontSize, s.show.parent, s.show.media, s.show.avatar,
-    s.show.timestamp, s.timeFormat, s.maskIdentity, post.id, weightedLength(post), canvasWidth,
+    s.show.timestamp, s.show.quoted, s.timeFormat, s.maskIdentity, post.id,
+    weightedLength(post, visibleParts), canvasWidth,
   ].join('|')
   useLayoutEffect(() => {
     setContentFit(1)
@@ -1029,7 +1049,7 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
           />
         )}
 
-        {post.quoted && (
+        {s.show.quoted && post.quoted && (
           <QuoteBlock
             post={post.quoted}
             masked={s.maskIdentity}

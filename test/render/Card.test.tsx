@@ -397,6 +397,39 @@ describe('固定比例的媒體填滿版面', () => {
    * 有圖，三者用的是同一個元件。這個標記改了名字或漏掉的話，匯出時遮罩會是空的，
    * 使用者看到的是「錄製影片失敗」，而沒有任何測試會先講話。
    */
+  /*
+   * 引用與父貼文各自是一個「要不要一起帶上」的決定，不是顯示開關。關掉之後
+   * 字級必須跟著放大 —— 卡片上空出一大塊、字卻還是擠成那樣的話，使用者會
+   * 以為那個開關根本沒作用。那個毛病原本就在「被回覆的貼文」上。
+   */
+  describe('引用與父貼文可以關掉', () => {
+    const quoting = () => {
+      const t = parseTweet(fx('quoted'), '2082883636177916306')!
+      return t
+    }
+
+    it('預設帶著引用', () => {
+      expect(mount(quoting()).querySelector('[data-part="quote-body"]')).not.toBeNull()
+    })
+
+    it('關掉之後引用整塊不見', () => {
+      const el = mount(quoting(), { ...DEFAULT_SETTINGS, show: { ...DEFAULT_SETTINGS.show, quoted: false } })
+      expect(el.querySelector('[data-part="quote-body"]')).toBeNull()
+    })
+
+    it('父貼文自己的引用也跟著同一個開關', () => {
+      const t = parseTweet(fx('inline-store-reply'), '2104313777013526880')!
+      const withParentQuote = {
+        ...t,
+        replyTo: { ...t.replyTo!, quoted: quoting().quoted },
+      }
+      const on = mount(withParentQuote)
+      expect(on.querySelectorAll('[data-part="quote-body"]').length).toBeGreaterThan(0)
+      const off = mount(withParentQuote, { ...DEFAULT_SETTINGS, show: { ...DEFAULT_SETTINGS.show, quoted: false } })
+      expect(off.querySelectorAll('[data-part="quote-body"]').length).toBe(0)
+    })
+  })
+
   describe('媒體格標著自己屬於誰', () => {
     const owners = (el: HTMLElement) =>
       [...el.querySelectorAll('[data-part="media-image"]')].map((n) => (n as HTMLElement).dataset.owner)
@@ -932,5 +965,16 @@ describe('自動縮字級的長度估算', () => {
       replyTo: { ...short, rawText: long.repeat(2) } as Post['replyTo'],
     })
     expect(fitFontSize(20, withParent, '9:16')).toBeLessThan(fitFontSize(20, short, '9:16'))
+  })
+
+  /* 藏起來的區塊不算字數：關掉之後字沒變大的話，開關看起來就像沒作用。 */
+  it('關掉的區塊不參與字級計算', () => {
+    const long = 'x'.repeat(200)
+    const base = make('hi')
+    const withQuote = { ...base, quoted: { ...base, rawText: long } as Post['quoted'] }
+    expect(weightedLength(withQuote, { quoted: false, parent: true })).toBe(weightedLength(base))
+    expect(weightedLength(withQuote)).toBeGreaterThan(weightedLength(base))
+    expect(fitFontSize(20, withQuote, '9:16', { quoted: false, parent: true }))
+      .toBeGreaterThan(fitFontSize(20, withQuote, '9:16'))
   })
 })

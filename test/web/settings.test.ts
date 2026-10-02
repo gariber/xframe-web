@@ -19,12 +19,15 @@ describe('settingsFromSaved：拿掉「顯示項目」之後的存檔遷移', ()
     },
   )
 
-  it('parent 仍然讀得回來 —— 它在預覽底下有自己的控制項，關掉之後打得開', () => {
-    expect(settingsFromSaved({ show: { ...DEFAULT_SETTINGS.show, parent: false } }).show.parent)
-      .toBe(false)
-    expect(settingsFromSaved({ show: { ...DEFAULT_SETTINGS.show, parent: true } }).show.parent)
-      .toBe(true)
-  })
+  it.each(['parent', 'quoted'] as const)(
+    '%s 仍然讀得回來 —— 它在預覽底下有自己的控制項，關掉之後打得開',
+    (key) => {
+      expect(settingsFromSaved({ show: { ...DEFAULT_SETTINGS.show, [key]: false } }).show[key])
+        .toBe(false)
+      expect(settingsFromSaved({ show: { ...DEFAULT_SETTINGS.show, [key]: true } }).show[key])
+        .toBe(true)
+    },
+  )
 
   it('沒有 show 的舊存檔照樣是預設值', () => {
     expect(settingsFromSaved({ padding: 30 }).show).toEqual(DEFAULT_SETTINGS.show)

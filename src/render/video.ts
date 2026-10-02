@@ -224,8 +224,12 @@ export type VideoExportOptions = {
   signal?: AbortSignal
   /** 0 到 1。 */
   onProgress?: (fraction: number) => void
-  /** 走哪條路定案時通知一次。 */
-  onMode?: (mode: VideoExportMode) => void
+  /**
+   * 走哪條路定案時通知一次。退回慢路時附上原因 —— 使用者有權知道自己為什麼
+   * 在等，而這也是唯一能從真實裝置上問出「快路為什麼跑不動」的管道：
+   * 它失敗的理由只存在於那台機器上。
+   */
+  onMode?: (mode: VideoExportMode, reason?: string) => void
 }
 
 /**
@@ -243,6 +247,7 @@ export async function exportVideo(
   options: VideoExportOptions,
 ): Promise<Blob> {
   const composition = await prepareComposition(node, options.signal)
+  let fastFailure: string | undefined
   try {
     // 動態載入把 mediabunny 那一包留在主程式之外，同時也切斷這兩個模組的循環相依
     const { exportVideoFast } = await import('./video-fast')
@@ -252,8 +257,9 @@ export async function exportVideo(
   } catch (error) {
     // 使用者自己按停止的，不要再用慢路跑一次
     if (options.signal?.aborted) throw error
+    fastFailure = error instanceof Error ? error.message : String(error)
   }
-  options.onMode?.('realtime')
+  options.onMode?.('realtime', fastFailure)
   const url = URL.createObjectURL(source)
   try {
     return await recordVideo(composition, url, options)
@@ -302,20 +308,48 @@ export async function recordVideo(
   const chunks: Blob[] = []
   recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data) }
 
+  let settle: (blob: Blob) => void = () => {}
   const done = new Promise<Blob>((resolve, reject) => {
+    settle = resolve
     recorder.onstop = () => resolve(new Blob(chunks, { type: recorder.mimeType || container }))
     recorder.onerror = () => reject(new Error('錄製失敗'))
   })
 
   let raf = 0
+  let stopped = false
   const stop = () => {
+    if (stopped) return
+    stopped = true
     cancelAnimationFrame(raf)
     video.pause()
-    if (recorder.state !== 'inactive') recorder.stop()
+    try {
+      if (recorder.state !== 'inactive') recorder.stop()
+    } catch {
+      // 已經停了或狀態不對。下面的保險會把手上的片段交出去，不會卡住。
+    }
+    // onstop 沒來的話，拿已經收到的片段收工。錄到這裡該有的畫面都有了，
+    // 少掉最後一點點，遠好過讓使用者看著一個不會動的 100%。
+    setTimeout(() => settle(new Blob(chunks, { type: recorder.mimeType || container })), 3000)
   }
+
+  /*
+   * 結束條件不只一個，因為 `ended` 事件靠不住。
+   *
+   * 實際回報過：進度走到 100% 之後整個卡住 —— 影片明明播完了，事件卻沒來，
+   * 而當時唯一的出口就是那個事件。媒體元素的事件在各家瀏覽器上本來就會漏，
+   * 把它當成唯一的終點是個結構上的錯。
+   *
+   * 所以三條路並行：事件、播放位置走到底、以及一個以真實時間計的看門狗。
+   * 寧可早收一兩幀，也不要停在一個不會動的進度條上。
+   */
+  const startedAt = performance.now()
+  const total = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0
+  const watchdogMs = (total > 0 ? total * 1500 : 120_000) + 8_000
   const tick = () => {
     draw()
-    if (video.duration > 0) options.onProgress?.(Math.min(1, video.currentTime / video.duration))
+    if (total > 0) options.onProgress?.(Math.min(1, video.currentTime / total))
+    const reachedEnd = video.ended || (total > 0 && video.currentTime >= total - 0.05)
+    if (reachedEnd || performance.now() - startedAt > watchdogMs) { stop(); return }
     raf = requestAnimationFrame(tick)
   }
 
@@ -345,7 +379,9 @@ function attachAudio(video: HTMLVideoElement, stream: MediaStream): AudioContext
     const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
     if (!Ctor) return null
     const ctx = new Ctor()
-    void ctx.resume()
+    // 等它真的恢復。iOS 上 AudioContext 若停在 suspended，接在它後面的
+    // <video> 播放時鐘可能跟著停住 —— 那正是「卡在 100%」的嫌疑之一。
+    void ctx.resume().catch(() => { /* 恢復不了就當沒有聲音，影片照錄 */ })
     const dest = ctx.createMediaStreamDestination()
     ctx.createMediaElementSource(video).connect(dest)
     const track = dest.stream.getAudioTracks()[0]

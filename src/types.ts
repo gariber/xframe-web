@@ -159,7 +159,7 @@ export type CardSettings = {
   panelOpacity: number
   fontFamily: string
   textColor: string
-  show: { avatar: boolean; stats: boolean; timestamp: boolean; media: boolean; parent: boolean }
+  show: { avatar: boolean; stats: boolean; timestamp: boolean; media: boolean; parent: boolean; quoted: boolean }
   /**
    * 遮蔽作者身分。名稱、帳號、頭像三者一起遮 —— 只遮其中一兩項是假的保護，
    * 剩下任何一項都足以認出人來，半套遮蔽只會給人錯誤的安全感。

@@ -88,10 +88,10 @@ function validAspect(v: unknown): v is CardSettings['aspect'] {
  * 圖片關掉。介面上沒有地方可以打開了，那個人就再也看不到圖片，而且找不到
  * 原因。所以讀回存檔時只認 parent，其餘一律回到預設值。
  *
- * parent（要不要一起畫出被回覆的貼文）留著，因為它現在在預覽底下有自己的
- * 控制項，關掉之後打得開。
+ * parent 與 quoted（要不要一起畫出被回覆的、被引用的那一則）留著，因為它們
+ * 在預覽底下各有自己的控制項，關掉之後打得開。
  */
-const PERSISTED_SHOW_KEYS = ['parent'] as const
+const PERSISTED_SHOW_KEYS = ['parent', 'quoted'] as const
 
 /**
  * 把存檔套回預設值上。抽成純函式是為了讓上面那段遷移邏輯可以被斷言 ——
@@ -150,6 +150,7 @@ function XFrameApp() {
      永遠停在 0%，看起來像當掉了。 */
   const [recording, setRecording] = useState(false)
   const [videoMode, setVideoMode] = useState<VideoExportMode | null>(null)
+  const [videoFallbackReason, setVideoFallbackReason] = useState<string | null>(null)
   const [videoProgress, setVideoProgress] = useState(0)
 
   const [exportErr, setExportErr] = useState<string | null>(null)
@@ -367,12 +368,16 @@ function XFrameApp() {
     setExportErr(null)
     setVideoProgress(0)
     setVideoMode(null)
+    setVideoFallbackReason(null)
     try {
       const blob = await exportVideo(node, await fetchVideoBlob(video.url), {
         focusY: settings.mediaFocusY,
         signal: controller.signal,
         onProgress: setVideoProgress,
-        onMode: setVideoMode,
+        onMode: (mode, reason) => {
+          setVideoMode(mode)
+          setVideoFallbackReason(reason ?? null)
+        },
       })
       if (controller.signal.aborted) return
       // 同靜圖：預覽是一種文字、分享出去卻是另一種，是最不該發生的結果。
@@ -472,6 +477,15 @@ function XFrameApp() {
         </label>
       )}
 
+      {/* 同理：沒有引用別人的貼文上放這個勾選框，勾了不會有任何變化。 */}
+      {status.phase === 'ready' && displayedTweet?.quoted && (
+        <label class="thread-choice">
+          <input type="checkbox" checked={settings.show.quoted} disabled={busy}
+            onChange={(e) => patch({ show: { ...settings.show, quoted: e.currentTarget.checked } })} />
+          一起帶上被引用的那一則
+        </label>
+      )}
+
       {/*
         主要動作緊跟在預覽底下。它原本排在翻譯區之後 —— 而翻譯區在外文推文上
         佔掉半個畫面，等於把「存成圖片」推到看不見的地方，第一次用的人得先捲過
@@ -499,7 +513,12 @@ function XFrameApp() {
               {/* 慢路綁著真實時間，畫面離開就會掉幀 —— 這句話得在他離開之前看到。
                   快路不跟著跑，講這句只會讓人白等在那裡看著。 */}
               {videoMode === 'realtime' && (
-                <p class="hint">這支影片走的是即時錄製，請讓畫面留在這一頁。</p>
+                <p class="hint">
+                  這支影片走的是即時錄製，請讓畫面留在這一頁。
+                  {/* 退回慢路的原因講出來：使用者有權知道自己為什麼在等，
+                      而這也是唯一能從真實裝置上問出原因的管道。 */}
+                  {videoFallbackReason && <><br />快速轉檔用不了：{videoFallbackReason}</>}
+                </p>
               )}
               <button class="export-btn" type="button"
                 onClick={() => videoAbortRef.current?.abort()}>停止</button>
