@@ -172,15 +172,47 @@ export const CARD_ALPHA = {
 export const MEDIA_SHARE = 0.45
 
 /**
+ * 圖框高度的上下限，以面板可用高度的比例表示。
+ *
+ * 上限的意義是「圖再大也不能把文字擠光」，下限是「圖再扁也還看得出是一張圖」。
+ * 兩者之間交給媒體自己的比例決定。
+ */
+export const MEDIA_SHARE_MIN = 0.3
+export const MEDIA_SHARE_MAX = 0.6
+
+/**
  * 圖框的高度，由量到的可用高度算出——回傳 px，不是百分比。
  *
  * 百分比在這裡行不通：面板為了「內容多就長高」用的是 minHeight 而非 height，
  * 高度因此是不確定的，而 CSS 的百分比高度在不確定容器裡會退回 auto——圖框就
  * 變成原圖的自然高度（實測一張 670×1200 的照片撐出 419px），內容整個暴增，
  * 面板被 fitPanelScale 縮到 0.4。算成 px 才是確定值。
+ *
+ * ## 為什麼不是固定份額
+ *
+ * 原本固定佔 45%，不管媒體本身是什麼形狀。那對橫幅照片剛好，對直式影片是災難：
+ * 9:16 的卡片在 390px 寬下圖框是 322×257，而一支 9:16 的直式影片用 cover 填滿
+ * 寬度之後是 322×572 —— **只有 45% 的高度看得到**，中間一條橫帶，而且怎麼調
+ * 「圖片位置」都只是在那條帶子裡上下移動，看不到全貌。實際被回報過。
+ *
+ * 改成由媒體自己的比例決定，再夾在上下限裡：橫幅與方形媒體因此完整顯示
+ * （框的比例就等於媒體的比例，cover 不裁任何東西），直式媒體從只看得到 45%
+ * 提高到 68%。還是裝不下的那種極端直式，留給「圖片位置」與 auto 比例。
+ *
+ * 量不到媒體比例時（還沒載入、或多張圖的格狀排版）退回原本的固定份額。
  */
-export function mediaBoxHeight(availableHeight: number): number {
-  return availableHeight > 0 ? availableHeight * MEDIA_SHARE : 0
+export function mediaBoxHeight(
+  availableHeight: number,
+  boxWidth = 0,
+  mediaAspect = 0,
+): number {
+  if (availableHeight <= 0) return 0
+  if (boxWidth <= 0 || mediaAspect <= 0) return availableHeight * MEDIA_SHARE
+  const ideal = boxWidth / mediaAspect
+  return Math.min(
+    Math.max(ideal, availableHeight * MEDIA_SHARE_MIN),
+    availableHeight * MEDIA_SHARE_MAX,
+  )
 }
 
 /**

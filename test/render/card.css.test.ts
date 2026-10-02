@@ -7,6 +7,8 @@ import {
   statsFitScale,
   cardScale,
   mediaBoxHeight,
+  MEDIA_SHARE_MAX,
+  MEDIA_SHARE_MIN,
   CARD_ALPHA,
   STAT_ICON_EM,
   STORY_SAFE_PADDING_RATIO,
@@ -88,6 +90,60 @@ describe('mediaBoxHeight', () => {
   it('量測無效時回 0，不會把原圖的自然高度當成版面高度', () => {
     expect(mediaBoxHeight(0)).toBe(0)
     expect(mediaBoxHeight(-10)).toBe(0)
+  })
+
+  /*
+   * 固定份額對橫幅照片剛好，對直式影片是災難：9:16 的卡片在 390px 寬下圖框是
+   * 322×257，一支 9:16 的直式影片用 cover 填滿寬度之後是 322×572 —— 只有 45%
+   * 的高度看得到，中間一條橫帶，而且「圖片位置」只能在那條帶子裡上下移動。
+   * 實際被回報過。
+   *
+   * 下面這組數字就是那張卡片的真實量測值。
+   */
+  describe('圖框跟著媒體自己的比例', () => {
+    const AVAILABLE = 571   // 9:16 / 390px 寬 / 扣掉限動安全區之後的可用高度
+    const BOX_WIDTH = 322   // 面板內容寬度
+
+    it('橫幅媒體完整顯示 —— 框的比例就等於媒體的比例，cover 不裁任何東西', () => {
+      const h = mediaBoxHeight(AVAILABLE, BOX_WIDTH, 16 / 9)
+      expect(h).toBeCloseTo(BOX_WIDTH / (16 / 9), 5)
+      expect(BOX_WIDTH / h).toBeCloseTo(16 / 9, 5)
+    })
+
+    it('方形媒體也完整顯示', () => {
+      expect(mediaBoxHeight(AVAILABLE, BOX_WIDTH, 1)).toBeCloseTo(BOX_WIDTH, 5)
+    })
+
+    it('直式影片看得到的範圍明顯變多 —— 原本只有 45%', () => {
+      const fullHeight = BOX_WIDTH / (9 / 16)
+      const before = mediaBoxHeight(AVAILABLE) / fullHeight
+      const after = mediaBoxHeight(AVAILABLE, BOX_WIDTH, 9 / 16) / fullHeight
+      expect(before).toBeCloseTo(0.45, 2)
+      expect(after).toBeGreaterThan(before * 1.25)
+    })
+
+    /*
+     * 上限不只是「別讓圖太大」，它在保護文字：圖框每多一分，面板就少一分給
+     * 內文，而字級撞到下限之後就只能整張縮。實測一張「長內文＋父貼文＋直式
+     * 影片」的 9:16 卡片，上限 0.68 時內文掉到 5.8px（已經是下限），0.6 時
+     * 回到 7.0px；而真正常見的「短內文＋直式影片」從 16.1px 回到 19.5px。
+     */
+    it('方形媒體剛好還在上限內 —— 上限訂在這裡才不會讓它平白被裁', () => {
+      expect(BOX_WIDTH).toBeLessThanOrEqual(AVAILABLE * MEDIA_SHARE_MAX)
+    })
+
+    it('再直的媒體也不會把文字擠光', () => {
+      expect(mediaBoxHeight(AVAILABLE, BOX_WIDTH, 1 / 10)).toBeCloseTo(AVAILABLE * MEDIA_SHARE_MAX, 5)
+    })
+
+    it('再扁的媒體也還看得出是一張圖', () => {
+      expect(mediaBoxHeight(AVAILABLE, BOX_WIDTH, 10)).toBeCloseTo(AVAILABLE * MEDIA_SHARE_MIN, 5)
+    })
+
+    it('量不到比例時退回原本的固定份額 —— 還沒載入、或多張圖的格狀排版', () => {
+      expect(mediaBoxHeight(AVAILABLE, BOX_WIDTH, 0)).toBeCloseTo(AVAILABLE * 0.45, 5)
+      expect(mediaBoxHeight(AVAILABLE, 0, 9 / 16)).toBeCloseTo(AVAILABLE * 0.45, 5)
+    })
   })
 })
 

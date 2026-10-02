@@ -1,5 +1,5 @@
 import { Fragment } from 'preact'
-import { useLayoutEffect, useRef, useState } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { siX } from 'simple-icons'
 import type { Post, CardSettings, Segment, Media, MediaKind, Metric, QuotedPost, ParentPost } from '../types'
 import { generate, GRAIN_DATA_URI } from './backgrounds'
@@ -749,6 +749,29 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
    * 由量到的可用高度直接算成 px，才是確定值。
    */
   const [mediaHeight, setMediaHeight] = useState<number | undefined>(undefined)
+  /*
+   * 主圖自己的比例，用來決定圖框的形狀（見 mediaBoxHeight）。
+   *
+   * 只在單張時才量：多張是格狀排版，每一格的寬度不等於圖框寬度，用整組的比例
+   * 去算高度會算錯。量不到就是 0，mediaBoxHeight 會退回原本的固定份額。
+   *
+   * 從 dataUrl 另外載一次而不是去讀畫面上那個 <img>：data URL 不會再發出網路
+   * 請求，而且這樣不必為了量一個數字去碰渲染樹，也就不會把量測和排版綁成
+   * 一個會互相觸發的迴圈。
+   */
+  const [mediaAspect, setMediaAspect] = useState(0)
+  const soleMedia = post.media.length === 1 ? post.media[0].dataUrl : undefined
+  useEffect(() => {
+    setMediaAspect(0)
+    if (soleMedia === undefined) return
+    let alive = true
+    const probe = new Image()
+    probe.onload = () => {
+      if (alive && probe.naturalHeight > 0) setMediaAspect(probe.naturalWidth / probe.naturalHeight)
+    }
+    probe.src = soleMedia
+    return () => { alive = false }
+  }, [soleMedia])
   const ratio = ASPECT_VALUE[s.aspect]
   const paddingY = canvasPaddingYStyle(s.aspect, s.padding)
   /** 固定比例（非 auto 高度）。面板填滿與頁尾釘底都只在這個模式下成立。 */
@@ -813,7 +836,9 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
       const measuredPaddingY = canvasPaddingY(s.aspect, s.padding, width)
       const available = height - measuredPaddingY * 2
       setCanvasHeight(height)
-      setMediaHeight(mediaBoxHeight(available))
+      // 圖框的寬度由面板決定，和它自己的高度無關，所以這裡讀它不會形成迴圈。
+      const mediaEl = el.querySelector('[data-part="media"]') as HTMLElement | null
+      setMediaHeight(mediaBoxHeight(available, mediaEl?.clientWidth ?? 0, mediaAspect))
       const fit = panel ? fitPanelScale(available, panel.offsetHeight) : 1
       /*
        * 一次只往下收，收完等 ResizeObserver 量到新的面板高度再決定要不要再收。
@@ -837,7 +862,7 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
     ro.observe(el)
     if (panel) ro.observe(panel)
     return () => ro.disconnect()
-  }, [ratio, s.aspect, s.padding, constrainedMedia, settings, post])
+  }, [ratio, s.aspect, s.padding, constrainedMedia, mediaAspect, settings, post])
 
   /*
    * 統計列的自然寬度只能量，不能算。四個數字的長度、使用者的字級與留白都會變，
