@@ -284,18 +284,58 @@ function MediaGrid({
   constrained = false,
   focusY = 50,
   height,
+  videoUrl,
+  onPlay,
+  onVideoError,
 }: {
   media: Media[]
   owner: MediaOwner
   constrained?: boolean
   focusY?: number
   height?: number
+  /**
+   * 影片的同源 blob 網址。有值時影片就疊在封面上播。
+   *
+   * 封面那個 <img> 留著不動：它才是匯出時的結構與遮罩來源（見
+   * prepareComposition）。影片只是蓋在它上面的預覽層，光柵化時會被藏起來。
+   */
+  videoUrl?: string
+  /** 點影片格的反應。沒給就不是可點的 —— 引用與父貼文的圖不該有反應。 */
+  onPlay?: () => void
+  /** 影片播不動時的反應。通常是「退回封面」。 */
+  onVideoError?: () => void
 }) {
   // 同 Avatar：抓取失敗（無 dataUrl）的圖位直接隱藏，不可退回跨域網址
   const usable = media.filter((m) => m.dataUrl)
   if (usable.length === 0) return null
   // 多格時每一格只有一半寬，播放鍵跟著收斂，否則小格子會被它佔掉一大塊
   const badgeSize = usable.length > 1 ? 30 : 44
+  const playable = onPlay !== undefined && usable.length === 1 && usable[0].kind !== 'photo'
+  /* 影片疊在封面正上方，用同一組裁切參數，看到的就是匯出後會有的構圖。 */
+  const overlay = (m: Media) => videoUrl !== undefined && m.kind !== 'photo' ? (
+    <video
+      data-part="media-video"
+      src={videoUrl}
+      autoPlay
+      loop
+      muted
+      playsInline
+      onError={onVideoError}
+      style={{
+        position: 'absolute',
+        inset: 0,
+        // 蓋在播放鍵之上。播放鍵不拿掉是因為靜圖匯出用的是封面（會動的那一層
+        // 不進光柵化），而封面上那個標記是該有的 —— 拿掉的話，播過之後再存
+        // 一張圖，圖上就莫名其妙少了它。
+        zIndex: 3,
+        width: '100%',
+        height: '100%',
+        objectFit: 'cover',
+        objectPosition: `50% ${focusY}%`,
+        borderRadius: 12,
+      }}
+    />
+  ) : null
   return (
     <div
       data-part="media"
@@ -332,7 +372,9 @@ function MediaGrid({
             alignItems: 'center',
             justifyContent: 'center',
             background: 'transparent',
+            cursor: playable ? 'pointer' : undefined,
           }}
+          onClick={playable ? onPlay : undefined}
         >
           <img
             data-part="media-image"
@@ -353,10 +395,16 @@ function MediaGrid({
               borderRadius: 12,
             }}
           />
+          {overlay(m)}
           <MotionBadge kind={m.kind} size={badgeSize} />
         </div>
       ) : (
-        <div key={i} data-part="media-tile" style={{ position: 'relative', minWidth: 0 }}>
+        <div
+          key={i}
+          data-part="media-tile"
+          style={{ position: 'relative', minWidth: 0, cursor: playable ? 'pointer' : undefined }}
+          onClick={playable ? onPlay : undefined}
+        >
           <img
             data-part="media-image"
             data-owner={owner}
@@ -364,6 +412,7 @@ function MediaGrid({
             alt={m.alt}
             style={{ width: '100%', display: 'block' }}
           />
+          {overlay(m)}
           <MotionBadge kind={m.kind} size={badgeSize} />
         </div>
       ))}
@@ -688,7 +737,27 @@ function ThreadParent({ post, masked, scale, fontSize, accent, show, canvasWidth
   )
 }
 
-export function Card({ post, settings }: { post: Post; settings: CardSettings }) {
+export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
+  post: Post
+  settings: CardSettings
+  /**
+   * 影片的同源 blob 網址。有值時卡片裡的影片格就直接播 —— 使用者在按下
+   * 「存成影片」**之前**就看得到裁切與構圖對不對，不用等一分鐘才發現歪了。
+   *
+   * 只影響預覽：光柵化時這一層會被藏起來（見 export.ts 與 video.ts）。
+   */
+  videoUrl?: string
+  /** 點影片格的反應。通常是「去把影片抓下來」—— 不點就不下載。 */
+  onPlayVideo?: () => void
+  /**
+   * 影片播不動時的反應。
+   *
+   * 沒有這條路的話，解不開的裝置上使用者會看到一張靜止的封面、沒有播放鍵
+   * （它在影片層出現時就收起來了）、也沒有任何提示 —— 看起來像壞了，而且
+   * 不知道可以再點一次。
+   */
+  onVideoError?: () => void
+}) {
   const s = settings
   const accent = accentFrom(s.textColor)
   const panelBg = s.panelColor + Math.round(s.panelOpacity * 255).toString(16).padStart(2, '0')
@@ -1071,6 +1140,9 @@ export function Card({ post, settings }: { post: Post; settings: CardSettings })
             constrained={constrainedMedia}
             focusY={s.mediaFocusY}
             height={mediaHeight}
+            videoUrl={videoUrl}
+            onPlay={onPlayVideo}
+            onVideoError={onVideoError}
           />
         )}
 

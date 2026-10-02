@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import {
   buildFilename,
   cropTo,
+  excludeLivePreview,
   exportScale,
   exportLayoutHeight,
   exportPixelSize,
@@ -262,5 +263,36 @@ describe('exportPng 交給 modern-screenshot 的尺寸', () => {
     const opts = await capture(390, 693, '9:16')
     expect(opts.height).toBe(694)
     expect(Number.isInteger(opts.height)).toBe(true)
+  })
+})
+
+/*
+ * 卡片裡的影片格在預覽中會直接播，但那一層不該進到檔案裡：靜圖永遠用 X 給的
+ * 封面畫格，而不是使用者剛好停在的那一幀 —— 否則同一張卡片存兩次會得到兩張
+ * 不同的圖，而兩次之間他什麼都沒改。
+ */
+describe('excludeLivePreview', () => {
+  const el = (part?: string) => {
+    const node = document.createElement('div')
+    if (part) node.dataset.part = part
+    return node
+  }
+
+  it('排除預覽用的影片層', () => {
+    expect(excludeLivePreview(el('media-video'))).toBe(false)
+  })
+
+  it('封面那個 <img> 留著 —— 它才是匯出的結構與遮罩來源', () => {
+    expect(excludeLivePreview(el('media-image'))).toBe(true)
+  })
+
+  it('其他東西都留著', () => {
+    for (const part of ['body', 'panel', 'canvas', undefined]) {
+      expect(excludeLivePreview(el(part))).toBe(true)
+    }
+  })
+
+  it('文字節點留著，而且不會炸掉 —— filter 連文字一起餵進來', () => {
+    expect(excludeLivePreview(document.createTextNode('x'))).toBe(true)
   })
 })

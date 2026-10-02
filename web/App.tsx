@@ -151,6 +151,12 @@ function XFrameApp() {
   const [recording, setRecording] = useState(false)
   const [videoMode, setVideoMode] = useState<VideoExportMode | null>(null)
   const [videoFallbackReason, setVideoFallbackReason] = useState<string | null>(null)
+  /*
+   * 抓下來的影片。blobUrl 給卡片當預覽播放用，blob 本身留著給匯出重用 ——
+   * 同一支影片不該因為「先看過再存」就下載兩次。
+   */
+  const [videoBlobUrl, setVideoBlobUrl] = useState<string | null>(null)
+  const videoBlobRef = useRef<{ url: string; blob: Blob; source: string } | null>(null)
   const [videoProgress, setVideoProgress] = useState(0)
 
   const [exportErr, setExportErr] = useState<string | null>(null)
@@ -196,6 +202,24 @@ function XFrameApp() {
     setOutput(next)
   }
 
+  const releaseVideoBlob = () => {
+    if (videoBlobRef.current) URL.revokeObjectURL(videoBlobRef.current.url)
+    videoBlobRef.current = null
+    setVideoBlobUrl(null)
+  }
+
+  /** 影片的位元組。抓過就用抓過的那一份。 */
+  async function ensureVideoBlob(sourceUrl: string): Promise<Blob> {
+    const cached = videoBlobRef.current
+    if (cached && cached.source === sourceUrl) return cached.blob
+    releaseVideoBlob()
+    const blob = await fetchVideoBlob(sourceUrl)
+    const url = URL.createObjectURL(blob)
+    videoBlobRef.current = { url, blob, source: sourceUrl }
+    setVideoBlobUrl(url)
+    return blob
+  }
+
   const releaseOutput = () => {
     if (outputRef.current) URL.revokeObjectURL(outputRef.current.url)
     outputRef.current = null
@@ -210,7 +234,10 @@ function XFrameApp() {
     translationRevisionRef.current += 1
   }
 
-  useEffect(() => () => { if (outputRef.current) URL.revokeObjectURL(outputRef.current.url) }, [])
+  useEffect(() => () => {
+    if (outputRef.current) URL.revokeObjectURL(outputRef.current.url)
+    if (videoBlobRef.current) URL.revokeObjectURL(videoBlobRef.current.url)
+  }, [])
 
   useEffect(() => {
     if (status.phase !== 'ready' || !translationPlan?.hasForeignText) {
@@ -240,6 +267,9 @@ function XFrameApp() {
     const request = ++requestRef.current
     setStatus({ phase: 'loading' })
     releaseOutput()
+    // 換了推文才丟掉抓好的影片。改設定（patch）不丟 —— 調個留白就要重新
+    // 下載好幾 MB，那是在罰使用者試東西。
+    releaseVideoBlob()
     resetTranslationState()
     try {
       const tweet = await loadTweet(target.trim())
@@ -370,7 +400,7 @@ function XFrameApp() {
     setVideoMode(null)
     setVideoFallbackReason(null)
     try {
-      const blob = await exportVideo(node, await fetchVideoBlob(video.url), {
+      const blob = await exportVideo(node, await ensureVideoBlob(video.url), {
         focusY: settings.mediaFocusY,
         signal: controller.signal,
         onProgress: setVideoProgress,
@@ -438,6 +468,7 @@ function XFrameApp() {
             setUrl(e.currentTarget.value)
             setStatus({ phase: 'idle' })
             releaseOutput()
+            releaseVideoBlob()
             resetTranslationState()
             setExportErr(null)
           }}
@@ -460,7 +491,15 @@ function XFrameApp() {
           </div>
         )}
         {status.phase === 'ready' && displayedTweet && (
-          <Card post={displayedTweet} settings={settings} />
+          <Card
+            post={displayedTweet}
+            settings={settings}
+            videoUrl={videoBlobUrl ?? undefined}
+            onPlayVideo={videoMedia ? () => { void ensureVideoBlob(videoMedia.url) } : undefined}
+            /* 播不動就退回封面與播放鍵，讓它看起來還能再試一次。抓好的位元組
+               留著不丟 —— 匯出那條路用的是另一套解碼，不見得跟著失敗。 */
+            onVideoError={() => setVideoBlobUrl(null)}
+          />
         )}
         </div>
       </div>
@@ -530,6 +569,9 @@ function XFrameApp() {
 
       {output && status.phase === 'ready' && (
         <div class="result">
+          {/* 上面是預覽（可以繼續調），這裡是檔案。兩個長得像，不講清楚就會
+              分不出該對哪一個動作。 */}
+          <h2 class="result-head">成品{output.kind === 'video' ? '影片' : '圖片'}</h2>
           {output.kind === 'video'
             ? <video src={output.url} controls playsInline loop />
             : <img src={output.url} alt="產生的分享圖" />}

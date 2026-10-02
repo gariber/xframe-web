@@ -430,6 +430,71 @@ describe('固定比例的媒體填滿版面', () => {
     })
   })
 
+  /*
+   * 卡片裡的影片格在預覽中會直接播，使用者因此在按下「存成影片」之前就看得到
+   * 裁切與構圖對不對 —— 不用等一分鐘才發現歪了。那一層只屬於預覽：光柵化時
+   * 由 hideLivePreview 藏起來（在 export.ts 測）。
+   */
+  describe('影片可以在卡片裡播', () => {
+    const videoPost = () => {
+      const t = parseTweet(fx('media'), '2083061426923475451')!
+      return {
+        ...t,
+        media: t.media.map((m) => ({ ...m, kind: 'video' as const, dataUrl: 'data:image/png;base64,eA==' })),
+      }
+    }
+
+    it('沒給網址時只有封面與播放鍵', () => {
+      const el = mount(videoPost())
+      expect(el.querySelector('[data-part="media-video"]')).toBeNull()
+      expect(el.querySelector('[data-part="media-badge"]')).not.toBeNull()
+    })
+
+    it('給了網址就疊上影片，而且蓋在播放鍵之上', () => {
+      const host = document.createElement('div')
+      document.body.appendChild(host)
+      render(<Card post={videoPost()} settings={DEFAULT_SETTINGS} videoUrl="blob:x" />, host)
+      const video = host.querySelector('[data-part="media-video"]') as HTMLVideoElement
+      expect(video).not.toBeNull()
+      expect(video.getAttribute('src')).toBe('blob:x')
+      expect(Number(video.style.zIndex)).toBeGreaterThan(2)
+    })
+
+    /* 播放鍵與封面都留在原地：靜圖匯出排除的是會動的那一層，用的是封面 ——
+       播過之後再存一張圖，圖上不該莫名其妙少了那個標記。 */
+    it('播放時封面與播放鍵都還在 DOM 裡', () => {
+      const host = document.createElement('div')
+      document.body.appendChild(host)
+      render(<Card post={videoPost()} settings={DEFAULT_SETTINGS} videoUrl="blob:x" />, host)
+      expect(host.querySelector('[data-part="media-image"]')).not.toBeNull()
+      expect(host.querySelector('[data-part="media-badge"]')).not.toBeNull()
+    })
+
+    it('照片不會被當成可播的東西', () => {
+      const host = document.createElement('div')
+      document.body.appendChild(host)
+      const t = parseTweet(fx('media'), '2083061426923475451')!
+      const photo = { ...t, media: t.media.map((m) => ({ ...m, dataUrl: 'data:image/png;base64,eA==' })) }
+      render(<Card post={photo} settings={DEFAULT_SETTINGS} videoUrl="blob:x" />, host)
+      expect(host.querySelector('[data-part="media-video"]')).toBeNull()
+    })
+
+    it('引用與父貼文的圖不吃這個 —— 只有主貼文的影片會播', () => {
+      const t = parseTweet(fx('quoted-with-media'), '2082981910209540352')!
+      const host = document.createElement('div')
+      document.body.appendChild(host)
+      render(
+        <Card
+          post={{ ...t, quoted: { ...t.quoted!, media: t.quoted!.media.map((m) => ({ ...m, dataUrl: 'data:image/png;base64,eA==' })) } }}
+          settings={DEFAULT_SETTINGS}
+          videoUrl="blob:x"
+        />,
+        host,
+      )
+      expect(host.querySelector('[data-part="media-video"]')).toBeNull()
+    })
+  })
+
   describe('媒體格標著自己屬於誰', () => {
     const owners = (el: HTMLElement) =>
       [...el.querySelectorAll('[data-part="media-image"]')].map((n) => (n as HTMLElement).dataset.owner)

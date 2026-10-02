@@ -138,6 +138,24 @@ function canvasToPng(canvas: HTMLCanvasElement): Promise<Blob> {
 }
 
 /**
+ * 「只存在於預覽的那一層」不進光柵化。回傳 false 表示整個排除。
+ *
+ * 卡片裡的影片格在預覽中會直接播（讓使用者在匯出前就看得到裁切對不對），
+ * 但那一層不該進到檔案裡：靜圖永遠用 X 給的封面畫格，而不是使用者剛好停在
+ * 的那一幀 —— 否則同一張卡片存兩次會得到兩張不同的圖，而兩次之間他什麼都
+ * 沒改。影片匯出那條路也一樣排除，它要的是乾淨的底板（見 video.ts）。
+ *
+ * 用 `filter` 而不是在 `onCloneEachNode` 裡把它設成 display:none。
+ * modern-screenshot 碰到 <video> 不是單純複製節點：它把當下那一幀畫進 canvas、
+ * 再換成一個 <img>，`data-part` 在那個過程中就沒了，所以 onCloneEachNode 拿到
+ * 的節點永遠比對不到 —— 實測匯出的圖有 46% 的像素是影片的畫面，而不是封面。
+ * `filter` 是在複製**之前**對原始節點做的，認得到，也順便省下那趟影格快照。
+ */
+export function excludeLivePreview(node: Node): boolean {
+  return (node as HTMLElement).dataset?.part !== 'media-video'
+}
+
+/**
  * 一次算好光柵化要用的全部尺寸。
  *
  * 靜圖與影片共用同一份，這樣影片的底板跟「存成圖片」的結果會是逐像素一致的
@@ -193,6 +211,7 @@ export async function exportPng(node: HTMLElement): Promise<Blob> {
     // 見 rasterLayoutHeight：分數高度會讓 SVG 內在尺寸四捨五入時裁掉內容，
     // 在圖的最下緣留一條全透明的列。
     height: geom.rasterHeight,
+    filter: excludeLivePreview,
   })
   // min 是保險：光柵化結果一定不小於目標，但浮點若讓它少一個像素，寧可原樣
   // 輸出也不要把裁切放大成一條真的空白邊。

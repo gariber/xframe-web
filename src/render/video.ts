@@ -1,5 +1,5 @@
 import { domToCanvas } from 'modern-screenshot'
-import { cropTo, exportGeometry } from './export'
+import { cropTo, excludeLivePreview, exportGeometry } from './export'
 
 /**
  * 錄製的容器由前往後試。能拿到 MP4 就不要 WebM —— iOS 的相簿存不進 WebM，
@@ -122,6 +122,9 @@ export async function prepareComposition(
       font: false,
       width: geom.layoutWidth,
       height: geom.rasterHeight,
+      // 預覽裡那一層會動的影片不進底板：底板要的是乾淨的封面，影片由
+      // compositor 逐幀畫上去。
+      filter: excludeLivePreview,
       onCloneEachNode: (cloned: Node) => {
         const el = cloned as HTMLElement
         if (!el.style) return
