@@ -216,6 +216,32 @@ export function mediaBoxHeight(
 }
 
 /**
+ * 影片與 GIF 的圖框：整支放進去，不裁切。
+ *
+ * 照片可以裁：裁掉的那一塊是靜止的，「圖片位置」挑一次就定了。影片不行 ——
+ * 主體會在畫面裡移動，這一秒在上面、下一秒在下面，挑哪個位置都會在某些時候
+ * 切掉它。X 自己也是整支呈現的。實際被回報過：9:16 的卡片配一支直式影片，
+ * 圖框是滿寬，影片被 cover 裁掉一大截，把「圖片位置」拉到底也看不全。
+ *
+ * 所以圖框的比例就是影片的比例，高度與照片共用同一個上限（那個上限是在保護
+ * 文字，對影片一樣成立）。直式影片因此比面板窄、置中擺放 —— 寧可小一點，
+ * 也要是完整的。
+ *
+ * 量不到比例時回 null，交給 mediaBoxHeight 先用固定份額頂著。
+ */
+export function wholeMediaBox(
+  availableHeight: number,
+  boxWidth: number,
+  mediaAspect: number,
+): { width: number; height: number } | null {
+  if (availableHeight <= 0 || boxWidth <= 0 || mediaAspect <= 0) return null
+  // 高度取整數、而且往下取：圖框高度在版面上就是整數 px，寬度再由它乘回去，
+  // 比例才剛好。四捨五入會讓很扁的影片多出一兩 px，比面板還寬而被切掉邊。
+  const height = Math.floor(Math.min(boxWidth / mediaAspect, availableHeight * MEDIA_SHARE_MAX))
+  return height > 0 ? { width: height * mediaAspect, height } : null
+}
+
+/**
  * IG 限動編輯器會在畫面上、下疊放返回／文字工具與說明文字控制列。9:16 的
  * 畫布本身仍是精確 1080×1920，只把內容安全區往內收；使用者若主動把留白拉得
  * 更大，仍尊重其設定。安全區使用畫布寬度的 15.625%，因此不論手機或桌面

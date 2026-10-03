@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { render } from 'preact'
-import { Card, DEFAULT_SETTINGS, weightedLength, fitFontSize } from '../../src/render/Card'
+import { Card, DEFAULT_SETTINGS, weightedLength, fitFontSize, wholeMediaOf } from '../../src/render/Card'
 import { parseTweet } from '../../src/parse/microdata'
 import { CARD_ALPHA } from '../../src/render/card.css'
 import { readFileSync } from 'node:fs'
@@ -515,6 +515,53 @@ describe('固定比例的媒體填滿版面', () => {
       const withData = (m: Post['media']) => m.map((x) => ({ ...x, dataUrl: 'data:image/png;base64,eA==' }))
       const el = mount({ ...t, replyTo: { ...t.replyTo!, media: withData(t.replyTo!.media) } })
       expect(owners(el)).toEqual(['parent'])
+    })
+
+    /* 量圖框寬度時要指名主貼文那一組。被回覆的貼文排在它前面，也可能有圖，
+       而那一組縮在對話串的欄位裡、比較窄 —— 不指名的話先撿到的是它。 */
+    it('外框也標著，而且被回覆的那一組排在前面', () => {
+      const t = parseTweet(fx('inline-store-reply'), '2104313777013526880')!
+      const withData = (m: Post['media']) => m.map((x) => ({ ...x, dataUrl: 'data:image/png;base64,eA==' }))
+      const el = mount({
+        ...t,
+        media: mediaTweet().media,
+        replyTo: { ...t.replyTo!, media: withData(t.replyTo!.media) },
+      })
+      const grids = [...el.querySelectorAll('[data-part="media"]')].map((n) => (n as HTMLElement).dataset.owner)
+      expect(grids).toEqual(['parent', 'main'])
+    })
+  })
+
+  /*
+   * 影片的主體會在畫面裡移動，裁掉哪一塊都會在某些時候切到它，所以單支影片
+   * 與 GIF 整支呈現（圖框的尺寸在 card.css.ts 的 wholeMediaBox 測）。這裡測的
+   * 是「哪些情況算」—— 編輯介面也靠它決定要不要收起「圖片位置」。
+   */
+  describe('整支呈現的媒體', () => {
+    const item = (kind: Post['media'][number]['kind'], drawable = true) => ({
+      url: 'https://pbs.twimg.com/media/x.jpg',
+      alt: '',
+      kind,
+      dataUrl: drawable ? 'data:image/png;base64,eA==' : undefined,
+    })
+
+    it('單支影片或 GIF', () => {
+      expect(wholeMediaOf([item('video')])?.kind).toBe('video')
+      expect(wholeMediaOf([item('gif')])?.kind).toBe('gif')
+    })
+
+    it('照片不算 —— 照片照樣由「圖片位置」決定裁哪裡', () => {
+      expect(wholeMediaOf([item('photo')])).toBeNull()
+    })
+
+    it('多格不算 —— 格狀排版裡每一格的形狀由格子決定', () => {
+      expect(wholeMediaOf([item('video'), item('photo')])).toBeNull()
+      expect(wholeMediaOf([item('video'), item('video')])).toBeNull()
+    })
+
+    it('只看畫得出來的那幾格，跟排版看的是同一份', () => {
+      expect(wholeMediaOf([item('video'), item('photo', false)])?.kind).toBe('video')
+      expect(wholeMediaOf([item('video', false)])).toBeNull()
     })
   })
 

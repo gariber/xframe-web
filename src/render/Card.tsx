@@ -15,6 +15,7 @@ import {
   CARD_ALPHA,
   STAT_ICON_EM,
   mediaBoxHeight,
+  wholeMediaBox,
 } from './card.css'
 import { METRIC_META, X_CARD_METRIC_ORDER } from './metrics'
 import { translatedLabel, GROK_LOGO_PATH, GROK_LOGO_VIEWBOX } from './translated'
@@ -278,12 +279,26 @@ function MotionBadge({ kind, size }: { kind: MediaKind; size: number }) {
  */
 type MediaOwner = 'main' | 'quoted' | 'parent'
 
+/**
+ * 要整支呈現、不能裁切的那一格：單獨一支影片或 GIF。
+ *
+ * 只看真的畫得出來的那幾格（有 dataUrl 的），跟 MediaGrid 排版用的是同一份。
+ * 多格時不算 —— 格狀排版裡每一格的形狀由格子決定，那裡本來就是縮圖。
+ *
+ * 編輯介面也用它：這種時候「圖片位置」沒有東西可以調，那根滑桿要收起來。
+ */
+export function wholeMediaOf(media: Media[]): Media | null {
+  const usable = media.filter((m) => m.dataUrl)
+  return usable.length === 1 && usable[0].kind !== 'photo' ? usable[0] : null
+}
+
 function MediaGrid({
   media,
   owner,
   constrained = false,
   focusY = 50,
   height,
+  aspect,
   videoUrl,
   onPlay,
   onVideoError,
@@ -293,6 +308,11 @@ function MediaGrid({
   constrained?: boolean
   focusY?: number
   height?: number
+  /**
+   * 整支呈現時的媒體比例（見 wholeMediaBox）。有值時那一格的寬度由高度與這個
+   * 比例算出、置中擺放，框的形狀就等於媒體的形狀，cover 裁不掉任何東西。
+   */
+  aspect?: number
   /**
    * 影片的同源 blob 網址。有值時影片就疊在封面上播。
    *
@@ -311,6 +331,9 @@ function MediaGrid({
   // 多格時每一格只有一半寬，播放鍵跟著收斂，否則小格子會被它佔掉一大塊
   const badgeSize = usable.length > 1 ? 30 : 44
   const playable = onPlay !== undefined && usable.length === 1 && usable[0].kind !== 'photo'
+  const tileWidth = constrained && usable.length === 1 && aspect && height
+    ? Math.round(height) * aspect
+    : undefined
   /* 影片疊在封面正上方，用同一組裁切參數，看到的就是匯出後會有的構圖。 */
   const overlay = (m: Media) => videoUrl !== undefined && m.kind !== 'photo' ? (
     <video
@@ -339,6 +362,7 @@ function MediaGrid({
   return (
     <div
       data-part="media"
+      data-owner={owner}
       style={{
         display: 'grid',
         gridTemplateColumns: usable.length > 1 ? '1fr 1fr' : '1fr',
@@ -373,6 +397,8 @@ function MediaGrid({
             justifyContent: 'center',
             background: 'transparent',
             cursor: playable ? 'pointer' : undefined,
+            width: tileWidth !== undefined ? `${tileWidth}px` : undefined,
+            justifySelf: tileWidth !== undefined ? 'center' : undefined,
           }}
           onClick={playable ? onPlay : undefined}
         >
@@ -829,7 +855,9 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
    * 一個會互相觸發的迴圈。
    */
   const [mediaAspect, setMediaAspect] = useState(0)
-  const soleMedia = post.media.length === 1 ? post.media[0].dataUrl : undefined
+  // 跟 MediaGrid 看同一份：它只排得出有 dataUrl 的那幾格
+  const usableMedia = post.media.filter((m) => m.dataUrl)
+  const soleMedia = usableMedia.length === 1 ? usableMedia[0].dataUrl : undefined
   useEffect(() => {
     setMediaAspect(0)
     if (soleMedia === undefined) return
@@ -850,6 +878,8 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
   const constrainedMedia = ratio !== undefined &&
     s.show.media &&
     post.media.some((media) => Boolean(media.dataUrl))
+  /** 單支影片或 GIF：圖框照它自己的比例，整支呈現（見 wholeMediaBox）。 */
+  const wholeMedia = constrainedMedia && wholeMediaOf(post.media) !== null
   // 標誌、頭像、footer 小字與區塊間距一律由這裡推導，卡片內不再出現寫死的 px。
   const scale = cardScale(fontSize, constrainedMedia)
   const [canvasHeight, setCanvasHeight] = useState<number | undefined>(undefined)
@@ -905,9 +935,17 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
       const measuredPaddingY = canvasPaddingY(s.aspect, s.padding, width)
       const available = height - measuredPaddingY * 2
       setCanvasHeight(height)
-      // 圖框的寬度由面板決定，和它自己的高度無關，所以這裡讀它不會形成迴圈。
-      const mediaEl = el.querySelector('[data-part="media"]') as HTMLElement | null
-      setMediaHeight(mediaBoxHeight(available, mediaEl?.clientWidth ?? 0, mediaAspect))
+      /*
+       * 圖框的寬度由面板決定，和它自己的高度無關，所以這裡讀它不會形成迴圈。
+       * 整支呈現時變窄的是裡面那一格，外框照樣滿寬，讀到的仍是面板寬度。
+       *
+       * 指名主貼文的那一個：被回覆的貼文排在它前面，也可能有圖，而那一組縮在
+       * 對話串的欄位裡、比較窄 —— 只寫 [data-part="media"] 會先撿到它。
+       */
+      const mediaEl = el.querySelector('[data-part="media"][data-owner="main"]') as HTMLElement | null
+      const boxWidth = mediaEl?.clientWidth ?? 0
+      const whole = wholeMedia ? wholeMediaBox(available, boxWidth, mediaAspect) : null
+      setMediaHeight(whole?.height ?? mediaBoxHeight(available, boxWidth, mediaAspect))
       const fit = panel ? fitPanelScale(available, panel.offsetHeight) : 1
       /*
        * 一次只往下收，收完等 ResizeObserver 量到新的面板高度再決定要不要再收。
@@ -931,7 +969,7 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
     ro.observe(el)
     if (panel) ro.observe(panel)
     return () => ro.disconnect()
-  }, [ratio, s.aspect, s.padding, constrainedMedia, mediaAspect, settings, post])
+  }, [ratio, s.aspect, s.padding, constrainedMedia, wholeMedia, mediaAspect, settings, post])
 
   /*
    * 統計列的自然寬度只能量，不能算。四個數字的長度、使用者的字級與留白都會變，
@@ -1140,6 +1178,7 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
             constrained={constrainedMedia}
             focusY={s.mediaFocusY}
             height={mediaHeight}
+            aspect={wholeMedia && mediaAspect > 0 ? mediaAspect : undefined}
             videoUrl={videoUrl}
             onPlay={onPlayVideo}
             onVideoError={onVideoError}

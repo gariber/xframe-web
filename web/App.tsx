@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { CardSettings, Post, TranslatedFrom } from '../src/types'
-import { Card, DEFAULT_SETTINGS } from '../src/render/Card'
+import { Card, DEFAULT_SETTINGS, wholeMediaOf } from '../src/render/Card'
 import { PRESETS, generate, randomPreset } from '../src/render/backgrounds'
 import { exportPng, buildFilename, downloadBlob, EXPORT_WIDTH } from '../src/render/export'
 import { buildVideoFilename, canRecordVideo, exportVideo, type VideoExportMode } from '../src/render/video'
@@ -569,17 +569,31 @@ function XFrameApp() {
 
       {output && status.phase === 'ready' && (
         <div class="result">
-          {/* 上面是預覽（可以繼續調），這裡是檔案。兩個長得像，不講清楚就會
-              分不出該對哪一個動作。 */}
-          <h2 class="result-head">成品{output.kind === 'video' ? '影片' : '圖片'}</h2>
-          {output.kind === 'video'
-            ? <video src={output.url} controls playsInline loop />
-            : <img src={output.url} alt="產生的分享圖" />}
-          <p>
-            {shareSupported
-              ? '可直接分享，或長按加入照片。'
-              : '可下載；在 iPhone 上也能長按加入照片。'}
-          </p>
+          {output.kind === 'video' ? (
+            /*
+             * 影片不另外放一支播放器。卡片本身就在播這支影片，底下再擺一支長得
+             * 一樣的，畫面上就是上下兩張「會動的卡片」—— 實際被回報過，看不出
+             * 該對哪一個動作。檔案好了說一聲、給動作就夠。
+             *
+             * 圖片不一樣：iPhone 上存圖靠的是長按那張 <img>，拿掉就存不了。
+             */
+            <p class="result-note">
+              <strong>影片好了。</strong>
+              {shareSupported ? '按「分享」可以存進相簿，或直接傳出去。' : '按「下載」存成檔案。'}
+            </p>
+          ) : (
+            <>
+              {/* 上面是預覽（可以繼續調），這裡是檔案。兩個長得像，不講清楚就會
+                  分不出該對哪一個動作。 */}
+              <h2 class="result-head">成品圖片</h2>
+              <img src={output.url} alt="產生的分享圖" />
+              <p>
+                {shareSupported
+                  ? '可直接分享，或長按加入照片。'
+                  : '可下載；在 iPhone 上也能長按加入照片。'}
+              </p>
+            </>
+          )}
           <div class="result-actions">
             <button type="button"
               onClick={() => displayedTweet && downloadBlob(output.blob, outputName(output, displayedTweet))}>下載</button>
@@ -654,9 +668,11 @@ function XFrameApp() {
           </label>
           {/*
             只有固定比例且真的有圖時才出現：auto 高度不裁切圖片，這根滑桿在那裡
-            動了也不會有任何變化，擺著只會讓人以為壞了。
+            動了也不會有任何變化，擺著只會讓人以為壞了。單支影片同理 —— 它整支
+            呈現、沒有被裁掉的部分，也就沒有位置可以調。
           */}
-          {settings.aspect !== 'auto' && displayedTweet?.media.some((m) => m.dataUrl) && (
+          {settings.aspect !== 'auto' && displayedTweet?.media.some((m) => m.dataUrl)
+            && wholeMediaOf(displayedTweet.media) === null && (
             <label>圖片位置
               <input
                 type="range"

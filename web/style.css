@@ -34,8 +34,10 @@ h1 { font-size: 1.1rem; margin: 0 0 1rem; }
 .result { margin-bottom: 1rem; }
 /* 預覽與成品長得像，標題是用來分辨「哪一個是檔案」的 */
 .result-head { font-size: .9rem; font-weight: 600; margin: 0 0 .5rem; }
-.result img, .result video { width: 100%; display: block; border-radius: var(--radius); background: #000; }
+.result img { width: 100%; display: block; border-radius: var(--radius); background: #000; }
 .result p { font-size: .85rem; color: var(--ink-soft); margin: .5rem 0 0; }
+.result .result-note { margin: 0; }
+.result-note strong { color: var(--ink); font-weight: 600; }
 .result-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; margin-top: .75rem; }
 .result-actions > :only-child { grid-column: 1 / -1; }
 .result-actions button { width: 100%; }

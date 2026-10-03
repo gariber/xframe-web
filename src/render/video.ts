@@ -91,11 +91,60 @@ export function opaqueBounds(
 
 export type Rect = { x: number; y: number; width: number; height: number }
 
-/** 卡片光柵化之後的三樣東西：底板、遮罩、遮罩的範圍。兩條匯出路線共用。 */
+/**
+ * 影片框真正的邊，精確到小數。
+ *
+ * opaqueBounds 把反鋸齒的半透明邊緣也算進去 —— 要蓋掉的範圍確實到那裡為止。
+ * 但拿它去決定影片要放多大就差了一點：邊緣各多算零點幾到一格，寬與高多出來
+ * 的比例不一樣，寬高比就被拉偏，cover 於是在另一個方向裁掉幾個像素。實測
+ * 9:16 卡片裡一支 9:16 的影片，框量成 534×944，影片上緣被裁掉 5px —— 圖框
+ * 明明已經是影片自己的比例了。
+ *
+ * 邊緣那一格的 alpha 就是它被蓋住的比例。沿著中線從兩端往內走，把蓋不滿的
+ * 部分扣掉，剩下的就是圖框真正的邊。取中線是因為圓角只影響四個角。
+ *
+ * 量不出合理結果時（例如整條中線都是半透明的）原樣回傳 box。
+ */
+export function coverageFrame(
+  data: Uint8ClampedArray,
+  width: number,
+  box: Rect,
+): Rect {
+  const alpha = (x: number, y: number) => data[(y * width + x) * 4 + 3] / 255
+  const midX = box.x + Math.floor(box.width / 2)
+  const midY = box.y + Math.floor(box.height / 2)
+  const shortfall = (count: number, at: (i: number) => number) => {
+    let missing = 0
+    for (let i = 0; i < count; i++) {
+      const a = at(i)
+      if (a >= 1) return missing
+      missing += 1 - a
+    }
+    return Infinity
+  }
+  const left = shortfall(box.width, (i) => alpha(box.x + i, midY))
+  const right = shortfall(box.width, (i) => alpha(box.x + box.width - 1 - i, midY))
+  const top = shortfall(box.height, (i) => alpha(midX, box.y + i))
+  const bottom = shortfall(box.height, (i) => alpha(midX, box.y + box.height - 1 - i))
+  const frame = {
+    x: box.x + left,
+    y: box.y + top,
+    width: box.width - left - right,
+    height: box.height - top - bottom,
+  }
+  return Number.isFinite(frame.width) && Number.isFinite(frame.height) && frame.width > 0 && frame.height > 0
+    ? frame
+    : box
+}
+
+/** 卡片光柵化之後的東西：底板、遮罩、遮罩的範圍。兩條匯出路線共用。 */
 export type Composition = {
   plate: HTMLCanvasElement
   mask: HTMLCanvasElement
+  /** 要重畫的範圍：遮罩上所有有東西的像素，含反鋸齒的邊。 */
   box: Rect
+  /** 影片要填進去的框：圖框真正的邊（見 coverageFrame）。 */
+  frame: Rect
 }
 
 /**
@@ -149,9 +198,10 @@ export async function prepareComposition(
 
   const maskCtx = mask.getContext('2d')
   if (maskCtx === null) throw new Error('取不到繪圖環境')
-  const box = opaqueBounds(maskCtx.getImageData(0, 0, mask.width, mask.height).data, mask.width, mask.height)
+  const pixels = maskCtx.getImageData(0, 0, mask.width, mask.height).data
+  const box = opaqueBounds(pixels, mask.width, mask.height)
   if (box === null) throw new Error('卡片上找不到影片框')
-  return { plate, mask, box }
+  return { plate, mask, box, frame: coverageFrame(pixels, mask.width, box) }
 }
 
 export type Compositor = {
@@ -177,7 +227,7 @@ export type Compositor = {
  * 代價是顆粒層在影片那一格上沒有了（它原本疊在所有東西之上）。在會動的畫面
  * 上看不出來，而要保住它得每一幀多做一次全畫面的 overlay 混色。
  */
-export function createCompositor({ plate, mask, box }: Composition, focusY: number): Compositor {
+export function createCompositor({ plate, mask, box, frame }: Composition, focusY: number): Compositor {
   const canvas = document.createElement('canvas')
   canvas.width = plate.width
   canvas.height = plate.height
@@ -196,7 +246,7 @@ export function createCompositor({ plate, mask, box }: Composition, focusY: numb
   return {
     canvas,
     draw(source, paint) {
-      const fit = coverRect(box, source, focusY)
+      const fit = coverRect(frame, source, focusY)
       patchCtx.clearRect(0, 0, box.width, box.height)
       patchCtx.globalCompositeOperation = 'source-over'
       paint(patchCtx, fit.x - box.x, fit.y - box.y, fit.width, fit.height)

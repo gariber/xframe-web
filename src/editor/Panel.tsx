@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { CardSettings, Post } from '../types'
-import { Card, DEFAULT_SETTINGS } from '../render/Card'
+import { Card, DEFAULT_SETTINGS, wholeMediaOf } from '../render/Card'
 import { PRESETS, generate, randomPreset } from '../render/backgrounds'
 import { exportPng, buildFilename, downloadBlob, exportWidthBelowTarget, EXPORT_WIDTH } from '../render/export'
 import { loadSettings, saveSettings } from './store'
@@ -499,10 +499,12 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
           {/*
             固定比例會把圖片裁成圖框的比例，捨棄哪一部分要由使用者決定——照片主體
             常在上半部，預設偏上只是個好猜測，不是答案。auto 高度不裁切，這根滑桿
-            在那裡動了也不會有變化，所以只在固定比例且真的有圖時出現。
+            在那裡動了也不會有變化，所以只在固定比例且真的有圖時出現。單支影片
+            整支呈現、沒有被裁掉的部分，同樣收起來。
           */}
           {settings.aspect !== 'auto' && status.phase === 'ready'
-            && status.tweet.media.some((m) => m.dataUrl) && (
+            && status.tweet.media.some((m) => m.dataUrl)
+            && wholeMediaOf(status.tweet.media) === null && (
             <label>圖片位置
               <input type="range" min={0} max={100} value={settings.mediaFocusY}
                 onInput={(e) => patch({ mediaFocusY: +e.currentTarget.value })} />

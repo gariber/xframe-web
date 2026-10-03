@@ -7,6 +7,7 @@ import {
   statsFitScale,
   cardScale,
   mediaBoxHeight,
+  wholeMediaBox,
   MEDIA_SHARE_MAX,
   MEDIA_SHARE_MIN,
   CARD_ALPHA,
@@ -144,6 +145,65 @@ describe('mediaBoxHeight', () => {
       expect(mediaBoxHeight(AVAILABLE, BOX_WIDTH, 0)).toBeCloseTo(AVAILABLE * 0.45, 5)
       expect(mediaBoxHeight(AVAILABLE, 0, 9 / 16)).toBeCloseTo(AVAILABLE * 0.45, 5)
     })
+  })
+})
+
+/*
+ * 影片的主體會在畫面裡移動，裁掉哪一塊都會在某些時候切到它，所以影片與 GIF
+ * 不走 cover：圖框照影片自己的比例，整支放進去。實際被回報過 —— 9:16 的卡片
+ * 配一支直式影片，滿寬的圖框把影片裁掉一大截，「圖片位置」拉到底也看不全。
+ */
+describe('wholeMediaBox', () => {
+  const AVAILABLE = 571   // 同上：9:16 / 390px 寬的真實量測值
+  const BOX_WIDTH = 322
+
+  it('直式影片整支放進去 —— 框的比例就是影片的比例', () => {
+    const box = wholeMediaBox(AVAILABLE, BOX_WIDTH, 9 / 16)!
+    expect(box.width / box.height).toBeCloseTo(9 / 16, 5)
+  })
+
+  it('直式影片比面板窄，高度跟照片共用同一個上限 —— 那個上限是在保護文字', () => {
+    const box = wholeMediaBox(AVAILABLE, BOX_WIDTH, 9 / 16)!
+    expect(box.height).toBeLessThanOrEqual(AVAILABLE * MEDIA_SHARE_MAX)
+    expect(box.height).toBeGreaterThan(AVAILABLE * MEDIA_SHARE_MAX - 1)
+    expect(box.width).toBeLessThan(BOX_WIDTH)
+  })
+
+  it('橫幅影片滿寬（差不到 1px 的高度）', () => {
+    const box = wholeMediaBox(AVAILABLE, BOX_WIDTH, 16 / 9)!
+    expect(box.width).toBeLessThanOrEqual(BOX_WIDTH)
+    expect(box.width).toBeGreaterThan(BOX_WIDTH - 16 / 9)
+  })
+
+  it('很扁的影片不會被撐高 —— 照片的下限是用 cover 裁出來的，影片不能這樣', () => {
+    const box = wholeMediaBox(AVAILABLE, BOX_WIDTH, 10)!
+    expect(box.width).toBeLessThanOrEqual(BOX_WIDTH)
+    expect(box.width).toBeGreaterThan(BOX_WIDTH - 10)
+    expect(mediaBoxHeight(AVAILABLE, BOX_WIDTH, 10)).toBeGreaterThan(box.height)
+  })
+
+  /* 圖框高度在版面上是整數 px，寬度由它乘回比例。高度若四捨五入，很扁的影片
+     會多出一兩 px、比面板寬而被切掉邊 —— 實測 1280×300 的影片在 288px 寬的
+     面板裡排成 290px。 */
+  it('高度是整數，而且不會因為進位讓寬度超出面板', () => {
+    const box = wholeMediaBox(571, 288, 1280 / 300)!
+    expect(Number.isInteger(box.height)).toBe(true)
+    expect(box.width).toBeLessThanOrEqual(288)
+  })
+
+  it('任何比例都不比面板寬、不超過上限，而且形狀不變', () => {
+    for (const aspect of [0.1, 9 / 16, 3 / 4, 1, 4 / 3, 16 / 9, 3, 10]) {
+      const box = wholeMediaBox(AVAILABLE, BOX_WIDTH, aspect)!
+      expect(box.width).toBeLessThanOrEqual(BOX_WIDTH + 1e-9)
+      expect(box.height).toBeLessThanOrEqual(AVAILABLE * MEDIA_SHARE_MAX + 1e-9)
+      expect(box.width / box.height).toBeCloseTo(aspect, 5)
+    }
+  })
+
+  it('量不到時回 null，交給固定份額先頂著', () => {
+    expect(wholeMediaBox(AVAILABLE, BOX_WIDTH, 0)).toBeNull()
+    expect(wholeMediaBox(AVAILABLE, 0, 9 / 16)).toBeNull()
+    expect(wholeMediaBox(0, BOX_WIDTH, 9 / 16)).toBeNull()
   })
 })
 

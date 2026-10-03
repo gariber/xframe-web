@@ -4,6 +4,7 @@ import {
   VIDEO_FPS,
   buildVideoFilename,
   coverRect,
+  coverageFrame,
   opaqueBounds,
   pickContainer,
 } from '../../src/render/video'
@@ -124,6 +125,59 @@ describe('opaqueBounds', () => {
 
   it('滿版時就是整張', () => {
     expect(opaqueBounds(plate(6, 4, () => 255), 6, 4)).toEqual({ x: 0, y: 0, width: 6, height: 4 })
+  })
+})
+
+/*
+ * opaqueBounds 把反鋸齒的半透明邊也算進去；拿它決定影片要放多大，寬高比會被
+ * 拉偏，cover 就在另一個方向裁掉幾個像素。實測 9:16 卡片裡一支 9:16 的影片，
+ * 上緣被裁掉 5px —— 圖框明明已經是影片自己的比例。
+ */
+describe('coverageFrame', () => {
+  /** 一個實心矩形，四邊各有一格給定 alpha 的反鋸齒邊。 */
+  const framed = (width: number, height: number, inner: { x: number; y: number; w: number; h: number }, edge: number) => {
+    const data = new Uint8ClampedArray(width * height * 4)
+    for (let y = inner.y - 1; y <= inner.y + inner.h; y++) {
+      for (let x = inner.x - 1; x <= inner.x + inner.w; x++) {
+        const inside = x >= inner.x && x < inner.x + inner.w && y >= inner.y && y < inner.y + inner.h
+        data[(y * width + x) * 4 + 3] = inside ? 255 : edge
+      }
+    }
+    return data
+  }
+
+  it('扣掉半透明的邊，量出圖框真正的邊', () => {
+    const data = framed(40, 60, { x: 10, y: 10, w: 18, h: 32 }, 128)
+    const box = opaqueBounds(data, 40, 60)!
+    expect(box).toEqual({ x: 9, y: 9, width: 20, height: 34 })
+    const frame = coverageFrame(data, 40, box)
+    expect(frame.x).toBeCloseTo(9 + (1 - 128 / 255), 5)
+    expect(frame.width).toBeCloseTo(18 + 2 * (128 / 255), 5)
+    expect(frame.height).toBeCloseTo(32 + 2 * (128 / 255), 5)
+  })
+
+  it('比例因此回到圖框自己的比例 —— 這正是 cover 不再多裁的原因', () => {
+    const data = framed(60, 100, { x: 10, y: 10, w: 36, h: 64 }, 1)
+    const box = opaqueBounds(data, 60, 100)!
+    const frame = coverageFrame(data, 60, box)
+    expect(box.width / box.height).not.toBeCloseTo(36 / 64, 2)
+    expect(frame.width / frame.height).toBeCloseTo(36 / 64, 2)
+    const fit = coverRect(frame, { width: 360, height: 640 }, 0)
+    expect(fit.height - frame.height).toBeLessThan(0.5)
+    expect(fit.width - frame.width).toBeLessThan(0.5)
+  })
+
+  it('沒有反鋸齒時就是原本的範圍', () => {
+    const data = framed(20, 20, { x: 5, y: 5, w: 8, h: 8 }, 0)
+    const box = opaqueBounds(data, 20, 20)!
+    expect(coverageFrame(data, 20, box)).toEqual(box)
+  })
+
+  it('整條中線都是半透明時量不出邊，原樣回傳', () => {
+    const data = new Uint8ClampedArray(10 * 10 * 4)
+    for (let i = 3; i < data.length; i += 4) data[i] = 100
+    const box = opaqueBounds(data, 10, 10)!
+    expect(coverageFrame(data, 10, box)).toEqual(box)
   })
 })
 
