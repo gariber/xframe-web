@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { CardSettings, Post, TranslatedFrom } from '../src/types'
-import { Card, DEFAULT_SETTINGS, wholeMediaOf } from '../src/render/Card'
+import { Card, DEFAULT_SETTINGS, cardMedia, mixesPhotosAndVideo, wholeMediaOf } from '../src/render/Card'
 import { PRESETS, generate, randomPreset } from '../src/render/backgrounds'
 import { exportPng, buildFilename, downloadBlob, EXPORT_WIDTH } from '../src/render/export'
 import { buildVideoFilename, canRecordVideo, exportVideo, type VideoExportMode } from '../src/render/video'
@@ -52,9 +52,13 @@ function outputName(output: Output, post: Post): string {
   return output.kind === 'png' ? png : buildVideoFilename(png, output.blob.type)
 }
 
-/** 卡片上那支可以錄成影片的媒體。沒有就是沒有，不猜。 */
-function playableVideo(post: Post | null): { url: string; durationMs: number } | null {
-  return post?.media.find((m) => m.video)?.video ?? null
+/**
+ * 卡片上那支可以存成影片的媒體 —— 就是卡片上放的那一支（見 cardMedia）。
+ * 推文裡別的影片不算：存出來的影片必須跟預覽長得一樣。沒有就是沒有，不猜。
+ */
+function playableVideo(post: Post | null, settings: CardSettings): { url: string; durationMs: number } | null {
+  if (!post || !settings.show.media) return null
+  return cardMedia(post.media, settings.show.photosWithVideo).find((m) => m.kind !== 'photo')?.video ?? null
 }
 
 /**
@@ -89,9 +93,10 @@ function validAspect(v: unknown): v is CardSettings['aspect'] {
  * 原因。所以讀回存檔時只認 parent，其餘一律回到預設值。
  *
  * parent 與 quoted（要不要一起畫出被回覆的、被引用的那一則）留著，因為它們
- * 在預覽底下各有自己的控制項，關掉之後打得開。
+ * 在預覽底下各有自己的控制項，關掉之後打得開。photosWithVideo（影片推文要不要
+ * 連照片一起放）同理。
  */
-const PERSISTED_SHOW_KEYS = ['parent', 'quoted'] as const
+const PERSISTED_SHOW_KEYS = ['parent', 'quoted', 'photosWithVideo'] as const
 
 /**
  * 把存檔套回預設值上。抽成純函式是為了讓上面那段遷移邏輯可以被斷言 ——
@@ -387,7 +392,7 @@ function XFrameApp() {
    */
   async function doExportVideo() {
     const node = cardRef.current?.querySelector('[data-part="canvas"]') as HTMLElement | null
-    const video = playableVideo(displayedTweet)
+    const video = playableVideo(displayedTweet, settings)
     if (!node || !video || status.phase !== 'ready' || !displayedTweet) return
     const revision = translationRevisionRef.current
     const signature = cardTextSignature(node)
@@ -440,7 +445,7 @@ function XFrameApp() {
     }
   }
 
-  const videoMedia = playableVideo(displayedTweet)
+  const videoMedia = playableVideo(displayedTweet, settings)
   const videoSeconds = videoMedia ? Math.max(1, Math.round(videoMedia.durationMs / 1000)) : 0
   const outputFile = output && displayedTweet
     ? createShareFile(output.blob, outputName(output, displayedTweet))
@@ -513,6 +518,16 @@ function XFrameApp() {
           <input type="checkbox" checked={settings.show.parent} disabled={busy}
             onChange={(e) => patch({ show: { ...settings.show, parent: e.currentTarget.checked } })} />
           一起帶上被回覆的那一則
+        </label>
+      )}
+
+      {/* 同理：只有影片、或只有照片的推文上放這個勾選框，勾了不會有任何變化。
+          排在兩個「帶上那一則」中間，跟卡片上由上而下的順序一致。 */}
+      {status.phase === 'ready' && displayedTweet && mixesPhotosAndVideo(displayedTweet.media) && (
+        <label class="thread-choice">
+          <input type="checkbox" checked={settings.show.photosWithVideo} disabled={busy}
+            onChange={(e) => patch({ show: { ...settings.show, photosWithVideo: e.currentTarget.checked } })} />
+          同時分享照片
         </label>
       )}
 
@@ -672,7 +687,7 @@ function XFrameApp() {
             呈現、沒有被裁掉的部分，也就沒有位置可以調。
           */}
           {settings.aspect !== 'auto' && displayedTweet?.media.some((m) => m.dataUrl)
-            && wholeMediaOf(displayedTweet.media) === null && (
+            && wholeMediaOf(cardMedia(displayedTweet.media, settings.show.photosWithVideo)) === null && (
             <label>圖片位置
               <input
                 type="range"

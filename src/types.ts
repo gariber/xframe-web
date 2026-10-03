@@ -159,7 +159,24 @@ export type CardSettings = {
   panelOpacity: number
   fontFamily: string
   textColor: string
-  show: { avatar: boolean; stats: boolean; timestamp: boolean; media: boolean; parent: boolean; quoted: boolean }
+  show: {
+    avatar: boolean
+    stats: boolean
+    timestamp: boolean
+    media: boolean
+    parent: boolean
+    quoted: boolean
+    /**
+     * 同一則推文裡有影片也有照片時，照片要不要一起放上卡片。
+     *
+     * 預設不放：影片優先。卡片一次只放得下一支影片，而一支影片配上幾格照片
+     * 時，影片會被縮成格子裡的一格、被裁成格子的形狀 —— 那通常不是分享一則
+     * 影片推文的人想要的樣子。勾選之後最多 1 支影片 + 3 張照片（見 cardMedia）。
+     *
+     * 只有影片或只有照片的推文不受影響。
+     */
+    photosWithVideo: boolean
+  }
   /**
    * 遮蔽作者身分。名稱、帳號、頭像三者一起遮 —— 只遮其中一兩項是假的保護，
    * 剩下任何一項都足以認出人來，半套遮蔽只會給人錯誤的安全感。

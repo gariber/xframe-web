@@ -19,7 +19,7 @@ describe('settingsFromSaved：拿掉「顯示項目」之後的存檔遷移', ()
     },
   )
 
-  it.each(['parent', 'quoted'] as const)(
+  it.each(['parent', 'quoted', 'photosWithVideo'] as const)(
     '%s 仍然讀得回來 —— 它在預覽底下有自己的控制項，關掉之後打得開',
     (key) => {
       expect(settingsFromSaved({ show: { ...DEFAULT_SETTINGS.show, [key]: false } }).show[key])

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { CardSettings, Post } from '../types'
-import { Card, DEFAULT_SETTINGS, wholeMediaOf } from '../render/Card'
+import { Card, DEFAULT_SETTINGS, cardMedia, mixesPhotosAndVideo, wholeMediaOf } from '../render/Card'
 import { PRESETS, generate, randomPreset } from '../render/backgrounds'
 import { exportPng, buildFilename, downloadBlob, exportWidthBelowTarget, EXPORT_WIDTH } from '../render/export'
 import { loadSettings, saveSettings } from './store'
@@ -504,7 +504,7 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
           */}
           {settings.aspect !== 'auto' && status.phase === 'ready'
             && status.tweet.media.some((m) => m.dataUrl)
-            && wholeMediaOf(status.tweet.media) === null && (
+            && wholeMediaOf(cardMedia(status.tweet.media, settings.show.photosWithVideo)) === null && (
             <label>圖片位置
               <input type="range" min={0} max={100} value={settings.mediaFocusY}
                 onInput={(e) => patch({ mediaFocusY: +e.currentTarget.value })} />
@@ -530,6 +530,15 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
               <input type="checkbox" checked={settings.show.parent}
                 onChange={(e) => patch({ show: { ...settings.show, parent: e.currentTarget.checked } })} />
               被回覆的貼文
+            </label>
+          )}
+          {/* 影片優先：有影片也有照片時預設只放影片，勾了才連照片一起放。
+              只有影片或只有照片時勾了不會有變化，就不出現。 */}
+          {status.phase === 'ready' && mixesPhotosAndVideo(status.tweet.media) && (
+            <label>
+              <input type="checkbox" checked={settings.show.photosWithVideo}
+                onChange={(e) => patch({ show: { ...settings.show, photosWithVideo: e.currentTarget.checked } })} />
+              同時分享照片
             </label>
           )}
           {status.phase === 'ready' && status.tweet?.quoted && (

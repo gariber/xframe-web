@@ -180,7 +180,10 @@ export async function prepareComposition(
         // 靜圖上的播放鍵是用來說「這是影片」的。影片自己會動，不需要它。
         if (el.dataset?.part === 'media-badge') el.style.display = 'none'
         if (!maskOnly) return
+        // 只留主貼文的影片那一格。勾了「同時分享照片」時旁邊還有照片格，
+        // 遮罩若連它們一起留，影片會被鋪滿整組格子。
         el.style.visibility = el.dataset?.part === 'media-image' && el.dataset?.owner === 'main'
+          && el.dataset?.kind !== 'photo'
           ? 'visible'
           : 'hidden'
       },

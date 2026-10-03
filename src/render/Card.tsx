@@ -39,7 +39,11 @@ export const DEFAULT_SETTINGS: CardSettings = {
   textColor: '#ffffff',
   // parent：貼上回覆連結時自動把父貼文一起畫出來。預設開——使用者貼的是一則
   // 回覆，少了被回覆的那一則，卡片上的話常常讀不懂。
-  show: { avatar: true, stats: true, timestamp: true, media: true, parent: true, quoted: true },
+  show: {
+    avatar: true, stats: true, timestamp: true, media: true, parent: true, quoted: true,
+    // 影片優先：有影片也有照片的推文，預設只放影片（見 CardSettings.show）
+    photosWithVideo: false,
+  },
   // 一般推文預設不遮。鎖推貼文由 Panel 在載入完成時改為預設開啟 ——
   // 那是安全的預設，但仍然是使用者可以關掉的選擇。
   maskIdentity: false,
@@ -292,6 +296,39 @@ export function wholeMediaOf(media: Media[]): Media | null {
   return usable.length === 1 && usable[0].kind !== 'photo' ? usable[0] : null
 }
 
+/** 影片旁邊最多再放幾張照片。X 一則推文最多四格，一格給影片。 */
+export const MAX_PHOTOS_WITH_VIDEO = 3
+
+/**
+ * 主貼文要放上卡片的媒體。
+ *
+ * 影片優先：同一則推文有影片也有照片時，預設只放影片 —— 影片配上幾格照片，
+ * 就會被縮成格子裡的一格、被裁成格子的形狀，那通常不是分享一則影片推文的人
+ * 想要的樣子。使用者勾了「同時分享照片」才放照片，最多 1 支影片 + 3 張照片，
+ * 照推文原本的順序。
+ *
+ * 影片永遠只放一支：卡片上只有一個地方會動，匯出的影片也只有一條影像軌。
+ * 有好幾支時挑第一支抓得到影片檔的 —— 卡片上放的那一支必須就是「存成影片」
+ * 會存的那一支。
+ *
+ * 只看畫得出來的那幾格（有 dataUrl 的）：封面抓不到的影片沒有格子可以放，
+ * 也就沒有地方可以把影片畫進去。
+ */
+export function cardMedia(media: Media[], withPhotos: boolean): Media[] {
+  const usable = media.filter((m) => m.dataUrl)
+  const moving = usable.filter((m) => m.kind !== 'photo')
+  const video = moving.find((m) => m.video) ?? moving[0]
+  if (video === undefined) return usable
+  if (!withPhotos) return [video]
+  const photos = usable.filter((m) => m.kind === 'photo').slice(0, MAX_PHOTOS_WITH_VIDEO)
+  return usable.filter((m) => m === video || photos.includes(m))
+}
+
+/** 「同時分享照片」勾了會不會有任何差別。沒差別就不該出現那個勾選框。 */
+export function mixesPhotosAndVideo(media: Media[]): boolean {
+  return cardMedia(media, true).length > cardMedia(media, false).length
+}
+
 function MediaGrid({
   media,
   owner,
@@ -330,7 +367,8 @@ function MediaGrid({
   if (usable.length === 0) return null
   // 多格時每一格只有一半寬，播放鍵跟著收斂，否則小格子會被它佔掉一大塊
   const badgeSize = usable.length > 1 ? 30 : 44
-  const playable = onPlay !== undefined && usable.length === 1 && usable[0].kind !== 'photo'
+  // 照片與影片並排時，只有影片那一格點得動
+  const playable = (m: Media) => onPlay !== undefined && m.kind !== 'photo'
   const tileWidth = constrained && usable.length === 1 && aspect && height
     ? Math.round(height) * aspect
     : undefined
@@ -396,15 +434,19 @@ function MediaGrid({
             alignItems: 'center',
             justifyContent: 'center',
             background: 'transparent',
-            cursor: playable ? 'pointer' : undefined,
+            cursor: playable(m) ? 'pointer' : undefined,
             width: tileWidth !== undefined ? `${tileWidth}px` : undefined,
             justifySelf: tileWidth !== undefined ? 'center' : undefined,
+            // 三格照 X 的排法：第一格佔滿左半邊，另外兩格疊在右邊。照 2×2 排的話
+            // 右下角會空一格，看起來像少了一張。
+            gridRow: usable.length === 3 && i === 0 ? 'span 2' : undefined,
           }}
-          onClick={playable ? onPlay : undefined}
+          onClick={playable(m) ? onPlay : undefined}
         >
           <img
             data-part="media-image"
             data-owner={owner}
+            data-kind={m.kind}
             src={m.dataUrl}
             alt={m.alt}
             style={{
@@ -428,12 +470,13 @@ function MediaGrid({
         <div
           key={i}
           data-part="media-tile"
-          style={{ position: 'relative', minWidth: 0, cursor: playable ? 'pointer' : undefined }}
-          onClick={playable ? onPlay : undefined}
+          style={{ position: 'relative', minWidth: 0, cursor: playable(m) ? 'pointer' : undefined }}
+          onClick={playable(m) ? onPlay : undefined}
         >
           <img
             data-part="media-image"
             data-owner={owner}
+            data-kind={m.kind}
             src={m.dataUrl}
             alt={m.alt}
             style={{ width: '100%', display: 'block' }}
@@ -855,9 +898,9 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
    * 一個會互相觸發的迴圈。
    */
   const [mediaAspect, setMediaAspect] = useState(0)
-  // 跟 MediaGrid 看同一份：它只排得出有 dataUrl 的那幾格
-  const usableMedia = post.media.filter((m) => m.dataUrl)
-  const soleMedia = usableMedia.length === 1 ? usableMedia[0].dataUrl : undefined
+  /** 主貼文實際放上卡片的媒體（影片優先，見 cardMedia）。量測與排版都看這一份。 */
+  const shownMedia = cardMedia(post.media, s.show.photosWithVideo)
+  const soleMedia = shownMedia.length === 1 ? shownMedia[0].dataUrl : undefined
   useEffect(() => {
     setMediaAspect(0)
     if (soleMedia === undefined) return
@@ -877,9 +920,9 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
   const showsAbsoluteTime = s.show.timestamp && s.timeFormat === 'absolute'
   const constrainedMedia = ratio !== undefined &&
     s.show.media &&
-    post.media.some((media) => Boolean(media.dataUrl))
+    shownMedia.length > 0
   /** 單支影片或 GIF：圖框照它自己的比例，整支呈現（見 wholeMediaBox）。 */
-  const wholeMedia = constrainedMedia && wholeMediaOf(post.media) !== null
+  const wholeMedia = constrainedMedia && wholeMediaOf(shownMedia) !== null
   // 標誌、頭像、footer 小字與區塊間距一律由這裡推導，卡片內不再出現寫死的 px。
   const scale = cardScale(fontSize, constrainedMedia)
   const [canvasHeight, setCanvasHeight] = useState<number | undefined>(undefined)
@@ -897,7 +940,7 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
    */
   const fitKey = [
     s.aspect, s.padding, s.fontSize, s.show.parent, s.show.media, s.show.avatar,
-    s.show.timestamp, s.show.quoted, s.timeFormat, s.maskIdentity, post.id,
+    s.show.timestamp, s.show.quoted, s.show.photosWithVideo, s.timeFormat, s.maskIdentity, post.id,
     weightedLength(post, visibleParts), canvasWidth,
   ].join('|')
   useLayoutEffect(() => {
@@ -1173,7 +1216,7 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
 
         {s.show.media && (
           <MediaGrid
-            media={post.media}
+            media={shownMedia}
             owner="main"
             constrained={constrainedMedia}
             focusY={s.mediaFocusY}

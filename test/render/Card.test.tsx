@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { render } from 'preact'
-import { Card, DEFAULT_SETTINGS, weightedLength, fitFontSize, wholeMediaOf } from '../../src/render/Card'
+import { Card, DEFAULT_SETTINGS, weightedLength, fitFontSize, wholeMediaOf, cardMedia, mixesPhotosAndVideo } from '../../src/render/Card'
 import { parseTweet } from '../../src/parse/microdata'
 import { CARD_ALPHA } from '../../src/render/card.css'
 import { readFileSync } from 'node:fs'
-import type { CardSettings, Post } from '../../src/types'
+import type { CardSettings, Media, Post } from '../../src/types'
 
 const fx = (n: string) => readFileSync(`test/fixtures/${n}.html`, 'utf8')
 
@@ -340,8 +340,13 @@ describe('長文自動縮字級', () => {
 
 describe('DEFAULT_SETTINGS', () => {
   it('比例預設 auto', () => expect(DEFAULT_SETTINGS.aspect).toBe('auto'))
-  it('四個顯示項預設開啟', () => {
-    expect(Object.values(DEFAULT_SETTINGS.show).every(Boolean)).toBe(true)
+  it('四個顯示項預設開啟，被回覆與被引用的那一則也預設帶上', () => {
+    const { avatar, stats, timestamp, media, parent, quoted } = DEFAULT_SETTINGS.show
+    expect([avatar, stats, timestamp, media, parent, quoted].every(Boolean)).toBe(true)
+  })
+
+  it('影片優先：有影片也有照片時，預設不帶照片', () => {
+    expect(DEFAULT_SETTINGS.show.photosWithVideo).toBe(false)
   })
 })
 
@@ -562,6 +567,128 @@ describe('固定比例的媒體填滿版面', () => {
     it('只看畫得出來的那幾格，跟排版看的是同一份', () => {
       expect(wholeMediaOf([item('video'), item('photo', false)])?.kind).toBe('video')
       expect(wholeMediaOf([item('video', false)])).toBeNull()
+    })
+  })
+
+  /*
+   * 影片優先：同一則推文有影片也有照片時，預設只放影片；勾了「同時分享照片」
+   * 才連照片一起放，最多 1 支影片 + 3 張照片。實際被要求過 —— 原本照片與影片
+   * 全部塞進格子裡，影片被縮成一格、裁成格子的形狀，而「存成影片」還會把影片
+   * 鋪滿整組格子。
+   */
+  describe('影片優先', () => {
+    const PNG = 'data:image/png;base64,eA=='
+    const photo = (n: number, drawable = true): Media => ({
+      url: `https://pbs.twimg.com/media/p${n}.jpg`, alt: `p${n}`, kind: 'photo',
+      dataUrl: drawable ? PNG : undefined,
+    })
+    const clip = (n: number, { mp4 = true, drawable = true, kind = 'video' as Media['kind'] } = {}): Media => ({
+      url: `https://pbs.twimg.com/amplify_video_thumb/${n}/img/v.jpg`, alt: `v${n}`, kind,
+      dataUrl: drawable ? PNG : undefined,
+      video: mp4 ? { url: `https://video.twimg.com/v${n}.mp4`, durationMs: 5000 } : undefined,
+    })
+    const alts = (media: Media[]) => media.map((m) => m.alt)
+
+    describe('cardMedia', () => {
+      it('只有照片的推文照舊', () => {
+        expect(alts(cardMedia([photo(1), photo(2)], false))).toEqual(['p1', 'p2'])
+      })
+
+      it('有影片也有照片時，預設只放影片', () => {
+        expect(alts(cardMedia([photo(1), clip(1), photo(2)], false))).toEqual(['v1'])
+      })
+
+      it('勾了之後連照片一起放，照推文原本的順序', () => {
+        expect(alts(cardMedia([photo(1), clip(1), photo(2)], true))).toEqual(['p1', 'v1', 'p2'])
+      })
+
+      it('最多 1 支影片 + 3 張照片', () => {
+        const media = [photo(1), clip(1), photo(2), photo(3), photo(4)]
+        expect(alts(cardMedia(media, true))).toEqual(['p1', 'v1', 'p2', 'p3'])
+      })
+
+      it('影片只放一支，挑抓得到影片檔的那一支 —— 卡片上的就是會存下來的', () => {
+        const media = [clip(1, { mp4: false }), clip(2), photo(1)]
+        expect(alts(cardMedia(media, false))).toEqual(['v2'])
+        expect(alts(cardMedia(media, true))).toEqual(['v2', 'p1'])
+      })
+
+      it('GIF 也算影片', () => {
+        expect(alts(cardMedia([photo(1), clip(1, { kind: 'gif' })], false))).toEqual(['v1'])
+      })
+
+      it('封面抓不到的影片沒有格子可放，退回照片', () => {
+        expect(alts(cardMedia([photo(1), clip(1, { drawable: false })], false))).toEqual(['p1'])
+      })
+    })
+
+    describe('mixesPhotosAndVideo —— 勾選框只在勾了會有差別時出現', () => {
+      it('有影片也有照片', () => {
+        expect(mixesPhotosAndVideo([photo(1), clip(1)])).toBe(true)
+      })
+
+      it('只有影片、只有照片、兩支影片都不算', () => {
+        expect(mixesPhotosAndVideo([clip(1)])).toBe(false)
+        expect(mixesPhotosAndVideo([photo(1), photo(2)])).toBe(false)
+        expect(mixesPhotosAndVideo([clip(1), clip(2)])).toBe(false)
+      })
+
+      it('畫不出來的照片不算', () => {
+        expect(mixesPhotosAndVideo([photo(1, false), clip(1)])).toBe(false)
+      })
+    })
+
+    describe('卡片上', () => {
+      const mixed = (media: Media[]) => ({ ...parseTweet(fx('media'), '2083061426923475451')!, media })
+      const story = { ...DEFAULT_SETTINGS, aspect: '9:16' as const }
+      const withPhotos = { ...story, show: { ...story.show, photosWithVideo: true } }
+      const mainImages = (el: HTMLElement) =>
+        [...el.querySelectorAll('[data-part="media"][data-owner="main"] [data-part="media-image"]')] as HTMLElement[]
+
+      it('預設只有影片那一格，而且整支呈現（不是格子）', () => {
+        const el = mount(mixed([photo(1), clip(1), photo(2)]), story)
+        expect(mainImages(el).map((n) => n.dataset.kind)).toEqual(['video'])
+      })
+
+      it('勾了之後影片和照片照原本的順序排', () => {
+        const el = mount(mixed([photo(1), clip(1), photo(2)]), withPhotos)
+        expect(mainImages(el).map((n) => n.dataset.kind)).toEqual(['photo', 'video', 'photo'])
+      })
+
+      it('只有影片那一格點得動，卡片裡播的影片也只疊在那一格', () => {
+        const host = document.createElement('div')
+        document.body.appendChild(host)
+        let plays = 0
+        render(
+          <Card post={mixed([photo(1), clip(1), photo(2)])} settings={withPhotos}
+            videoUrl="blob:x" onPlayVideo={() => { plays++ }} />,
+          host,
+        )
+        const tiles = [...host.querySelectorAll('[data-owner="main"] [data-part="media-tile"]')] as HTMLElement[]
+        expect(tiles.map((t) => t.style.cursor)).toEqual(['', 'pointer', ''])
+        tiles[0].click()
+        expect(plays).toBe(0)
+        tiles[1].click()
+        expect(plays).toBe(1)
+        const videos = host.querySelectorAll('[data-part="media-video"]')
+        expect(videos.length).toBe(1)
+        expect(videos[0].parentElement).toBe(tiles[1])
+      })
+
+      /* 2×2 排三格的話右下角會空一格，看起來像少了一張。照 X 的排法。 */
+      it('三格時第一格佔滿左半邊', () => {
+        const el = mount(mixed([clip(1), photo(1), photo(2)]), withPhotos)
+        const tiles = [...el.querySelectorAll('[data-owner="main"] [data-part="media-tile"]')] as HTMLElement[]
+        expect(tiles.map((t) => t.style.gridRow)).toEqual(['span 2', '', ''])
+      })
+
+      it('兩格、四格維持原本的排法', () => {
+        for (const media of [[clip(1), photo(1)], [clip(1), photo(1), photo(2), photo(3)]]) {
+          const el = mount(mixed(media), withPhotos)
+          const tiles = [...el.querySelectorAll('[data-owner="main"] [data-part="media-tile"]')] as HTMLElement[]
+          expect(tiles.every((t) => t.style.gridRow === '')).toBe(true)
+        }
+      })
     })
   })
 
