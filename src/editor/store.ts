@@ -1,6 +1,7 @@
 import type { CardSettings } from '../types'
 import { DEFAULT_SETTINGS } from '../render/Card'
 import { ASPECT_VALUE } from '../render/card.css'
+import { STYLE_KEYS } from '../render/styles'
 
 const KEY = 'xframe.settings'
 
@@ -15,16 +16,15 @@ function validAspect(v: unknown): v is CardSettings['aspect'] {
 
 /** 只採用已知欄位，避免舊版殘留資料污染型別。 */
 export function mergeSettings(raw: Partial<CardSettings> | undefined): CardSettings {
-  if (!raw || typeof raw !== 'object') return { ...DEFAULT_SETTINGS }
-  // `show`/`background` 須各自複製一份：單純 `{ ...DEFAULT_SETTINGS }` 只是淺拷貝，
-  // 巢狀物件仍與 DEFAULT_SETTINGS 共用同一參照。下方對 out[key] 的 Object.assign
-  // 若沒有這兩行，會直接改到 DEFAULT_SETTINGS 這個模組級單例本身，
-  // 讓「預設值」在第一次合併後就被永久污染。
-  const out: CardSettings = {
-    ...DEFAULT_SETTINGS,
-    show: { ...DEFAULT_SETTINGS.show },
-    background: { ...DEFAULT_SETTINGS.background },
-  }
+  if (!raw || typeof raw !== 'object') return { ...DEFAULT_SETTINGS, show: { ...DEFAULT_SETTINGS.show } }
+  // `show` 須另外複製一份：單純 `{ ...DEFAULT_SETTINGS }` 只是淺拷貝，巢狀物件
+  // 仍與 DEFAULT_SETTINGS 共用同一參照。下方對 out.show 的 Object.assign 若沒有
+  // 這一行，會直接改到 DEFAULT_SETTINGS 這個模組級單例本身，讓「預設值」在第一次
+  // 合併後就被永久污染。
+  const out: CardSettings = { ...DEFAULT_SETTINGS, show: { ...DEFAULT_SETTINGS.show } }
+  // 沒有 bgId 的是換成 ThreadsFrame 紙張之前的存檔：底板色、透明度、字體是為了
+  // 舊的那一套紙挑的，套在新紙上會看不清楚，整組回到新的預設（見 styles.ts）。
+  const legacy = typeof raw.bgId !== 'string'
   for (const key of Object.keys(DEFAULT_SETTINGS) as (keyof CardSettings)[]) {
     const v = raw[key]
     if (v === undefined) continue
@@ -32,8 +32,9 @@ export function mergeSettings(raw: Partial<CardSettings> | undefined): CardSetti
     // 曾寫進 storage 的值，避免看完鎖推後下一則公開貼文仍自動匿名。
     if (key === 'maskIdentity') continue
     if (key === 'aspect' && !validAspect(v)) continue
-    if (key === 'show' || key === 'background') {
-      Object.assign(out[key], v)
+    if (legacy && (STYLE_KEYS as readonly string[]).includes(key)) continue
+    if (key === 'show') {
+      Object.assign(out.show, v)
     } else {
       out[key] = v as never
     }

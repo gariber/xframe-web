@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { CardSettings, Post, TranslatedFrom } from '../src/types'
 import { Card, DEFAULT_SETTINGS, cardMedia, mixesPhotosAndVideo, wholeMediaOf } from '../src/render/Card'
-import { PRESETS, generate, randomPreset } from '../src/render/backgrounds'
+import { STYLE_KEYS } from '../src/render/styles'
+import { CanvasControls, PaperPicker, StylePresets } from '../src/ui/StyleControls'
 import { exportPng, buildFilename, downloadBlob, EXPORT_WIDTH } from '../src/render/export'
 import { buildVideoFilename, canRecordVideo, exportVideo, type VideoExportMode } from '../src/render/video'
 import { ASPECT_VALUE } from '../src/render/card.css'
@@ -22,7 +23,7 @@ const STORAGE_KEY = 'xframe.web.settings'
 
 /** 網頁版預設精確 9:16 直式，適合限時動態；放不下時完整面板會等比縮小。
  *  留白比桌面小：手機畫布本來就窄，留白一大就把內容寬度整個吃掉。 */
-const WEB_DEFAULTS: CardSettings = { ...DEFAULT_SETTINGS, aspect: '9:16', padding: 18 }
+const WEB_DEFAULTS: CardSettings = { ...DEFAULT_SETTINGS, aspect: '9:16' }
 
 const ERROR_TEXT: Record<string, string> = {
   'not-found': '這則推文已不存在',
@@ -104,22 +105,25 @@ const PERSISTED_SHOW_KEYS = ['parent', 'quoted', 'photosWithVideo'] as const
  * 不了，因為要先有一份含著舊選擇的存檔才看得出來。
  */
 export function settingsFromSaved(saved: Partial<CardSettings>): CardSettings {
-  const out: CardSettings = {
-    ...WEB_DEFAULTS,
-    show: { ...WEB_DEFAULTS.show },
-    background: { ...WEB_DEFAULTS.background },
-  }
+  const out: CardSettings = { ...WEB_DEFAULTS, show: { ...WEB_DEFAULTS.show } }
+  /*
+   * 紙張與底板改成跟 ThreadsFrame 同一套之後，舊存檔裡的底板色、透明度、字體
+   * 是為了舊的那一套紙挑的 —— 半透明的深色毛玻璃底板疊在新的米白紙上，會是
+   * 一張看不清楚的卡片。沒有 bgId 的就是舊存檔，樣式整組回到新的預設。
+   */
+  const legacy = typeof saved.bgId !== 'string'
   for (const k of Object.keys(WEB_DEFAULTS) as (keyof CardSettings)[]) {
     const v = saved[k]
     if (v === undefined) continue
     if (k === 'aspect' && !validAspect(v)) continue
+    if (legacy && (STYLE_KEYS as readonly string[]).includes(k)) continue
+    if (typeof v !== typeof WEB_DEFAULTS[k]) continue
     if (k === 'show') {
       for (const key of PERSISTED_SHOW_KEYS) {
         const flag = (v as CardSettings['show'])[key]
         if (typeof flag === 'boolean') out.show[key] = flag
       }
-    } else if (k === 'background') Object.assign(out[k], v)
-    else out[k] = v as never
+    } else out[k] = v as never
   }
   return out
 }
@@ -545,6 +549,13 @@ function XFrameApp() {
         佔掉半個畫面，等於把「存成圖片」推到看不見的地方，第一次用的人得先捲過
         一整段用不到的說明才找得到那顆按鈕。
       */}
+      {/* 樣式常駐在主畫面（跟 ThreadsFrame 一樣）：挑樣式是每次分享都會做的事。 */}
+      {status.phase === 'ready' && (
+        <fieldset disabled={busy} class="presets-wrap">
+          <StylePresets settings={settings} onApply={(style) => patch(style)} />
+        </fieldset>
+      )}
+
       {status.phase === 'ready' && (
         <button class="primary export-btn" type="button" disabled={busy} onClick={() => void doExport()}>
           {busy ? '產生中…' : '存成圖片'}
@@ -642,39 +653,16 @@ function XFrameApp() {
           但它們要回答的是同一個問題 —— 這張卡片長什麼樣子 —— 使用者調完背景
           常常緊接著要調留白，中間卻隔著一次收合、一次展開。
         */}
-        <Sheet title="樣式">
+        {/*
+          細項照 ThreadsFrame 叫「微調」：常用的整組樣式已經在預覽底下那一排，
+          這裡是想自己調紙張、留白、圓角、毛玻璃時才打開的地方。
+        */}
+        <Sheet title="微調">
           <h3 class="sheet-sub">背景紙張</h3>
-          <button type="button" onClick={() => patch({ background: randomPreset() })}>隨機生成一張</button>
-          <div class="swatches">
-            {PRESETS.map((p) => (
-              <button
-                key={`${p.kind}-${p.palette}`} type="button" aria-label={`${p.kind} ${p.palette}`}
-                aria-pressed={settings.background.kind === p.kind && settings.background.palette === p.palette}
-                style={{ background: generate(p.kind, p.palette, p.seed) }}
-                onClick={() => patch({ background: { ...p } })}
-              />
-            ))}
-          </div>
+          <PaperPicker settings={settings} patch={patch} />
 
           <h3 class="sheet-sub">畫布與排版</h3>
-          <label>留白<input type="range" min={16} max={120} value={settings.padding}
-            onInput={(e) => patch({ padding: +e.currentTarget.value })} /></label>
-          <label>文字尺寸<input type="range" min={13} max={40} value={settings.fontSize}
-            onInput={(e) => patch({ fontSize: +e.currentTarget.value })} /></label>
-          <label>底板透明度<input type="range" min={0} max={100} value={settings.panelOpacity * 100}
-            onInput={(e) => patch({ panelOpacity: +e.currentTarget.value / 100 })} /></label>
-          <label>底板顏色<input type="color" value={settings.panelColor}
-            onInput={(e) => patch({ panelColor: e.currentTarget.value })} /></label>
-          <label>文字顏色<input type="color" value={settings.textColor}
-            onInput={(e) => patch({ textColor: e.currentTarget.value })} /></label>
-          <label>比例
-            <select value={settings.aspect} onChange={(e) => patch({ aspect: e.currentTarget.value as CardSettings['aspect'] })}>
-              <option value="9:16">9:16 IG 限動</option>
-              <option value="auto">自動高度</option>
-              <option value="1:1">1:1 方形</option>
-              <option value="4:5">4:5 直式</option>
-            </select>
-          </label>
+          <CanvasControls settings={settings} patch={patch} />
           <label>時間格式
             <select value={settings.timeFormat} onChange={(e) => patch({ timeFormat: e.currentTarget.value as CardSettings['timeFormat'] })}>
               <option value="relative">相對（6h）</option>

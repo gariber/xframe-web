@@ -34,8 +34,21 @@ describe('settingsFromSaved：拿掉「顯示項目」之後的存檔遷移', ()
   })
 
   it('其餘設定照舊讀回來', () => {
-    const out = settingsFromSaved({ padding: 96, fontSize: 31, aspect: '4:5', timeFormat: 'absolute' })
-    expect([out.padding, out.fontSize, out.aspect, out.timeFormat]).toEqual([96, 31, '4:5', 'absolute'])
+    const out = settingsFromSaved({ bgId: 'linen', padding: 40, fontSize: 31, aspect: '4:5', timeFormat: 'absolute' })
+    expect([out.bgId, out.padding, out.fontSize, out.aspect, out.timeFormat]).toEqual(['linen', 40, 31, '4:5', 'absolute'])
+  })
+
+  /* 換成 ThreadsFrame 的紙張之前的存檔：半透明深色底板是為舊紙挑的，疊在新紙
+     上會看不清楚。樣式整組回到新預設；比例、字級、時間格式照讀。 */
+  it('舊存檔（沒有 bgId）的底板樣式回到新預設', () => {
+    const out = settingsFromSaved({ panelColor: '#1c1816', panelOpacity: 0.5, padding: 18, fontSize: 24, aspect: '1:1' })
+    expect([out.bgId, out.panelColor, out.panelOpacity, out.padding])
+      .toEqual([DEFAULT_SETTINGS.bgId, DEFAULT_SETTINGS.panelColor, 1, DEFAULT_SETTINGS.padding])
+    expect([out.fontSize, out.aspect]).toEqual([24, '1:1'])
+  })
+
+  it('型別不對的舊值不會被讀進來', () => {
+    expect(settingsFromSaved({ bgId: 'noir', radius: '9' as never }).radius).toBe(DEFAULT_SETTINGS.radius)
   })
 
   it('已移除的比例退回預設，不會留下一個選不中的下拉', () => {

@@ -37,13 +37,24 @@ describe('mergeSettings', () => {
   it('遮蔽作者是逐則貼文的判斷，不沿用上一則儲存值', () => {
     expect(mergeSettings({ maskIdentity: true }).maskIdentity).toBe(false)
   })
+  /* 換成 ThreadsFrame 的紙張之後，舊存檔的底板色與透明度是為舊紙挑的，
+     套在新紙上會看不清楚。沒有 bgId 的就是舊存檔，樣式整組回到預設。 */
+  it('舊存檔（沒有 bgId）的底板與字體回到新預設，其餘照讀', () => {
+    const merged = mergeSettings({ panelColor: '#1c1816', panelOpacity: 0.5, fontSize: 30, timeFormat: 'absolute' })
+    expect([merged.panelColor, merged.panelOpacity]).toEqual([DEFAULT_SETTINGS.panelColor, DEFAULT_SETTINGS.panelOpacity])
+    expect([merged.fontSize, merged.timeFormat]).toEqual([30, 'absolute'])
+  })
+  it('新存檔的紙張與底板照讀', () => {
+    const merged = mergeSettings({ bgId: 'sunset', panelColor: '#2b1512', glass: true, radius: 12 })
+    expect([merged.bgId, merged.panelColor, merged.glass, merged.radius]).toEqual(['sunset', '#2b1512', true, 12])
+  })
 })
 
 describe('mergeSettings 不可變性', () => {
   it('不可修改共用的 DEFAULT_SETTINGS 單例（否則之後所有預設值都會被污染）', () => {
     const before = JSON.parse(JSON.stringify(DEFAULT_SETTINGS))
     mergeSettings({ show: { stats: false } as never })
-    mergeSettings({ background: { kind: 'grid', palette: 'ocean', seed: 9 } as never })
+    mergeSettings({ bgId: 'graph', panelColor: '#000000' })
     expect(DEFAULT_SETTINGS).toEqual(before)
   })
 })

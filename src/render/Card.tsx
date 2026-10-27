@@ -2,7 +2,8 @@ import { Fragment } from 'preact'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { siX } from 'simple-icons'
 import type { Post, CardSettings, Segment, Media, MediaKind, Metric, QuotedPost, ParentPost } from '../types'
-import { generate, GRAIN_DATA_URI } from './backgrounds'
+import { findPaper } from './papers'
+import { DEFAULT_STYLE, FONTS } from './styles'
 import {
   ASPECT_VALUE,
   canvasPaddingY,
@@ -30,13 +31,10 @@ function noBrowserTranslation(element: HTMLElement | null): void {
 }
 
 export const DEFAULT_SETTINGS: CardSettings = {
-  background: { kind: 'mesh', palette: 'sunset', seed: 1 },
-  padding: 44,
+  // 紙張、底板、圓角、毛玻璃跟 ThreadsFrame 的預設樣式一樣（見 styles.ts）
+  ...DEFAULT_STYLE,
   fontSize: 20,
-  panelColor: '#1c1816',
-  panelOpacity: 0.5,
-  fontFamily: '-apple-system, "PingFang TC", "Noto Sans TC", system-ui, sans-serif',
-  textColor: '#ffffff',
+  fontFamily: FONTS[0].stack,
   // parent：貼上回覆連結時自動把父貼文一起畫出來。預設開——使用者貼的是一則
   // 回覆，少了被回覆的那一則，卡片上的話常常讀不懂。
   show: {
@@ -51,6 +49,12 @@ export const DEFAULT_SETTINGS: CardSettings = {
   aspect: 'auto',
   // 偏上：照片主體通常在上半部，置中裁切最容易把臉切掉。
   mediaFocusY: 30,
+}
+
+/** `#rrggbb` 加上透明度。認不得的色碼原樣回傳，不會讓整個底板消失。 */
+function withAlpha(hex: string, alpha: number): string {
+  if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return hex
+  return hex + Math.round(Math.min(1, Math.max(0, alpha)) * 255).toString(16).padStart(2, '0')
 }
 
 /**
@@ -829,7 +833,7 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
 }) {
   const s = settings
   const accent = accentFrom(s.textColor)
-  const panelBg = s.panelColor + Math.round(s.panelOpacity * 255).toString(16).padStart(2, '0')
+  const panelBg = withAlpha(s.panelColor, s.panelOpacity)
   // 外層與被引用貼文的作者一起遮。遮蔽時卡片上不該出現任何帳號資訊 ——
   // 留著引用推文的帳號雖然那通常是另一個人，仍會提供辨識線索。
   const author = s.maskIdentity ? MASKED_AUTHOR : post.author
@@ -927,6 +931,12 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
   const scale = cardScale(fontSize, constrainedMedia)
   const [canvasHeight, setCanvasHeight] = useState<number | undefined>(undefined)
   const [canvasWidth, setCanvasWidth] = useState(0)
+  /*
+   * 畫布實際的高度，給紙張用。方格、斜紋、光暈的尺寸是相對畫布的長短邊算的
+   * （跟 ThreadsFrame 一樣），auto 高度時沒有 canvasHeight 可讀，只能量。
+   * 紙張不影響版面，量它不會形成迴圈。
+   */
+  const [boxHeight, setBoxHeight] = useState(0)
   const [panelScale, setPanelScale] = useState(1)
 
   /*
@@ -961,6 +971,7 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
       // border-box，不受任何 transform 影響。
       const width = el.offsetWidth
       setCanvasWidth(width)
+      setBoxHeight(el.offsetHeight)
       if (ratio === undefined) {
         setCanvasHeight(undefined)
         setPanelScale(1)
@@ -1038,6 +1049,11 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
     return () => ro.disconnect()
   }, [settings, post, canvasWidth, panelScale, constrainedMedia, contentFit])
 
+  // 量到之前先用一個典型的手機尺寸頂著，構圖只差在比例，不會畫錯紙
+  const paperWidth = canvasWidth || 360
+  const paperHeight = canvasHeight ?? (boxHeight || paperWidth / (ratio ?? 9 / 16))
+  const paperCss = findPaper(s.bgId).css(paperWidth, paperHeight)
+
   return (
     <div
       ref={(element) => {
@@ -1054,7 +1070,7 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
         // height 只會指定 content-box，padding 會疊加在外面把實際框撐得
         // 比目標比例更高。
         padding: `${paddingY} ${s.padding}px`,
-        background: generate(s.background.kind, s.background.palette, s.background.seed),
+        background: paperCss,
         // 不設定 CSS 的 aspect-ratio。實測過：把它跟下面這個量測出來的定值
         // height 同時留著，兩者會互相打架——height 定案後，aspect-ratio
         // 因為 width 仍是 auto，會反過來用「新 height × ratio」去改 width，
@@ -1075,34 +1091,28 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
       }}
     >
       <div
-        aria-hidden="true"
-        style={{
-          position: 'absolute',
-          inset: 0,
-          backgroundImage: GRAIN_DATA_URI,
-          mixBlendMode: 'overlay',
-          opacity: 0.3,
-          pointerEvents: 'none',
-        }}
-      />
-      <div
         ref={panelRef}
         data-part="panel"
         style={{
           position: 'relative',
           width: '100%',
           background: panelBg,
-          backdropFilter: 'blur(34px) saturate(1.22)',
-          WebkitBackdropFilter: 'blur(34px) saturate(1.22)',
-          border: '1px solid rgba(255,255,255,.16)',
-          borderRadius: 24,
+          /*
+           * 跟 ThreadsFrame 一樣：預設是一塊平的實色底板，開了毛玻璃才模糊背景、
+           * 加細亮邊（文字色 22%）與陰影。陰影的大小照 ThreadsFrame 的公式，
+           * 換算成版面 px（那邊是 1080 寬的成品 px）。
+           */
+          backdropFilter: s.glass ? `blur(${s.blur}px)` : undefined,
+          WebkitBackdropFilter: s.glass ? `blur(${s.blur}px)` : undefined,
+          border: s.glass ? `1px solid ${withAlpha(s.textColor, 0.22)}` : undefined,
+          borderRadius: s.radius,
           /*
            * 下緣比上緣薄一點。頁尾（尤其品牌那一行）本身已經是低對比小字，
            * 底下再留一大塊等寬留白，整張卡看起來會像沒收尾。
            */
           padding: constrainedMedia ? '14px 16px 12px' : '22px 26px 16px',
           color: s.textColor,
-          boxShadow: 'inset 0 0 0 1px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,.08), 0 28px 70px rgba(0,0,0,.34)',
+          boxShadow: s.glass ? `0 5px ${Math.round(s.radius * 1.4 + 9)}px rgba(0,0,0,.34)` : undefined,
           transform: panelScale < 1 ? `scale(${panelScale})` : undefined,
           transformOrigin: 'center center',
           flex: '0 0 auto',

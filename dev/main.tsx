@@ -2,7 +2,7 @@ import { render } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
 import type { Post, CardSettings, TranslatedFrom } from '../src/types'
 import { Card, DEFAULT_SETTINGS } from '../src/render/Card'
-import { PRESETS, generate, randomPreset } from '../src/render/backgrounds'
+import { ALL_PAPERS, randomPaper } from '../src/render/papers'
 import { exportPng, buildFilename, downloadBlob } from '../src/render/export'
 import { loadFixture, FIXTURES } from './fixture'
 import { TRANSLATED_FROM_LABEL, TRANSLATED_FROM_OPTIONS } from '../src/render/translated'
@@ -91,13 +91,15 @@ function App() {
             onChange={(e) => patch({ maskIdentity: e.currentTarget.checked })} />
           遮蔽作者身分
         </label>
-        <button type="button" onClick={() => patch({ background: randomPreset() })}>隨機生成</button>
+        <button type="button" onClick={() => {
+          const p = randomPaper(settings.bgId)
+          patch({ bgId: p.id, panelColor: p.panel, textColor: p.ink })
+        }}>隨機一張</button>
         <div style="display:grid;grid-template-columns:repeat(8,1fr);gap:5px;margin-top:10px">
-          {PRESETS.map((p) => (
-            <button key={`${p.kind}-${p.palette}`} type="button"
-              aria-label={`${p.kind} ${p.palette}`}
-              style={{ aspectRatio: '3/4', borderRadius: 6, border: '1px solid #d9d3c9', cursor: 'pointer', padding: 0, background: generate(p.kind, p.palette, p.seed) }}
-              onClick={() => patch({ background: { ...p } })} />
+          {ALL_PAPERS.map((p) => (
+            <button key={p.id} type="button" aria-label={p.name} title={p.name}
+              style={{ aspectRatio: '3/4', borderRadius: 6, border: '1px solid #d9d3c9', cursor: 'pointer', padding: 0, background: p.css(60, 80) }}
+              onClick={() => patch({ bgId: p.id, panelColor: p.panel, textColor: p.ink })} />
           ))}
         </div>
       </div>

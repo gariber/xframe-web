@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { CardSettings, Post } from '../types'
 import { Card, DEFAULT_SETTINGS, cardMedia, mixesPhotosAndVideo, wholeMediaOf } from '../render/Card'
-import { PRESETS, generate, randomPreset } from '../render/backgrounds'
+import { CanvasControls, PaperPicker, StylePresets } from '../ui/StyleControls'
 import { exportPng, buildFilename, downloadBlob, exportWidthBelowTarget, EXPORT_WIDTH } from '../render/export'
 import { loadSettings, saveSettings } from './store'
 import { parseTweet, extractTweetId, explainParseFailure } from '../parse/microdata'
@@ -434,57 +434,19 @@ export function Panel({ permalink, onClose }: { permalink: string; onClose: () =
         fieldset 包住所有設定控制項，busy 時整批 disabled，是最簡單、不需要
         自己刻鎖的做法。
 
-        分區的組成、標題與順序都跟著網頁版走（背景紙張 → 畫布與排版 → 顯示項目
-        → 隱私），用的是同一個 Sheet 元件。兩邊是同一個產品，設定面板不該長成
+        分區的組成、標題與順序都跟著網頁版走（樣式 → 微調 → 顯示項目 → 隱私），
+        樣式與微調用的是同一份元件（ui/StyleControls）。兩邊是同一個產品，設定面板不該長成
         兩個樣子。
       */}
       <fieldset class="xf-fieldset" disabled={busy}>
-        <Sheet title="背景紙張">
-          <button type="button" onClick={() => patch({ background: randomPreset() })}>隨機生成一張</button>
-          <div class="swatches">
-            {PRESETS.map((p) => (
-              <button key={`${p.kind}-${p.palette}`} type="button"
-                aria-label={`${p.kind} ${p.palette}`}
-                aria-pressed={settings.background.kind === p.kind && settings.background.palette === p.palette}
-                style={{ background: generate(p.kind, p.palette, p.seed) }}
-                onClick={() => patch({ background: { ...p } })} />
-            ))}
-          </div>
-        </Sheet>
+        <StylePresets settings={settings} onApply={(style) => patch(style)} />
 
-        <Sheet title="畫布與排版">
-          <label>留白
-            <input type="range" min={16} max={120} value={settings.padding}
-              onInput={(e) => patch({ padding: +e.currentTarget.value })} />
-            <span class="hint-inline">{settings.padding}</span>
-          </label>
-          <label>文字尺寸
-            <input type="range" min={13} max={40} value={settings.fontSize}
-              onInput={(e) => patch({ fontSize: +e.currentTarget.value })} />
-            <span class="hint-inline">{settings.fontSize}</span>
-          </label>
-          <label>底板透明度
-            <input type="range" min={0} max={100} value={settings.panelOpacity * 100}
-              onInput={(e) => patch({ panelOpacity: +e.currentTarget.value / 100 })} />
-            <span class="hint-inline">{Math.round(settings.panelOpacity * 100)}%</span>
-          </label>
-          <label>底板顏色
-            <input type="color" value={settings.panelColor}
-              onInput={(e) => patch({ panelColor: e.currentTarget.value })} />
-          </label>
-          <label>文字顏色
-            <input type="color" value={settings.textColor}
-              onInput={(e) => patch({ textColor: e.currentTarget.value })} />
-          </label>
-          <label>比例
-            <select value={settings.aspect}
-              onChange={(e) => patch({ aspect: e.currentTarget.value as CardSettings['aspect'] })}>
-              <option value="9:16">9:16 IG 限動</option>
-              <option value="auto">自動高度</option>
-              <option value="1:1">1:1 方形</option>
-              <option value="4:5">4:5 直式</option>
-            </select>
-          </label>
+        <Sheet title="微調">
+          <h3 class="sheet-sub">背景紙張</h3>
+          <PaperPicker settings={settings} patch={patch} />
+
+          <h3 class="sheet-sub">畫布與排版</h3>
+          <CanvasControls settings={settings} patch={patch} />
           {/*
             「顯示項目」裡也有一個叫「時間」的核取方塊（控制顯不顯示）。兩個
             控制項同名會讓人找不到，所以這裡明確叫「時間格式」。

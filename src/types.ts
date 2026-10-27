@@ -149,14 +149,22 @@ export type Post = {
   translatedFrom?: TranslatedFrom
 }
 
-export type BgKind = 'mesh' | 'aurora' | 'wave' | 'split' | 'grid'
-
 export type CardSettings = {
-  background: { kind: BgKind; palette: string; seed: number }
+  /** 背景紙張的 id（見 papers.ts，跟 ThreadsFrame 同一套）。 */
+  bgId: string
   padding: number
   fontSize: number
   panelColor: string
   panelOpacity: number
+  /** 底板圓角（px）。 */
+  radius: number
+  /**
+   * 毛玻璃：底板把下面的背景模糊掉，加上細亮邊與陰影。關掉時底板是一塊平的
+   * 實色 —— ThreadsFrame 的預設就是這樣。底板透明度要低於 100% 才看得到效果。
+   */
+  glass: boolean
+  /** 毛玻璃的模糊半徑（px）。 */
+  blur: number
   fontFamily: string
   textColor: string
   show: {
