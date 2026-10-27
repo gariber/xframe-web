@@ -262,10 +262,13 @@ export function findTweetObjects(sources: readonly string[]): Map<string, string
     // 一次二分搜尋。少了這一步，每個右大括號都要重新掃一次整份字串，一份
     // 160KB 的頁面裡物件數以千計，會變成平方級。
     const marks: number[] = []
-    for (let at = source.indexOf(REST_ID); at >= 0; at = source.indexOf(REST_ID, at + 1)) {
-      marks.push(at)
+    for (const mark of REST_ID_MARKS) {
+      for (let at = source.indexOf(mark); at >= 0; at = source.indexOf(mark, at + 1)) {
+        marks.push(at)
+      }
     }
     if (marks.length === 0) continue
+    marks.sort((a, b) => a - b)
 
     const stack: number[] = []
     for (let i = 0; i < source.length; i++) {
@@ -294,7 +297,8 @@ export function findTweetObjects(sources: readonly string[]): Map<string, string
   return found
 }
 
-const REST_ID = 'rest_id:"'
+/** 序列化器寫的是 `rest_id:"…"`；字串裡那包 GraphQL JSON 寫的是 `"rest_id":"…"`。 */
+const REST_ID_MARKS = ['rest_id:"', '"rest_id":"']
 
 /** marks 已排序：有沒有任何一個落在 (start, end) 之間。 */
 function containsMark(marks: readonly number[], start: number, end: number): boolean {
@@ -310,9 +314,41 @@ function containsMark(marks: readonly number[], start: number, end: number): boo
 
 /** 只掃 `<script>` 的內容。理由見 openStore。 */
 export function storeSources(doc: Document): string[] {
-  return [...doc.querySelectorAll('script')]
-    .map((script) => script.textContent ?? '')
-    .filter((source) => source.includes('rest_id:') || source.includes('__id:'))
+  const out: string[] = []
+  for (const script of doc.querySelectorAll('script')) {
+    const source = script.textContent ?? ''
+    if (source.includes('rest_id:') || source.includes('__id:')) out.push(source)
+    if (source.includes(ESCAPED_REST_ID)) out.push(...jsonPayloads(source))
+  }
+  return out
+}
+
+const ESCAPED_REST_ID = '\\"rest_id\\"'
+
+/**
+ * 包在字串裡的 GraphQL 回應。
+ *
+ * 2026-10 底 X 又換了一次：推文資料不再是序列化好的物件，而是整包 JSON 被當成
+ * 一個字串值塞進 script（`result:"{\"data\":…}"`）。字串裡的引號全是跳脫過的，
+ * 照原樣掃的話 `rest_id`、`counts` 一個都對不上 —— 實際被回報過：卡片上的回覆、
+ * 轉推、喜歡、書籤四項全部變成 0，因為只剩操作列可讀，而未登入的操作列上
+ * 沒有數字。
+ *
+ * 只解開含有推文 ID 欄位的字串；解開後就是一般的 JSON，下游的欄位讀取器本來就
+ * 認得帶引號的鍵。來源仍然只限 script 的內容，理由見 openStore。
+ */
+function jsonPayloads(source: string): string[] {
+  const out: string[] = []
+  for (let i = 0; i < source.length; i++) {
+    const ch = source[i]
+    if (ch !== '"' && ch !== "'" && ch !== '`') continue
+    const end = skipString(source, i)
+    if (end < 0) break
+    const raw = source.slice(i + 1, end)
+    if (raw.includes(ESCAPED_REST_ID)) out.push(decodeJsString(raw))
+    i = end
+  }
+  return out
 }
 
 export type Store = {

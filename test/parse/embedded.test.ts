@@ -124,6 +124,35 @@ const CORE_AND_DETAILS = (tweetId: string, details: string) => {
   ].join(',')
 }
 
+/*
+ * 2026-10 底的頁面：推文資料整包是 JSON，被當成一個字串值塞進 script，裡面的
+ * 引號全部跳脫過。實際被回報過 —— 回覆、轉推、喜歡、書籤四項全變成 0。
+ */
+describe('JSON 包在字串裡的頁面（json-string-store，2026-10-27 實抓）', () => {
+  const page = () => new DOMParser().parseFromString(
+    readFileSync('test/fixtures/json-string-store.html', 'utf8'), 'text/html')
+
+  it('是這個形狀：沒有序列化好的 rest_id，只有跳脫過的', () => {
+    const html = readFileSync('test/fixtures/json-string-store.html', 'utf8')
+    expect(html).not.toContain('rest_id:"')
+    expect(html).toContain('\\"rest_id\\":\\"2114697162819072172\\"')
+  })
+
+  it('五項計數都讀得出來，轉推是轉推＋引用', () => {
+    const counts = parseEmbeddedCounts(page()).get('2114697162819072172')
+    expect(counts?.replies).toBe(750)
+    expect(counts?.likes).toBeGreaterThan(184_000)
+    expect(counts?.bookmarks).toBe(11369)
+    expect(counts?.reposts).toBeGreaterThan(30_000)
+    expect(counts?.views).toBeGreaterThan(2_900_000)
+  })
+
+  it('一般序列化的字串不會被誤當成 JSON 去解', () => {
+    const found = parseEmbeddedCounts(doc('<script>self.x={a:"\\"counts\\":{\\"reply_count\\":5}"}</script>'))
+    expect(found.size).toBe(0)
+  })
+})
+
 describe('parseEmbeddedPost', () => {
   it('讀出未截斷的長貼文全文（note_tweet），不是 full_text 那 300 字', () => {
     const post = parseEmbeddedPost(asDoc('visible-ssr-ellipsis'), '2097043464538264003')!
