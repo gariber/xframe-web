@@ -3,3 +3,11 @@ node_modules/
 dist/
 dist-web/
 xframe-store-upload.zip
+dist-app/
+ios/App/App/public/
+ios/App/App/capacitor.config.json
+ios/App/App/config.xml
+ios/DerivedData/
+.DS_Store
+ios/App/App.xcodeproj/xcuserdata/
+ios/App/App.xcodeproj/project.xcworkspace/xcuserdata/

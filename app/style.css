@@ -1,0 +1,13 @@
+html,
+body {
+  margin: 0;
+  background: #111;
+  color: #eee;
+  -webkit-text-size-adjust: 100%;
+}
+
+#app {
+  min-height: 100vh;
+  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+  box-sizing: border-box;
+}

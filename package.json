@@ -11,15 +11,24 @@
     "build:web": "tsc --noEmit && vite build --config vite.web.config.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "package": "npm run build && rm -f xframe-store-upload.zip && cd dist && zip -qr ../xframe-store-upload.zip . && cd .. && echo '→ xframe-store-upload.zip 已產生（manifest 在根目錄）'"
+    "package": "npm run build && rm -f xframe-store-upload.zip && cd dist && zip -qr ../xframe-store-upload.zip . && cd .. && echo '→ xframe-store-upload.zip 已產生（manifest 在根目錄）'",
+    "dev:app": "vite --config vite.app.config.ts",
+    "build:app": "tsc --noEmit && vite build --config vite.app.config.ts",
+    "cap:sync": "npm run build:app && cap sync ios"
   },
   "dependencies": {
+    "@capacitor/app": "^7.1.2",
+    "@capacitor/core": "^7.6.9",
+    "@capacitor/filesystem": "^7.1.9",
+    "@capacitor/share": "^7.0.4",
     "mediabunny": "^1.60.0",
     "modern-screenshot": "^4.5.0",
     "preact": "^10.24.0",
     "simple-icons": "^16.27.1"
   },
   "devDependencies": {
+    "@capacitor/cli": "^7.6.9",
+    "@capacitor/ios": "^7.6.9",
     "@crxjs/vite-plugin": "^2.0.0-beta.28",
     "@preact/preset-vite": "^2.10.6",
     "@types/chrome": "^0.0.278",
