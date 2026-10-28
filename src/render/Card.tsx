@@ -933,7 +933,12 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
   const fixedAspect = ratio !== undefined
   /** 絕對時間會獨立成行落在頁尾那一組的最上面，決定由誰承接剩餘空間。 */
   const showsAbsoluteTime = s.show.timestamp && s.timeFormat === 'absolute'
+  /*
+   * wholeMedia（app）時媒體不進固定圖框：照原比例滿寬排，放不下就走「沒有主圖」
+   * 那條路，整張面板等比縮小 —— 寧可整張小一點，也不裁掉媒體的任何一塊。
+   */
   const constrainedMedia = ratio !== undefined &&
+    !s.wholeMedia &&
     s.show.media &&
     shownMedia.length > 0
   /** 單支影片或 GIF：圖框照它自己的比例，整支呈現（見 wholeMediaBox）。 */
@@ -961,7 +966,7 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
    */
   const fitKey = [
     s.aspect, s.padding, s.fontSize, s.show.parent, s.show.media, s.show.avatar,
-    s.show.timestamp, s.show.quoted, s.show.photosWithVideo, s.timeFormat, s.maskIdentity, post.id,
+    s.show.timestamp, s.show.quoted, s.show.photosWithVideo, s.timeFormat, s.maskIdentity, s.wholeMedia, post.id,
     weightedLength(post, visibleParts), canvasWidth,
   ].join('|')
   useLayoutEffect(() => {

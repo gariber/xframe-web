@@ -219,4 +219,9 @@ export type CardSettings = {
    * 解決的，是這個比例在直式螢幕上的固有問題，所以整個拿掉而不是留著讓人踩。
    */
   aspect: 'auto' | '1:1' | '4:5' | '9:16'
+  /**
+   * 媒體一律照原比例滿寬呈現，不裁切；固定比例放不下時整張面板等比縮小。
+   * iOS app 開啟（見 app/settings.ts），網頁版不設定，維持原本的固定圖框與裁切。
+   */
+  wholeMedia?: boolean
 }
