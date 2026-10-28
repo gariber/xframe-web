@@ -11,7 +11,7 @@ export type Segment =
  * Threads 沒有，Threads 有分享數而 X 沒有。因此卡片上放哪幾個、什麼順序，
  * 由各平台的 adapter 決定，這裡只定義有哪些可能。
  */
-export type MetricKind = 'views' | 'replies' | 'reposts' | 'likes' | 'bookmarks'
+export type MetricKind = 'views' | 'replies' | 'reposts' | 'likes' | 'bookmarks' | 'shares'
 
 /** `value` 為 null 代表來源沒有提供這個數字，與「數字是零」不同。 */
 export type Metric = { kind: MetricKind; value: number | null }
@@ -65,11 +65,10 @@ export type Media = {
 }
 
 /**
- * 目前只有 X。階段 2 加 'threads'，階段 3 加 'weibo' | 'xhs'。
- * 現在就定義這個型別而不是等到有第二個平台，是因為 Post.platform 需要它 ——
- * 而 platform 本身在單一平台時就有用：它決定匯出的檔名前綴。
+ * X 與 Threads。Threads 只在 iOS app 的 adapter 註冊表裡啟用（見 app/adapters.ts），
+ * 網頁版與擴充功能仍只認 X。platform 也決定匯出的檔名前綴。
  */
-export type Platform = 'x'
+export type Platform = 'x' | 'threads'
 
 /**
  * 這則貼文的資料從哪裡來。
@@ -139,6 +138,8 @@ export type Post = {
    * 這個旗標 —— 正好對上「主推文完整、引用推文截斷」這個 X 實際會出現的組合。
    */
   textComplete: boolean
+  /** Threads 的話題（作者列旁的那個標籤）。X 沒有這個概念。 */
+  topic?: string
   /**
    * 內文已被譯文取代時，記錄**原文**的語言；未取代時是 undefined。
    *

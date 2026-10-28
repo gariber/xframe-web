@@ -1,7 +1,7 @@
 import { Fragment } from 'preact'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
-import { siX } from 'simple-icons'
-import type { Post, CardSettings, Segment, Media, MediaKind, Metric, QuotedPost, ParentPost } from '../types'
+import { siThreads, siX } from 'simple-icons'
+import type { Post, Platform, CardSettings, Segment, Media, MediaKind, Metric, QuotedPost, ParentPost } from '../types'
 import { findPaper } from './papers'
 import { DEFAULT_STYLE, FONTS } from './styles'
 import {
@@ -18,7 +18,7 @@ import {
   mediaBoxHeight,
   wholeMediaBox,
 } from './card.css'
-import { METRIC_META, X_CARD_METRIC_ORDER } from './metrics'
+import { METRIC_META, THREADS_CARD_METRIC_ORDER, X_CARD_METRIC_ORDER } from './metrics'
 import { translatedLabel, GROK_LOGO_PATH, GROK_LOGO_VIEWBOX } from './translated'
 
 /**
@@ -115,9 +115,19 @@ function Stat({ metric }: { metric: Metric }) {
   )
 }
 
-/** 固定依 X 操作列排序；缺少某項時保留「—」，但不把瀏覽數重複塞進操作列。 */
-function cardMetrics(metrics: Metric[]): Metric[] {
-  return X_CARD_METRIC_ORDER.map(
+/**
+ * 每個平台在卡片上長得不一樣的地方，集中在這裡：標誌與統計列順序。
+ * 其餘版面兩個平台共用。
+ */
+function platformChrome(platform: Platform) {
+  return platform === 'threads'
+    ? { mark: siThreads.path, markPart: 'threads-mark', metricOrder: THREADS_CARD_METRIC_ORDER }
+    : { mark: siX.path, markPart: 'x-mark', metricOrder: X_CARD_METRIC_ORDER }
+}
+
+/** 依平台操作列排序；缺少某項時保留「—」，但不把瀏覽數重複塞進操作列。 */
+function cardMetrics(metrics: Metric[], platform: Platform): Metric[] {
+  return platformChrome(platform).metricOrder.map(
     (kind) => metrics.find((metric) => metric.kind === kind) ?? { kind, value: null },
   )
 }
@@ -217,10 +227,11 @@ function GrokMark({ size }: { size: number }) {
 }
 
 /** 官方品牌圖示取自 Simple Icons；卡片內只作平台識別，不提供互動。 */
-function XMark({ size }: { size: number }) {
+function PlatformMark({ platform, size }: { platform: Platform; size: number }) {
+  const chrome = platformChrome(platform)
   return (
     <svg
-      data-part="x-mark"
+      data-part={chrome.markPart}
       aria-hidden="true"
       viewBox="0 0 24 24"
       width={size}
@@ -233,7 +244,7 @@ function XMark({ size }: { size: number }) {
         flex: '0 0 auto',
       }}
     >
-      <path d={siX.path} />
+      <path d={chrome.mark} />
     </svg>
   )
 }
@@ -1142,7 +1153,7 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
             flex: '0 0 auto',
           }}
         >
-          <XMark size={scale.logo} />
+          <PlatformMark platform={post.platform} size={scale.logo} />
         </div>
 
         {parentPost && (
@@ -1169,6 +1180,11 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
             <div data-part="handle" style={{ opacity: CARD_ALPHA.handle, fontSize: scale.handle }}>
               {author.handleDisplay}
             </div>
+            {post.topic && (
+              <div data-part="topic" style={{ opacity: CARD_ALPHA.handle, fontSize: scale.handle }}>
+                {'› ' + post.topic}
+              </div>
+            )}
           </div>
           {s.show.timestamp && (
             // 只有相對時間放標頭右上角。絕對時間長 8 倍（'1h' vs
@@ -1327,7 +1343,7 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
                   flex: '0 0 auto',
                 }}
               >
-                {cardMetrics(post.metrics).map((m, i) => (
+                {cardMetrics(post.metrics, post.platform).map((m, i) => (
                   <Fragment key={m.kind}>
                     {i > 0 && <Sep />}
                     <Stat metric={m} />
