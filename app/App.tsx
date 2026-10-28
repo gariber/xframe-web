@@ -1,21 +1,35 @@
+import { useEffect, useState } from 'preact/hooks'
 import type { Post } from '../src/types'
 import { Card, DEFAULT_SETTINGS } from '../src/render/Card'
+import { appAdapterFor } from './adapters'
 
-/** 外殼驗證用的佔位貼文；主畫面在 Task 8 取代這個檔案的內容。 */
-const SAMPLE: Post = {
-  id: 'sample',
-  url: 'https://x.com/xframe/status/1',
-  platform: 'x',
-  author: { name: 'XFrame', handle: 'xframe', handleDisplay: '@xframe', avatarUrl: '' },
-  rawText: 'app 外殼跑起來了。',
-  text: [{ type: 'text', value: 'app 外殼跑起來了。' }],
-  createdAt: '2026-10-28T12:00:00.000Z',
-  metrics: [],
-  media: [],
-  source: 'manual',
-  textComplete: true,
-}
+/** 暫時的取文探針：驗證 app 的原生 fetch 抓得到 X 與 Threads。Task 8 換成主畫面。 */
+const PROBES = [
+  'https://x.com/thsottiaux/status/2083053369351090254',
+  'https://www.threads.com/@mm791019/post/DfADzgzkyqC',
+  'https://www.threads.com/@foodlove_0810/post/Db579SgE2br',
+]
 
 export function App() {
-  return <Card post={SAMPLE} settings={{ ...DEFAULT_SETTINGS, aspect: '9:16' }} />
+  const [log, setLog] = useState<string[]>([])
+  const [post, setPost] = useState<Post | null>(null)
+  useEffect(() => {
+    ;(async () => {
+      for (const url of PROBES) {
+        try {
+          const p = await appAdapterFor(url)!.acquire(url)
+          setLog((l) => [...l, `OK ${p.platform} ${p.author.handle} likes=${p.metrics.find((m) => m.kind === 'likes')?.value}`])
+          if (p.platform === 'x') setPost(p)
+        } catch (e) {
+          setLog((l) => [...l, `ERR ${url.slice(8, 40)} ${(e as { kind?: string }).kind ?? ''} ${String(e)}`])
+        }
+      }
+    })()
+  }, [])
+  return (
+    <div>
+      <pre id="probe" style={{ whiteSpace: 'pre-wrap', fontSize: 11, padding: 8 }}>{log.join('\n')}</pre>
+      {post && <Card post={post} settings={{ ...DEFAULT_SETTINGS, aspect: '9:16' }} />}
+    </div>
+  )
 }

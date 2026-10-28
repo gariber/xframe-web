@@ -11,6 +11,12 @@ const config: CapacitorConfig = {
   appId: 'studio.gariber.xframe',
   appName: 'XFrame',
   webDir: 'dist-app',
+  /*
+   * WKWebView 的預設 UA 沒有 `Safari/…`，X 對這種 UA 直接斷線（fetch 只得到
+   * Load failed）；補上之後回應與 iPhone Safari 相同。原生 HTTP 也沿用這個 UA。
+   * Threads 不受影響：它的請求自己帶爬蟲 UA。
+   */
+  appendUserAgent: 'Version/18.0 Mobile/15E148 Safari/604.1',
   plugins: {
     CapacitorHttp: { enabled: true },
   },
