@@ -114,6 +114,22 @@ describe('App main screen', () => {
     expect(host.querySelector('[data-action="share"]')!.textContent).toBe('分享影片')
   })
 
+  it('a second share replaces the current card', async () => {
+    let load: (url: string) => void = () => {}
+    const second = post('SECOND', '第二則分享')
+    const d = deps({ acquire: async (url) => (url.includes('SECOND') ? second : ORIGINAL) })
+    host = document.createElement('div')
+    document.body.appendChild(host)
+    await act(() => { render(<App deps={d} subscribe={(l) => { load = l }} />, host) })
+    await act(() => { load('https://www.threads.com/@a/post/ORIG') })
+    await flush()
+    await act(() => { load('https://www.threads.com/@a/post/SECOND') })
+    await flush()
+    await flush()
+    expect(mainCard().textContent).toContain('第二則分享')
+    expect(mainCard().textContent).not.toContain('原本的貼文')
+  })
+
   it('refused threads post shows the login-wall explanation', async () => {
     await mount(deps({ acquire: async () => { throw new ThreadsFetchError('refused', 'login wall') } }))
     expect(host.textContent).toContain(

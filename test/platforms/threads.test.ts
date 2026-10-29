@@ -28,6 +28,21 @@ const TEXT_URL = 'https://www.threads.com/@mm791019/post/DfADzgzkyqC'
 const COMMENT_URL = 'https://www.threads.com/@mm791019/post/DfAFGQOk0Mt'
 
 describe('acquireThreads', () => {
+  it('分享短網址先跟著轉址，再照真正的貼文網址解析', async () => {
+    const SHARE = 'https://www.threads.com/share/_2Tm1nlch/'
+    const f = fakeFetch([page(`${TEXT_URL}?xmt=AQG0&slof=1`, fx('text'))])
+    const post = await acquireThreads(SHARE, { fetch: f.fn, sleep: noSleep })
+    expect(post.author.handle).toBe('mm791019')
+    expect(f.calls[0].url).toBe(SHARE)
+    expect(f.calls[0].headers['User-Agent']).toMatch(/Googlebot/)
+  })
+
+  it('短網址轉去的不是貼文時丟 badurl', async () => {
+    const f = fakeFetch([page('https://www.threads.com/', '<html></html>')])
+    await expect(acquireThreads('https://www.threads.com/share/_nope/', { fetch: f.fn, sleep: noSleep }))
+      .rejects.toMatchObject({ kind: 'badurl' })
+  })
+
   it('以爬蟲 UA 取頁並解析出貼文', async () => {
     const f = fakeFetch([page(TEXT_URL, fx('text'))])
     const post = await acquireThreads(TEXT_URL, { fetch: f.fn, sleep: noSleep })

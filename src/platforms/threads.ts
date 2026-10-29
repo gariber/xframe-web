@@ -36,15 +36,40 @@ const defaultDeps = (): ThreadsDeps => ({
 })
 
 /**
+ * Threads app 的「分享」給的是 `threads.com/share/_xxxx` 短網址，302 到真正的
+ * 貼文頁（`/@帳號/post/代碼?xmt=…`）。跟著轉一次，拿最後的網址回來；不是短網址、
+ * 或轉去的不是貼文頁，就回 null。查詢字串丟掉：那是追蹤參數。
+ */
+async function resolveShareLink(url: string, deps: ThreadsDeps): Promise<string | null> {
+  let u: URL
+  try {
+    u = new URL(url)
+  } catch {
+    return null
+  }
+  if (!THREADS_HOSTS.some((h) => u.hostname === h || u.hostname === `www.${h}`)) return null
+  if (!/^\/share\/[\w-]+\/?$/.test(u.pathname)) return null
+  try {
+    const res = await deps.fetch(url, { headers: { 'User-Agent': GOOGLEBOT_UA } })
+    const final = new URL(res.url)
+    final.search = ''
+    return parseThreadsUrl(final.href) ? final.href : null
+  } catch {
+    throw new ThreadsFetchError('network', '短網址打不開')
+  }
+}
+
+/**
  * 取一則 Threads 貼文。
  *
  * 重試與「補讚數」都沿用 ThreadsFrame worker 的實測規則：Threads 偶爾回精簡頁或
  * 短暫限流，重試幾次就好；新的 Relay 結構整頁 like_count 都是 null，而 Threads
  * 隨機回新舊兩種，所以拿到沒有讚數的那份時再碰一次運氣。
  */
-export async function acquireThreads(url: string, deps: ThreadsDeps = defaultDeps()): Promise<Post> {
-  const target = parseThreadsUrl(url)
-  if (!target) throw new ThreadsFetchError('badurl', `不是 Threads 貼文連結：${url}`)
+export async function acquireThreads(sharedUrl: string, deps: ThreadsDeps = defaultDeps()): Promise<Post> {
+  const url = parseThreadsUrl(sharedUrl) ? sharedUrl : await resolveShareLink(sharedUrl, deps)
+  const target = url ? parseThreadsUrl(url) : null
+  if (!url || !target) throw new ThreadsFetchError('badurl', `不是 Threads 貼文連結：${sharedUrl}`)
 
   let best: Post | null = null
   let refused = false
