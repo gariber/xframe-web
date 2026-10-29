@@ -25,6 +25,20 @@ describe('guardStall', () => {
     await expect(result).resolves.toBe('done')
   })
 
+  it('tells the work it was abandoned, and ignores its late progress', async () => {
+    vi.useFakeTimers()
+    const onStall = vi.fn()
+    let lateBeat: () => void = () => {}
+    const stuck = guardStall((beat) => { lateBeat = beat; return new Promise<string>(() => {}) }, 8000, onStall)
+    const settled = expect(stuck).rejects.toThrow('快速轉檔停住了')
+    await vi.advanceTimersByTimeAsync(8001)
+    await settled
+    expect(onStall).toHaveBeenCalledTimes(1)
+    lateBeat()
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(onStall).toHaveBeenCalledTimes(1)
+  })
+
   it('passes through the work\'s own failure', async () => {
     await expect(guardStall(async () => { throw new Error('解不開') }, 8000)).rejects.toThrow('解不開')
   })

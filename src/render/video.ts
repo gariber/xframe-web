@@ -298,18 +298,33 @@ export type VideoExportOptions = {
  */
 const FAST_STALL_MS = 8000
 
-/** 跑 work；它超過 stallMs 沒呼叫 beat() 就以「停住了」拒絕，讓呼叫端走退路。 */
-export function guardStall<T>(work: (beat: () => void) => Promise<T>, stallMs: number): Promise<T> {
+/**
+ * 跑 work；它超過 stallMs 沒呼叫 beat() 就以「停住了」拒絕，讓呼叫端走退路。
+ *
+ * 放棄時呼叫 onStall，讓呼叫端把那條路真的停掉（停住的快路還握著解碼器與編碼器）。
+ * 放棄之後 work 再回報的進度一律不理，不會再觸發一次放棄。
+ */
+export function guardStall<T>(
+  work: (beat: () => void) => Promise<T>,
+  stallMs: number,
+  onStall?: () => void,
+): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     let timer: ReturnType<typeof setTimeout>
+    let settled = false
     const arm = () => {
+      if (settled) return
       clearTimeout(timer)
-      timer = setTimeout(() => reject(new Error(`快速轉檔停住了（${stallMs / 1000} 秒沒有進度）`)), stallMs)
+      timer = setTimeout(() => {
+        settled = true
+        onStall?.()
+        reject(new Error(`快速轉檔停住了（${stallMs / 1000} 秒沒有進度）`))
+      }, stallMs)
     }
     arm()
     work(arm).then(
-      (value) => { clearTimeout(timer); resolve(value) },
-      (error) => { clearTimeout(timer); reject(error) },
+      (value) => { if (settled) return; settled = true; clearTimeout(timer); resolve(value) },
+      (error) => { if (settled) return; settled = true; clearTimeout(timer); reject(error) },
     )
   })
 }
@@ -335,10 +350,17 @@ export async function exportVideo(
     const { exportVideoFast } = await import('./video-fast')
     // onMode 由快路自己在確定跑得起來之後才回報，不在這裡搶先講 —— 先講的話
     // 介面會閃一下「轉檔中」再跳成「錄製中」。
+    // 停住時要真的停掉快路：它還握著解碼器與編碼器，不停的話每按一次就漏一組，
+    // 而且它若之後又動起來，進度會跟慢路搶著回報。
+    const fast = new AbortController()
+    options.signal?.addEventListener('abort', () => fast.abort(), { once: true })
+    let abandoned = false
     return await guardStall((beat) => exportVideoFast(composition, source, {
       ...options,
-      onProgress: (fraction) => { beat(); options.onProgress?.(fraction) },
-    }), FAST_STALL_MS)
+      signal: fast.signal,
+      onMode: (mode, reason) => { beat(); options.onMode?.(mode, reason) },
+      onProgress: (fraction) => { beat(); if (!abandoned) options.onProgress?.(fraction) },
+    }), FAST_STALL_MS, () => { abandoned = true; fast.abort() })
   } catch (error) {
     // 使用者自己按停止的，不要再用慢路跑一次
     if (options.signal?.aborted) throw error

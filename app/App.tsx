@@ -194,14 +194,17 @@ export function App({ deps = REAL_DEPS, initialUrl, subscribe }: {
     if (!target || !source) return
     setCommentBusy(true)
     setMessage(null)
+    // 讀留言的時候可能又分享進來另一則貼文；那時這則留言已經不屬於畫面上的卡片。
+    const request = requestRef.current
     try {
       const comment = await deps.acquireComment(target)
+      if (request !== requestRef.current) return
       setCommentPool((pool) => [comment, ...pool.filter((c) => c.id !== comment.id)])
       setPicked([comment.id])
       setShowComments(true)
       setCommentUrl('')
     } catch (e) {
-      setMessage(`讀不到這則留言：${errorText(e)}`)
+      if (request === requestRef.current) setMessage(`讀不到這則留言：${errorText(e)}`)
     } finally {
       setCommentBusy(false)
     }

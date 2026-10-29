@@ -49,14 +49,17 @@ async function resolveShareLink(url: string, deps: ThreadsDeps): Promise<string 
   }
   if (!THREADS_HOSTS.some((h) => u.hostname === h || u.hostname === `www.${h}`)) return null
   if (!/^\/share\/[\w-]+\/?$/.test(u.pathname)) return null
+  let res: Response
   try {
-    const res = await deps.fetch(url, { headers: { 'User-Agent': GOOGLEBOT_UA } })
-    const final = new URL(res.url)
-    final.search = ''
-    return parseThreadsUrl(final.href) ? final.href : null
+    res = await deps.fetch(url, { headers: { 'User-Agent': GOOGLEBOT_UA } })
   } catch {
     throw new ThreadsFetchError('network', '短網址打不開')
   }
+  // 被擋的貼文，短網址一路轉到首頁的 ?error=invalid_post——那是登入牆，不是壞網址。
+  if (isRefusedUrl(res.url)) throw new ThreadsFetchError('refused', 'Threads 不讓未登入讀取這則貼文')
+  const final = new URL(res.url)
+  final.search = ''
+  return parseThreadsUrl(final.href) ? final.href : null
 }
 
 /**
@@ -74,6 +77,7 @@ export async function acquireThreads(sharedUrl: string, deps: ThreadsDeps = defa
   let best: Post | null = null
   let refused = false
   let lastStatus = 0
+  let networkFailed = false
   let retriedForLikes = false
 
   for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
@@ -83,6 +87,7 @@ export async function acquireThreads(sharedUrl: string, deps: ThreadsDeps = defa
         headers: { 'User-Agent': GOOGLEBOT_UA, 'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8' },
       })
     } catch {
+      networkFailed = true
       await deps.sleep(BACKOFF_MS * (attempt + 1))
       continue
     }
@@ -106,6 +111,10 @@ export async function acquireThreads(sharedUrl: string, deps: ThreadsDeps = defa
   if (best) return best
   if (refused) {
     throw new ThreadsFetchError('refused', 'Threads 不讓未登入讀取這則貼文')
+  }
+  // 一次都沒連上：是網路的問題，不能說貼文不存在——那會讓人以為不用再試了。
+  if (networkFailed && !lastStatus) {
+    throw new ThreadsFetchError('network', '連不上 Threads')
   }
   if (lastStatus && lastStatus !== 200) {
     throw new ThreadsFetchError('network', `Threads 沒有回應（HTTP ${lastStatus}）`)

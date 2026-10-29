@@ -47,6 +47,18 @@ describe('acquireThreads', () => {
     expect(f.calls[0].headers['User-Agent']).toMatch(/Googlebot/)
   })
 
+  it('短網址轉到登入牆時丟 refused，不是 badurl', async () => {
+    const f = fakeFetch([page('https://www.threads.com/?error=invalid_post', fx('refused'))])
+    await expect(acquireThreads('https://www.threads.com/share/_blocked/', { fetch: f.fn, sleep: noSleep }))
+      .rejects.toMatchObject({ kind: 'refused' })
+  })
+
+  it('連不上網路時丟 network，不說貼文不存在', async () => {
+    const fn = (async () => { throw new TypeError('Load failed') }) as unknown as typeof fetch
+    await expect(acquireThreads(TEXT_URL, { fetch: fn, sleep: noSleep }))
+      .rejects.toMatchObject({ kind: 'network' })
+  })
+
   it('短網址轉去的不是貼文時丟 badurl', async () => {
     const f = fakeFetch([page('https://www.threads.com/', '<html></html>')])
     await expect(acquireThreads('https://www.threads.com/share/_nope/', { fetch: f.fn, sleep: noSleep }))

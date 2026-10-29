@@ -110,6 +110,34 @@ describe('App main screen', () => {
     expect(boxes.filter((b) => b.checked)).toHaveLength(1)
   })
 
+  it('a comment that arrives after another post loaded is dropped', async () => {
+    let finishComment: (c: Post) => void = () => {}
+    let load: (url: string) => void = () => {}
+    const other = post('OTHER', '另一則貼文')
+    const d = deps({
+      acquire: async (url) => (url.includes('OTHER') ? other : ORIGINAL),
+      acquireComment: () => new Promise((r) => { finishComment = r }),
+    })
+    host = document.createElement('div')
+    document.body.appendChild(host)
+    await act(() => { render(<App deps={d} subscribe={(l) => { load = l }} />, host) })
+    await act(() => { load('https://www.threads.com/@a/post/ORIG') })
+    await flush()
+    const input = host.querySelector<HTMLInputElement>('[data-control="comment-url"]')!
+    await act(() => {
+      input.value = 'https://www.threads.com/@b/post/CMT'
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(() => { host.querySelector<HTMLButtonElement>('[data-action="add-comment"]')!.click() })
+    await act(() => { load('https://www.threads.com/@a/post/OTHER') })
+    await flush()
+    await act(async () => { finishComment(COMMENT) })
+    await flush()
+    expect(mainCard().textContent).toContain('另一則貼文')
+    expect(commentTexts()).toEqual([])
+    expect(host.querySelectorAll('[data-control="comment-pick"]')).toHaveLength(0)
+  })
+
   it('turning comments on shows the top 4 by default', async () => {
     await mount(deps({ acquire: async () => WITH_COMMENTS }))
     expect(commentTexts()).toEqual([])
