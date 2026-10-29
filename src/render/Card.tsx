@@ -17,6 +17,7 @@ import {
   STAT_ICON_EM,
   mediaBoxHeight,
   wholeMediaBox,
+  wholeTileWidth,
 } from './card.css'
 import { METRIC_META, THREADS_CARD_METRIC_ORDER, X_CARD_METRIC_ORDER } from './metrics'
 import { translatedLabel, GROK_LOGO_PATH, GROK_LOGO_VIEWBOX } from './translated'
@@ -354,6 +355,7 @@ function MediaGrid({
   videoUrl,
   onPlay,
   onVideoError,
+  maxTileWidth,
 }: {
   media: Media[]
   owner: MediaOwner
@@ -376,6 +378,8 @@ function MediaGrid({
   onPlay?: () => void
   /** 影片播不動時的反應。通常是「退回封面」。 */
   onVideoError?: () => void
+  /** 不裁切時單張媒體的寬度上限（見 wholeTileWidth）。直式的會縮窄、靠左。 */
+  maxTileWidth?: number
 }) {
   // 同 Avatar：抓取失敗（無 dataUrl）的圖位直接隱藏，不可退回跨域網址
   const usable = media.filter((m) => m.dataUrl)
@@ -485,7 +489,14 @@ function MediaGrid({
         <div
           key={i}
           data-part="media-tile"
-          style={{ position: 'relative', minWidth: 0, cursor: playable(m) ? 'pointer' : undefined }}
+          style={{
+            position: 'relative',
+            minWidth: 0,
+            cursor: playable(m) ? 'pointer' : undefined,
+            width: maxTileWidth !== undefined && usable.length === 1
+              ? `min(100%, ${Math.floor(maxTileWidth)}px)`
+              : undefined,
+          }}
           onClick={playable(m) ? onPlay : undefined}
         >
           <img
@@ -966,13 +977,23 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError, type
    * 就會每一輪都重設，收斂係數永遠回到 1——量到要縮、縮了又被重設、再量再縮，
    * 卡片停在「沒縮」的狀態而內容其實是溢出的。字串比的是值，不受這件事影響。
    */
+  /** 不裁切時單張媒體的寬度上限（直式縮窄、靠左，見 wholeTileWidth）。 */
+  const tileCap = s.wholeMedia && canvasHeight !== undefined
+    ? wholeTileWidth(canvasHeight - canvasPaddingY(s.aspect, s.padding, canvasWidth) * 2, mediaAspect)
+    : undefined
   const fitKey = [
     s.aspect, s.padding, s.fontSize, s.show.parent, s.show.media, s.show.avatar,
     s.show.timestamp, s.show.quoted, s.show.photosWithVideo, s.timeFormat, s.maskIdentity, s.wholeMedia, post.id,
     typeTuning && [typeTuning.lineHeight, typeTuning.letterSpacingEm, typeTuning.bodyWeight].join(','),
     weightedLength(post, visibleParts), canvasWidth,
+    // 不裁切時圖框寬窄由媒體比例與畫布高度決定（見 wholeTileWidth），兩者都晚
+    // 一步才量到；量到之前圖是滿寬的、會先把字級縮下去，不重設就回不來了。
+    tileCap === undefined ? '' : Math.floor(tileCap),
   ].join('|')
   useLayoutEffect(() => {
+    // ref 也要一起歸位：同一輪接著跑的量測讀的是 ref，讀到舊值會在舊的縮小
+    // 結果上再乘一次，等於重設沒發生。
+    contentFitRef.current = 1
     setContentFit(1)
   }, [fitKey])
 
@@ -1260,6 +1281,7 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError, type
             focusY={s.mediaFocusY}
             height={mediaHeight}
             aspect={wholeMedia && mediaAspect > 0 ? mediaAspect : undefined}
+            maxTileWidth={tileCap}
             videoUrl={videoUrl}
             onPlay={onPlayVideo}
             onVideoError={onVideoError}

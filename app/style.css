@@ -36,7 +36,10 @@ button.primary { background: #f2f2f2; color: #111; border-color: #f2f2f2; font-w
   height: 56vh; display: flex; align-items: center; justify-content: center;
   background: #111; overflow: hidden;
 }
-.fit { transform-origin: center center; flex: none; }
+/* 卡片的版面寬度固定：跟網頁版在手機上的預覽一樣寬（約 370），字級、留白才是
+   同一套比例。沒有這行，卡片會被最寬的內容（原尺寸的圖）撐到一千多 px，20px
+   的字縮回螢幕上只剩幾 px。輸出時再放大到 1080 寬（見 export.ts）。 */
+.fit { transform-origin: center center; flex: none; width: 370px; }
 .msg { text-align: center; opacity: .7; padding: 0 12px; line-height: 1.6; }
 .err { color: #ff8a80; }
 .hint { font-size: 13px; opacity: .6; margin: 0; }
