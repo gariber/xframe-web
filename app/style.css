@@ -4,10 +4,54 @@ body {
   background: #111;
   color: #eee;
   -webkit-text-size-adjust: 100%;
+  font-family: "PingFang TC", system-ui, sans-serif;
 }
 
+/* 共用元件（Sheet、翻譯區）吃 theme.css 的變數；app 是深色底，換成深色那一組。 */
 #app {
+  --ink: #eeeeee;
+  --ink-soft: #9a958f;
+  --ink-faint: #77726c;
+  --line: #2e2e2e;
+  --ground: #111111;
+  --card: #1b1b1b;
+  --accent: #eeeeee;
   min-height: 100vh;
   padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
   box-sizing: border-box;
 }
+
+.screen { display: flex; flex-direction: column; gap: 12px; padding: 8px 16px 24px; }
+
+.urlbar { display: flex; gap: 8px; }
+.urlbar input { flex: 1; min-width: 0; font-size: 16px; padding: 8px 10px; border-radius: 10px; border: 1px solid #333; background: #1b1b1b; color: inherit; }
+
+button { font: inherit; font-size: 15px; padding: 8px 14px; border-radius: 10px; border: 1px solid #333; background: #222; color: inherit; }
+button:disabled { opacity: .5; }
+button.primary { background: #f2f2f2; color: #111; border-color: #f2f2f2; font-weight: 600; flex: 1; }
+
+/* 卡片固定在上半部：選氛圍、調細項時卡片一直看得到，不必捲回去。 */
+.stage {
+  position: sticky; top: env(safe-area-inset-top); z-index: 1;
+  height: 56vh; display: flex; align-items: center; justify-content: center;
+  background: #111; overflow: hidden;
+}
+.fit { transform-origin: center center; flex: none; }
+.msg { text-align: center; opacity: .7; padding: 0 12px; line-height: 1.6; }
+.err { color: #ff8a80; }
+.hint { font-size: 13px; opacity: .6; margin: 0; }
+
+.moods { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 4px; }
+.mood { flex: none; width: 92px; padding: 6px; display: flex; flex-direction: column; gap: 6px; align-items: center; scroll-snap-align: start; }
+.mood[aria-pressed="true"] { border-color: #f2f2f2; }
+.mood-card { width: 80px; height: 142px; display: flex; align-items: center; justify-content: center; overflow: hidden; pointer-events: none; }
+.mood span { font-size: 13px; }
+
+.actions { display: flex; gap: 8px; }
+
+.drawer { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.drawer label { display: flex; align-items: center; gap: 10px; font-size: 14px; padding: 6px 0; }
+.drawer input[type="range"] { flex: 1; }
+.papers { display: flex; gap: 8px; flex-wrap: wrap; padding: 4px 0 8px; }
+.papers button { width: 40px; height: 40px; padding: 0; border-radius: 8px; border: 2px solid transparent; }
+.papers button[aria-pressed="true"] { border-color: #f2f2f2; }
