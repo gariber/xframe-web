@@ -225,3 +225,15 @@ export type CardSettings = {
    */
   wholeMedia?: boolean
 }
+
+/**
+ * 卡片文字的行距、字距與字重。iOS app 依氛圍套用（見 app/typography.ts）；
+ * 網頁版不傳，卡片維持原本的數值。
+ */
+export type TypeTuning = {
+  lineHeight: number
+  letterSpacingEm: number
+  bodyWeight: number
+  nameWeight: number
+  latinStack?: string
+}

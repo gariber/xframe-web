@@ -1,7 +1,7 @@
 import { Fragment } from 'preact'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { siThreads, siX } from 'simple-icons'
-import type { Post, Platform, CardSettings, Segment, Media, MediaKind, Metric, QuotedPost, ParentPost } from '../types'
+import type { Post, Platform, CardSettings, Segment, Media, MediaKind, Metric, QuotedPost, ParentPost, TypeTuning } from '../types'
 import { findPaper } from './papers'
 import { DEFAULT_STYLE, FONTS } from './styles'
 import {
@@ -821,7 +821,7 @@ function ThreadParent({ post, masked, scale, fontSize, accent, show, canvasWidth
   )
 }
 
-export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
+export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError, typeTuning }: {
   post: Post
   settings: CardSettings
   /**
@@ -841,6 +841,8 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
    * 不知道可以再點一次。
    */
   onVideoError?: () => void
+  /** 內文與名稱的行距、字距、字重。不傳就是原本的樣子（網頁版）。 */
+  typeTuning?: TypeTuning
 }) {
   const s = settings
   const accent = accentFrom(s.textColor)
@@ -967,6 +969,7 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
   const fitKey = [
     s.aspect, s.padding, s.fontSize, s.show.parent, s.show.media, s.show.avatar,
     s.show.timestamp, s.show.quoted, s.show.photosWithVideo, s.timeFormat, s.maskIdentity, s.wholeMedia, post.id,
+    typeTuning && [typeTuning.lineHeight, typeTuning.letterSpacingEm, typeTuning.bodyWeight].join(','),
     weightedLength(post, visibleParts), canvasWidth,
   ].join('|')
   useLayoutEffect(() => {
@@ -1181,7 +1184,7 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
             這一項照 X 走，不跟 ThreadsFrame。
           */}
           <div style={{ lineHeight: 1.2, minWidth: 0 }}>
-            <div data-part="name" style={{ fontWeight: 700, fontSize: scale.name }}>{author.name}</div>
+            <div data-part="name" style={{ fontWeight: typeTuning?.nameWeight ?? 700, fontSize: scale.name }}>{author.name}</div>
             <div data-part="handle" style={{ opacity: CARD_ALPHA.handle, fontSize: scale.handle }}>
               {author.handleDisplay}
             </div>
@@ -1222,7 +1225,11 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
           dir="auto"
           style={{
             fontSize,
-            lineHeight: 1.62,
+            lineHeight: typeTuning?.lineHeight ?? 1.62,
+            ...(typeTuning && {
+              letterSpacing: `${typeTuning.letterSpacingEm}em`,
+              fontWeight: typeTuning.bodyWeight,
+            }),
             whiteSpace: 'pre-wrap',
             position: 'relative',
             flex: '0 0 auto',
