@@ -673,6 +673,71 @@ function QuoteBlock({ post, masked, fontSize, accent, showMedia }: {
 }
 
 /**
+ * 貼文底下的留言，照 Threads 上留言的樣子（ThreadsFrame 也是這套）：
+ *
+ *   [頭像]  帳號  3h
+ *           內文……
+ *           ♡ 521   💬 1   ⇄ 4   ➤ 11
+ *
+ * 帳號與時間同一行、內文縮排對齊帳號、互動數只標不是零的。比主文小一級——
+ * 留言是附帶的，主角仍是貼文。
+ */
+function CommentList({ comments, masked, fontSize, accent, platform }: {
+  comments: QuotedPost[]
+  masked: boolean
+  fontSize: number
+  accent: string
+  platform: Platform
+}) {
+  const avatar = Math.round(fontSize * 1.3)
+  const indent = avatar + Math.round(fontSize * 0.5)
+  return (
+    <div
+      data-part="comments"
+      style={{
+        marginTop: Math.round(fontSize * 0.9),
+        paddingTop: Math.round(fontSize * 0.7),
+        borderTop: '1px solid rgba(127,127,127,.22)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: Math.round(fontSize * 0.8),
+        flex: '0 0 auto',
+      }}
+    >
+      {comments.map((c) => {
+        const author = masked ? MASKED_AUTHOR : c.author
+        const stats = cardMetrics(c.metrics, platform).filter((m) => m.value)
+        return (
+          <div key={c.id} data-part="comment" style={{ fontSize: fontSize * 0.86 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: Math.round(fontSize * 0.5) }}>
+              <Avatar author={author} size={avatar} />
+              <span style={{ fontWeight: 600 }}>{author.handleDisplay || author.name}</span>
+              <span style={{ opacity: CARD_ALPHA.time }}>{relTime(c.createdAt)}</span>
+            </div>
+            <div
+              ref={noBrowserTranslation}
+              data-part="comment-body"
+              dir="auto"
+              style={{ marginLeft: indent, marginTop: -Math.round(fontSize * 0.2), lineHeight: 1.5, whiteSpace: 'pre-wrap' }}
+            >
+              <Text segments={c.text} accent={accent} />
+            </div>
+            {stats.length > 0 && (
+              <div style={{
+                marginLeft: indent, marginTop: Math.round(fontSize * 0.3), display: 'flex',
+                gap: '1.1em', fontSize: fontSize * 0.68, opacity: CARD_ALPHA.time,
+              }}>
+                {stats.map((m) => <Stat key={m.kind} metric={m} />)}
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+/**
  * 對話串裡的父貼文。
  *
  * 版式照 X 的詳情頁，而 X 對「祖先」與「被聚焦的那一則」刻意用兩套排法：
@@ -832,7 +897,7 @@ function ThreadParent({ post, masked, scale, fontSize, accent, show, canvasWidth
   )
 }
 
-export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError, typeTuning }: {
+export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError, typeTuning, comments }: {
   post: Post
   settings: CardSettings
   /**
@@ -854,6 +919,8 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError, type
   onVideoError?: () => void
   /** 內文與名稱的行距、字距、字重。不傳就是原本的樣子（網頁版）。 */
   typeTuning?: TypeTuning
+  /** 放在貼文底下的留言（已挑好、照順序）。不傳就沒有留言區。 */
+  comments?: QuotedPost[]
 }) {
   const s = settings
   const accent = accentFrom(s.textColor)
@@ -989,6 +1056,7 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError, type
     // 不裁切時圖框寬窄由媒體比例與畫布高度決定（見 wholeTileWidth），兩者都晚
     // 一步才量到；量到之前圖是滿寬的、會先把字級縮下去，不重設就回不來了。
     tileCap === undefined ? '' : Math.floor(tileCap),
+    comments?.map((c) => c.id).join(',') ?? '',
   ].join('|')
   useLayoutEffect(() => {
     // ref 也要一起歸位：同一輪接著跑的量測讀的是 ref，讀到舊值會在舊的縮小
@@ -1295,6 +1363,16 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError, type
             fontSize={fontSize}
             accent={accent}
             showMedia={s.show.media}
+          />
+        )}
+
+        {comments && comments.length > 0 && (
+          <CommentList
+            comments={comments}
+            masked={s.maskIdentity}
+            fontSize={fontSize}
+            accent={accent}
+            platform={post.platform}
           />
         )}
 

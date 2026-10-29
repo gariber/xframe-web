@@ -24,11 +24,15 @@ function post(id: string, text: string, platform: Post['platform'] = 'threads'):
 
 const ORIGINAL = post('ORIG', '原本的貼文')
 const COMMENT = post('CMT', '這是留言')
+const WITH_COMMENTS: Post = {
+  ...ORIGINAL,
+  comments: [1, 2, 3, 4, 5, 6].map((n) => post(`C${n}`, `留言${n}`)),
+}
 
 function deps(over: Partial<AppDeps> = {}): AppDeps {
   return {
     acquire: async () => ORIGINAL,
-    acquireComment: async () => ({ ...COMMENT, replyTo: ORIGINAL }),
+    acquireComment: async () => COMMENT,
     hydrate: async (p) => p,
     ...over,
   }
@@ -48,6 +52,8 @@ async function mount(d: AppDeps) {
 }
 
 const mainCard = () => host.querySelector('[data-part="main-card"]')!
+const commentTexts = () =>
+  [...host.querySelectorAll('[data-part="main-card"] [data-part="comment-body"]')].map((e) => e.textContent)
 const bgIdOf = () => (host.querySelector('[data-part="main-card"]') as HTMLElement).dataset.bgId!
 
 describe('App main screen', () => {
@@ -87,8 +93,8 @@ describe('App main screen', () => {
     expect(host.querySelector<HTMLInputElement>('[data-control="padding"]')!.value).toBe('10')
   })
 
-  it('adding a comment link renders original post above the comment', async () => {
-    await mount(deps())
+  it('adding a comment link shows the original post with only that comment', async () => {
+    await mount(deps({ acquire: async () => WITH_COMMENTS }))
     const input = host.querySelector<HTMLInputElement>('[data-control="comment-url"]')!
     await act(() => {
       input.value = 'https://www.threads.com/@b/post/CMT'
@@ -98,11 +104,32 @@ describe('App main screen', () => {
     await flush()
     await flush()
     const card = mainCard()
-    const parent = card.querySelector('[data-part="parent-body"]')!
-    const body = card.querySelector('[data-part="body"]')!
-    expect(parent.textContent).toContain('原本的貼文')
-    expect(body.textContent).toContain('這是留言')
-    expect(parent.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(card.querySelector('[data-part="body"]')!.textContent).toContain('原本的貼文')
+    expect(commentTexts()).toEqual(['這是留言'])
+    const boxes = [...host.querySelectorAll<HTMLInputElement>('[data-control="comment-pick"]')]
+    expect(boxes.filter((b) => b.checked)).toHaveLength(1)
+  })
+
+  it('turning comments on shows the top 4 by default', async () => {
+    await mount(deps({ acquire: async () => WITH_COMMENTS }))
+    expect(commentTexts()).toEqual([])
+    const toggle = host.querySelector<HTMLInputElement>('[data-control="show-comments"]')!
+    await act(() => { toggle.click() })
+    expect(commentTexts()).toEqual(['留言1', '留言2', '留言3', '留言4'])
+    const fifth = host.querySelectorAll<HTMLInputElement>('[data-control="comment-pick"]')[4]
+    await act(() => { fifth.click() })
+    expect(commentTexts()).toEqual(['留言1', '留言2', '留言3', '留言4', '留言5'])
+  })
+
+  it('drawer offers absolute time', async () => {
+    await mount(deps())
+    const select = host.querySelector<HTMLSelectElement>('[data-control="time-format"]')!
+    await act(() => {
+      select.value = 'absolute'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const time = mainCard().querySelector('[data-part="time"]')!
+    expect(time.textContent).toMatch(/2026/)
   })
 
   it('video without a known duration is labelled without seconds', async () => {

@@ -128,6 +128,11 @@ export type Post = {
    */
   replyTo?: ParentPost
   /**
+   * 貼文底下的熱門留言（依讚數排序）。只有 Threads 的公開頁帶得到；X 的未登入
+   * 頁面沒有回覆串。卡片上放哪幾則由使用者挑（見 app/App.tsx）。
+   */
+  comments?: QuotedPost[]
+  /**
    * 內文是否完整。
    *
    * `false` 代表**來源就沒給全文**，不是排版放不下 —— 排版永遠不截字（見

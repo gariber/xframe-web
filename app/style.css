@@ -58,3 +58,11 @@ button.primary { background: #f2f2f2; color: #111; border-color: #f2f2f2; font-w
 .papers { display: flex; gap: 8px; flex-wrap: wrap; padding: 4px 0 8px; }
 .papers button { width: 40px; height: 40px; padding: 0; border-radius: 8px; border: 2px solid transparent; }
 .papers button[aria-pressed="true"] { border-color: #f2f2f2; }
+
+.comment-pick span { font-size: 13px; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+/* 狀態列那一條遮起來：卡片黏在安全區下緣，往上捲的設定會從狀態列底下穿過去。 */
+#app::before {
+  content: ''; position: fixed; top: 0; left: 0; right: 0; z-index: 3;
+  height: env(safe-area-inset-top); background: #111;
+}

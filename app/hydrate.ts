@@ -51,11 +51,12 @@ async function hydrateOne<T extends Omit<Post, 'quoted' | 'replyTo'>>(p: T): Pro
 /** 圖片轉成 data URL：跨來源圖片會污染 canvas，匯出會整個失敗。 */
 export async function hydrateApp(post: Post): Promise<Post> {
   if (post.platform === 'x') return hydrateAssets(post)
-  const [outer, replyTo] = await Promise.all([
+  const [outer, replyTo, comments] = await Promise.all([
     hydrateOne(post),
     post.replyTo ? hydrateOne(post.replyTo as ParentPost) : undefined,
+    post.comments ? Promise.all(post.comments.map(hydrateOne)) : undefined,
   ])
-  return { ...outer, ...(replyTo ? { replyTo } : {}) }
+  return { ...outer, ...(replyTo ? { replyTo } : {}), ...(comments ? { comments } : {}) }
 }
 
 /** 影片的位元組：X 走網頁版那條（不送 Referer），Threads 走 Meta CDN。 */

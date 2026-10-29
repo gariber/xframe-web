@@ -1,10 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
-import type { CardSettings, Post, TranslatedFrom } from '../src/types'
+import type { CardSettings, Post, QuotedPost, TranslatedFrom } from '../src/types'
 import { Card, cardMedia, mixesPhotosAndVideo } from '../src/render/Card'
 import { findPaper } from '../src/render/papers'
 import { exportPng, buildFilename } from '../src/render/export'
 import { buildVideoFilename, exportVideo, type VideoExportMode } from '../src/render/video'
-import { acquireComment } from '../src/platforms/threads'
 import { Sheet } from '../src/ui/Sheet'
 import { TranslationPanel } from '../src/ui/TranslationPanel'
 import {
@@ -24,7 +23,8 @@ import { shareOutput } from './output'
 /** 取文與載圖。測試換成假的，app 用真的（原生 fetch，沒有 CORS）。 */
 export type AppDeps = {
   acquire: (url: string) => Promise<Post>
-  acquireComment: (postUrl: string, commentUrl: string) => Promise<Post>
+  /** 一則留言（或回覆）本身。X 的回覆頁會順便帶回被回覆的貼文，這裡不要那一層。 */
+  acquireComment: (commentUrl: string) => Promise<QuotedPost>
   hydrate: (post: Post) => Promise<Post>
 }
 
@@ -34,10 +34,10 @@ const REAL_DEPS: AppDeps = {
     if (!adapter) return Promise.reject(Object.assign(new Error('badurl'), { kind: 'badurl' }))
     return adapter.acquire(url)
   },
-  // Threads 的留言頁不帶原文，兩則分開抓再接起來；X 的回覆頁本來就帶著被回覆的那一則。
-  acquireComment: (postUrl, commentUrl) => appAdapterFor(commentUrl)?.platform === 'threads'
-    ? acquireComment(postUrl, commentUrl)
-    : REAL_DEPS.acquire(commentUrl),
+  acquireComment: async (commentUrl) => {
+    const { replyTo: _parent, quoted: _quoted, comments: _comments, ...comment } = await hydrateApp(await REAL_DEPS.acquire(commentUrl))
+    return comment
+  },
   hydrate: hydrateApp,
 }
 
@@ -50,6 +50,9 @@ const ERROR_TEXT: Record<string, string> = {
   parse: '讀不到這則貼文的內容',
   badurl: '這看起來不是 X 或 Threads 的貼文網址',
 }
+
+/** 打開「顯示留言」時預設勾幾則（照 ThreadsFrame：最多四則熱門留言）。 */
+const DEFAULT_COMMENTS = 4
 
 const errorText = (e: unknown) => ERROR_TEXT[(e as { kind?: string })?.kind ?? ''] ?? ERROR_TEXT.network
 
@@ -92,15 +95,15 @@ function useFit(deps: unknown[]) {
   return { boxRef, innerRef, fit }
 }
 
-function MoodThumb({ mood, post, settings, active, onPick }: {
-  mood: Mood; post: Post; settings: CardSettings; active: boolean; onPick: () => void
+function MoodThumb({ mood, post, comments, settings, active, onPick }: {
+  mood: Mood; post: Post; comments?: QuotedPost[]; settings: CardSettings; active: boolean; onPick: () => void
 }) {
   const { boxRef, innerRef, fit } = useFit([post, settings])
   return (
     <button type="button" class="mood" data-mood={mood.id} aria-pressed={active} onClick={onPick}>
       <div class="mood-card" ref={boxRef} aria-hidden="true">
         <div class="fit" ref={innerRef} style={{ transform: `scale(${fit})` }}>
-          <Card post={post} settings={settings} typeTuning={APP_TYPE[mood.font]} />
+          <Card post={post} settings={settings} typeTuning={APP_TYPE[mood.font]} comments={comments} />
         </div>
       </div>
       <span>{mood.name}</span>
@@ -120,6 +123,11 @@ export function App({ deps = REAL_DEPS, initialUrl, subscribe }: {
   const mood = MOODS.find((m) => m.id === moodId)!
   const [settings, setSettings] = useState<CardSettings>(() => applyMood(APP_DEFAULT_SETTINGS, mood, () => 0))
   const [commentUrl, setCommentUrl] = useState('')
+  /** 可挑的留言：貼文帶回來的熱門留言，加上使用者貼連結指定的。 */
+  const [commentPool, setCommentPool] = useState<QuotedPost[]>([])
+  const [showComments, setShowComments] = useState(false)
+  const [picked, setPicked] = useState<string[]>([])
+  const [commentBusy, setCommentBusy] = useState(false)
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState<{ mode: VideoExportMode | null; fraction: number } | null>(null)
   const [message, setMessage] = useState<string | null>(null)
@@ -162,7 +170,11 @@ export function App({ deps = REAL_DEPS, initialUrl, subscribe }: {
     setTranslatedVersion(null)
     try {
       const next = await deps.hydrate(await load())
-      if (request === requestRef.current) setStatus({ phase: 'ready', post: next })
+      if (request !== requestRef.current) return
+      setStatus({ phase: 'ready', post: next })
+      setCommentPool(next.comments ?? [])
+      setShowComments(false)
+      setPicked([])
     } catch (e) {
       if (request === requestRef.current) setStatus({ phase: 'error', message: errorText(e) })
     }
@@ -176,12 +188,32 @@ export function App({ deps = REAL_DEPS, initialUrl, subscribe }: {
     void show(() => deps.acquire(target))
   }
 
-  function addComment() {
+  /** 貼留言連結：那一則加進清單並勾起來，其他的取消勾選——使用者要分享的就是這一則。 */
+  async function addComment() {
     const target = extractShareUrl(commentUrl) ?? commentUrl.trim()
     if (!target || !source) return
-    setSettings((s) => ({ ...s, show: { ...s.show, parent: true } }))
-    void show(() => deps.acquireComment(source.url, target))
+    setCommentBusy(true)
+    setMessage(null)
+    try {
+      const comment = await deps.acquireComment(target)
+      setCommentPool((pool) => [comment, ...pool.filter((c) => c.id !== comment.id)])
+      setPicked([comment.id])
+      setShowComments(true)
+      setCommentUrl('')
+    } catch (e) {
+      setMessage(`讀不到這則留言：${errorText(e)}`)
+    } finally {
+      setCommentBusy(false)
+    }
   }
+
+  function toggleComments(on: boolean) {
+    setShowComments(on)
+    if (on && picked.length === 0) setPicked(commentPool.slice(0, DEFAULT_COMMENTS).map((c) => c.id))
+  }
+
+  const togglePick = (id: string) =>
+    setPicked((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]))
 
   useEffect(() => {
     if (initialUrl) loadUrl(initialUrl)
@@ -199,6 +231,8 @@ export function App({ deps = REAL_DEPS, initialUrl, subscribe }: {
   const pickMood = (m: Mood) => { setMoodId(m.id); setSettings((s) => applyMood(s, m)) }
   const { boxRef, innerRef, fit } = useFit([post, settings])
   const video = playableVideo(post, settings)
+  // 照清單順序（熱門在前、指定的排最前面），不是照勾選的先後。
+  const shownComments = showComments ? commentPool.filter((c) => picked.includes(c.id)) : undefined
 
   async function share() {
     const node = cardRef.current?.querySelector<HTMLElement>('[data-part="canvas"]')
@@ -243,6 +277,7 @@ export function App({ deps = REAL_DEPS, initialUrl, subscribe }: {
           <div class="fit" ref={innerRef} style={{ transform: `scale(${fit})` }}>
             <div ref={cardRef} data-part="main-card" data-bg-id={settings.bgId}>
               <Card post={post} settings={settings} typeTuning={APP_TYPE[mood.font]}
+                comments={shownComments}
                 videoUrl={videoUrl ?? undefined}
                 onPlayVideo={video ? () => { void ensureVideo(video.url) } : undefined}
                 onVideoError={() => setVideoUrl(null)} />
@@ -255,7 +290,7 @@ export function App({ deps = REAL_DEPS, initialUrl, subscribe }: {
         <>
           <div class="moods" role="group" aria-label="氛圍">
             {MOODS.map((m) => (
-              <MoodThumb key={m.id} mood={m} post={post} active={m.id === moodId}
+              <MoodThumb key={m.id} mood={m} post={post} comments={shownComments} active={m.id === moodId}
                 settings={m.id === moodId ? settings : applyMood(settings, m, () => 0)}
                 onPick={() => pickMood(m)} />
             ))}
@@ -299,6 +334,13 @@ export function App({ deps = REAL_DEPS, initialUrl, subscribe }: {
         </Sheet>
 
         <Sheet title="顯示與隱私">
+          <label>時間
+            <select data-control="time-format" value={settings.timeFormat}
+              onChange={(e) => patch({ timeFormat: e.currentTarget.value as CardSettings['timeFormat'] })}>
+              <option value="relative">相對（6h）</option>
+              <option value="absolute">絕對（2026-08-01 05:54）</option>
+            </select>
+          </label>
           <label class="check"><input type="checkbox" checked={settings.maskIdentity}
             onChange={(e) => patch({ maskIdentity: e.currentTarget.checked })} />遮蔽作者身分</label>
           {post?.replyTo && (
@@ -315,12 +357,23 @@ export function App({ deps = REAL_DEPS, initialUrl, subscribe }: {
           )}
         </Sheet>
 
-        <Sheet title="加上留言">
-          <p class="hint">貼上一則留言的連結，卡片會把原文放在上面、留言接在下面。</p>
+        <Sheet title="留言">
+          <label class="check"><input type="checkbox" data-control="show-comments" checked={showComments}
+            disabled={commentPool.length === 0} onChange={(e) => toggleComments(e.currentTarget.checked)} />
+            顯示留言{commentPool.length === 0 && '（這則貼文沒有帶回留言）'}</label>
+          {commentPool.map((c) => (
+            <label class="check comment-pick" key={c.id}>
+              <input type="checkbox" data-control="comment-pick" checked={showComments && picked.includes(c.id)}
+                onChange={() => { if (!showComments) { setShowComments(true); setPicked([c.id]) } else togglePick(c.id) }} />
+              <span><b>{c.author.handleDisplay || c.author.name}</b> {c.rawText.slice(0, 40)}</span>
+            </label>
+          ))}
+          <p class="hint">要放特定一則留言：貼上它的連結。其他留言會先取消勾選。</p>
           <div class="urlbar">
             <input type="url" data-control="comment-url" placeholder="留言的網址" value={commentUrl}
               onInput={(e) => setCommentUrl(e.currentTarget.value)} />
-            <button type="button" data-action="add-comment" disabled={!commentUrl.trim() || !source} onClick={addComment}>加上</button>
+            <button type="button" data-action="add-comment" disabled={!commentUrl.trim() || !source || commentBusy}
+              onClick={() => void addComment()}>{commentBusy ? '讀取中…' : '加上'}</button>
           </div>
         </Sheet>
 

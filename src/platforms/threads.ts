@@ -98,7 +98,7 @@ export async function acquireThreads(sharedUrl: string, deps: ThreadsDeps = defa
     const parsed = parseThreadsHtml(await res.text(), target.code)
     if (!parsed) continue
 
-    if (!best || parsed.likesKnown) best = parsed.post
+    if (!best || parsed.likesKnown) best = { ...parsed.post, comments: parsed.comments }
     if (parsed.likesKnown || retriedForLikes) break
     retriedForLikes = true
   }

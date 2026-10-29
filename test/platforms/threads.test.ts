@@ -28,6 +28,16 @@ const TEXT_URL = 'https://www.threads.com/@mm791019/post/DfADzgzkyqC'
 const COMMENT_URL = 'https://www.threads.com/@mm791019/post/DfAFGQOk0Mt'
 
 describe('acquireThreads', () => {
+  it('帶回貼文底下的熱門留言（依讚數排序，不含主貼文）', async () => {
+    const f = fakeFetch([page(TEXT_URL, fx('text'))])
+    const post = await acquireThreads(TEXT_URL, { fetch: f.fn, sleep: noSleep })
+    const comments = post.comments ?? []
+    expect(comments.length).toBeGreaterThan(0)
+    expect(comments.every((c) => c.id !== post.id)).toBe(true)
+    const likes = comments.map((c) => c.metrics.find((m) => m.kind === 'likes')?.value ?? 0)
+    expect([...likes].sort((a, b) => (b ?? 0) - (a ?? 0))).toEqual(likes)
+  })
+
   it('分享短網址先跟著轉址，再照真正的貼文網址解析', async () => {
     const SHARE = 'https://www.threads.com/share/_2Tm1nlch/'
     const f = fakeFetch([page(`${TEXT_URL}?xmt=AQG0&slof=1`, fx('text'))])
