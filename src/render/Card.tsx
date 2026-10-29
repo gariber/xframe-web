@@ -492,6 +492,10 @@ function MediaGrid({
           style={{
             position: 'relative',
             minWidth: 0,
+            // 圓角跟著這一格。只靠外層裁的話，縮窄靠左的直式媒體右邊兩個角是直的，
+            // 看起來像被切掉一截 —— 外層是滿寬的，它的右側圓角落在空白處。
+            borderRadius: 12,
+            overflow: 'hidden',
             cursor: playable(m) ? 'pointer' : undefined,
             width: maxTileWidth !== undefined && usable.length === 1
               ? `min(100%, ${Math.floor(maxTileWidth)}px)`
@@ -1391,6 +1395,9 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError, type
                * 時間與分隔線「之間」，等於把頁尾撕成兩半，中間夾一條空帶。
                */
               marginTop: fixedAspect ? 'auto' : scale.timeGap,
+              // auto 在內容剛好塞滿時會算成 0，時間就貼著上面的圖。間距改由
+              // padding 保底。
+              paddingTop: fixedAspect ? scale.timeGap : undefined,
               opacity: CARD_ALPHA.time,
               fontSize: scale.time,
               whiteSpace: 'nowrap',
@@ -1422,6 +1429,8 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError, type
              * 地方會把頁尾撕成兩半，中間夾一條空帶。
              */
             marginTop: fixedAspect && !showsAbsoluteTime ? 'auto' : scale.gap,
+            // 同上：auto 可能算成 0，分隔線就直接壓在影片下緣。
+            paddingTop: fixedAspect && !showsAbsoluteTime ? scale.gap : undefined,
             flex: '0 0 auto',
             boxSizing: 'border-box',
           }}

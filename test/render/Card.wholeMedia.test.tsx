@@ -70,4 +70,25 @@ describe('Card — wholeMedia（app：媒體不裁切）', () => {
     const el = mount(post([photo(1)]), { ...DEFAULT_SETTINGS, aspect: '9:16' })
     expect(images(el)[0].style.objectFit).toBe('cover')
   })
+
+  it('單張媒體縮窄時，圓角跟著那一格走：右邊兩個角也是圓的', () => {
+    const el = mount(post([video]), APP)
+    const tile = el.querySelector('[data-part="media"][data-owner="main"] [data-part="media-tile"]') as HTMLElement
+    expect(tile.style.borderRadius).toBe('12px')
+    expect(tile.style.overflow).toBe('hidden')
+  })
+
+  it('媒體與頁尾分隔線之間保留間距，線不會貼著影片下緣', () => {
+    const el = mount(post([video]), APP)
+    const footer = el.querySelector('[data-part="footer-meta"]') as HTMLElement
+    expect(footer.style.marginTop).toBe('auto')
+    expect(parseFloat(footer.style.paddingTop)).toBeGreaterThan(0)
+  })
+
+  it('絕對時間那一行也不會貼著媒體', () => {
+    const el = mount(post([video]), { ...APP, timeFormat: 'absolute' })
+    const time = el.querySelector('[data-part="time"]') as HTMLElement
+    expect(time.style.marginTop).toBe('auto')
+    expect(parseFloat(time.style.paddingTop)).toBeGreaterThan(0)
+  })
 })
