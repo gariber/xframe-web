@@ -68,11 +68,17 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary)
 }
 
-/** 抓圖轉 data URL。理由同擴充功能版：跨來源圖片會污染 canvas，匯出會整個失敗。 */
+/**
+ * 抓圖轉 data URL。理由同擴充功能版：跨來源圖片會污染 canvas，匯出會整個失敗。
+ *
+ * **不送 Referer**，跟抓影片同一個理由：2026-10 底 X 的圖片 CDN 也開始防盜連，
+ * 帶著本站網址的請求，頭像回 351、照片回 403；不帶就給。實際被回報過 —— 卡片
+ * 上頭像退回首字母、照片整格消失，而解析那一步完全正常，看起來不像抓圖的問題。
+ */
 async function toDataUrl(url: string): Promise<string | undefined> {
   if (!hostAllowed(url, ASSET_HOSTS)) return undefined
   try {
-    const res = await fetch(url, { credentials: 'omit' })
+    const res = await fetch(url, { credentials: 'omit', referrerPolicy: 'no-referrer' })
     if (!res.ok) return undefined
     const buf = new Uint8Array(await res.arrayBuffer())
     const mime = res.headers.get('content-type') ?? 'image/jpeg'
