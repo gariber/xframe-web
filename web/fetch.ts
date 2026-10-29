@@ -68,11 +68,16 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary)
 }
 
-/** 抓圖轉 data URL。理由同擴充功能版：跨來源圖片會污染 canvas，匯出會整個失敗。 */
-async function toDataUrl(url: string): Promise<string | undefined> {
+/**
+ * 抓圖轉 data URL。理由同擴充功能版：跨來源圖片會污染 canvas，匯出會整個失敗。
+ *
+ * 不送 Referer：X 的圖片 CDN 看到 `capacitor://localhost`（iOS app）這種來源
+ * 就回 351 Forbidden。網頁版送不送都拿得到，不送也不影響。
+ */
+async function toDataUrl(url: string, fetchImpl: typeof fetch): Promise<string | undefined> {
   if (!hostAllowed(url, ASSET_HOSTS)) return undefined
   try {
-    const res = await fetch(url, { credentials: 'omit' })
+    const res = await fetchImpl(url, { credentials: 'omit', referrerPolicy: 'no-referrer' })
     if (!res.ok) return undefined
     const buf = new Uint8Array(await res.arrayBuffer())
     const mime = res.headers.get('content-type') ?? 'image/jpeg'
@@ -82,11 +87,11 @@ async function toDataUrl(url: string): Promise<string | undefined> {
   }
 }
 
-async function hydrateOne<T extends Omit<Post, 'quoted'>>(t: T): Promise<T> {
+async function hydrateOne<T extends Omit<Post, 'quoted'>>(t: T, fetchImpl: typeof fetch): Promise<T> {
   const avatarUrl = upgradeAvatarUrl(t.author.avatarUrl)
   const [avatarDataUrl, ...mediaData] = await Promise.all([
-    avatarUrl ? toDataUrl(avatarUrl) : Promise.resolve(undefined),
-    ...t.media.map((m) => toDataUrl(upgradeMediaUrl(m.url))),
+    avatarUrl ? toDataUrl(avatarUrl, fetchImpl) : Promise.resolve(undefined),
+    ...t.media.map((m) => toDataUrl(upgradeMediaUrl(m.url), fetchImpl)),
   ])
   return {
     ...t,
@@ -101,19 +106,26 @@ async function hydrateOne<T extends Omit<Post, 'quoted'>>(t: T): Promise<T> {
  * 少了這一層，卡片上父貼文的頭像與圖片仍是跨來源網址：匯出時 canvas 會被
  * 污染，整張圖直接失敗——不是那一張圖破圖而已。
  */
-async function hydrateParent(parent: ParentPost): Promise<ParentPost> {
+async function hydrateParent(parent: ParentPost, fetchImpl: typeof fetch): Promise<ParentPost> {
   const [outer, quoted] = await Promise.all([
-    hydrateOne(parent),
-    parent.quoted ? hydrateOne(parent.quoted) : undefined,
+    hydrateOne(parent, fetchImpl),
+    parent.quoted ? hydrateOne(parent.quoted, fetchImpl) : undefined,
   ])
   return { ...outer, ...(quoted ? { quoted } : {}) }
 }
 
-export async function hydrateAssets(tweet: Post): Promise<Post> {
+/**
+ * `fetchImpl` 預設是全域 fetch（呼叫時才取，測試可以換掉它）。iOS app 傳入
+ * WebView 原本的 fetch，見 app/hydrate.ts。
+ */
+export async function hydrateAssets(
+  tweet: Post,
+  fetchImpl: typeof fetch = (input, init) => fetch(input, init),
+): Promise<Post> {
   const [outer, quoted, replyTo] = await Promise.all([
-    hydrateOne(tweet),
-    tweet.quoted ? hydrateOne(tweet.quoted) : undefined,
-    tweet.replyTo ? hydrateParent(tweet.replyTo) : undefined,
+    hydrateOne(tweet, fetchImpl),
+    tweet.quoted ? hydrateOne(tweet.quoted, fetchImpl) : undefined,
+    tweet.replyTo ? hydrateParent(tweet.replyTo, fetchImpl) : undefined,
   ])
   return {
     ...outer,

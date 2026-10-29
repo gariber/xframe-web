@@ -135,6 +135,29 @@ describe('hydrateAssets', () => {
     expect(t.rawText).toBe('hi')
   })
 
+  // X 的圖片 CDN 看到 Referer 是 capacitor://localhost（app）就回 351 Forbidden。
+  it('抓圖不送 Referer', async () => {
+    let seen: RequestInit | undefined
+    stubFetch(async (_i, init) => {
+      seen = init
+      return new Response(new Uint8Array([1]), { status: 200, headers: { 'content-type': 'image/jpeg' } })
+    })
+    await hydrateAssets(tweet())
+    expect(seen?.referrerPolicy).toBe('no-referrer')
+  })
+
+  it('可以指定抓圖用的 fetch（app 要繞過原生網路層）', async () => {
+    const global = vi.fn(async () => new Response('', { status: 500 }))
+    vi.stubGlobal('fetch', global)
+    const own = vi.fn(async () => new Response(new Uint8Array([1]), {
+      status: 200, headers: { 'content-type': 'image/jpeg' },
+    }))
+    const t = await hydrateAssets(tweet(), own as unknown as typeof fetch)
+    expect(t.author.avatarDataUrl).toMatch(/^data:image\/jpeg;base64,/)
+    expect(own).toHaveBeenCalled()
+    expect(global).not.toHaveBeenCalled()
+  })
+
   it('引用推文的資產一併處理', async () => {
     stubFetch(async () => new Response(new Uint8Array([1]), {
       status: 200, headers: { 'content-type': 'image/png' },

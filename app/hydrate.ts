@@ -48,9 +48,22 @@ async function hydrateOne<T extends Omit<Post, 'quoted' | 'replyTo'>>(p: T): Pro
   }
 }
 
+/**
+ * X 的圖片不走 CapacitorHttp。
+ *
+ * app 裡的全域 fetch 被 CapacitorHttp 換成原生網路層，而 X 的圖片 CDN 對那條路
+ * 一律回 351 Forbidden（同一個網址 curl 拿得到），頭像就退回成字母圓圈、推文
+ * 裡的照片整張不見。X 的圖片本來就有 CORS（`access-control-allow-origin: *`），
+ * 用 WebView 原本的 fetch 抓即可。Capacitor 把它留在 `window.CapacitorWebFetch`。
+ */
+function webFetch(): typeof fetch {
+  const own = (globalThis as { CapacitorWebFetch?: typeof fetch }).CapacitorWebFetch
+  return own ?? ((input, init) => fetch(input, init))
+}
+
 /** 圖片轉成 data URL：跨來源圖片會污染 canvas，匯出會整個失敗。 */
 export async function hydrateApp(post: Post): Promise<Post> {
-  if (post.platform === 'x') return hydrateAssets(post)
+  if (post.platform === 'x') return hydrateAssets(post, webFetch())
   const [outer, replyTo, comments] = await Promise.all([
     hydrateOne(post),
     post.replyTo ? hydrateOne(post.replyTo as ParentPost) : undefined,
