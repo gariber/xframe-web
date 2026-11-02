@@ -128,22 +128,24 @@ describe('hydrateAssets', () => {
     expect(t.author.avatarDataUrl).toMatch(/^data:image\/jpeg;base64,/)
   })
 
+  /* 2026-10 底起 X 的圖片 CDN 防盜連：帶本站 Referer 時頭像回 351、照片回 403。
+     實際被回報過 —— 頭像退回首字母、照片整格消失。 */
+  it('抓圖不送 Referer —— 拿掉就整張卡片沒有圖', async () => {
+    const seen: RequestInit[] = []
+    stubFetch(async (_url, init) => {
+      seen.push(init ?? {})
+      return new Response(new Uint8Array([1]), { status: 200, headers: { 'content-type': 'image/jpeg' } })
+    })
+    await hydrateAssets(tweet())
+    expect(seen.length).toBeGreaterThan(0)
+    expect(seen.every((init) => init.referrerPolicy === 'no-referrer')).toBe(true)
+  })
+
   it('單一資產失敗不影響其餘欄位', async () => {
     stubFetch(async () => { throw new TypeError('blocked') })
     const t = await hydrateAssets(tweet())
     expect(t.author.avatarDataUrl).toBeUndefined()
     expect(t.rawText).toBe('hi')
-  })
-
-  // X 的圖片 CDN 看到 Referer 是 capacitor://localhost（app）就回 351 Forbidden。
-  it('抓圖不送 Referer', async () => {
-    let seen: RequestInit | undefined
-    stubFetch(async (_i, init) => {
-      seen = init
-      return new Response(new Uint8Array([1]), { status: 200, headers: { 'content-type': 'image/jpeg' } })
-    })
-    await hydrateAssets(tweet())
-    expect(seen?.referrerPolicy).toBe('no-referrer')
   })
 
   it('可以指定抓圖用的 fetch（app 要繞過原生網路層）', async () => {

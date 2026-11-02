@@ -32,9 +32,15 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary)
 }
 
-/** 抓圖並轉成 data URL。存在的唯一理由是繞開 canvas 跨域污染。 */
+/**
+ * 抓圖並轉成 data URL。存在的唯一理由是繞開 canvas 跨域污染。
+ *
+ * 不送 Referer：X 的圖片 CDN 會擋帶著別的網域的請求（見 web/fetch.ts）。
+ * 擴充功能從 x.com 頁面上發出時 Referer 是 x.com，目前是放行的 —— 但那是
+ * 對方的規則，不送就不必賭它哪天改。
+ */
 async function toDataUrl(url: string): Promise<string> {
-  const res = await fetch(url, { credentials: 'omit' })
+  const res = await fetch(url, { credentials: 'omit', referrerPolicy: 'no-referrer' })
   if (!res.ok) throw new Error(`asset fetch failed: ${res.status}`)
   const buf = new Uint8Array(await res.arrayBuffer())
   const mime = res.headers.get('content-type') ?? 'image/jpeg'
