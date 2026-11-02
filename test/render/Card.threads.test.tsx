@@ -56,6 +56,19 @@ describe('Card — Threads', () => {
     expect(topic.parentElement).toBe((el.querySelector('[data-part="handle"]') as HTMLElement).parentElement)
   })
 
+  it('只顯示帳號、不顯示暱稱（照 Threads，暱稱只會多佔字）', () => {
+    const el = mount({ ...threadsPost, author: { ...threadsPost.author, name: '原子美術' } })
+    expect(el.querySelector('[data-part="name"]')).toBeNull()
+    expect(el.textContent).not.toContain('原子美術')
+    expect(el.querySelector('[data-part="handle"]')?.textContent).toBe('gariber')
+  })
+
+  it('X 貼文仍同時顯示暱稱與帳號', () => {
+    const el = mount({ ...threadsPost, platform: 'x', topic: undefined, author: { ...threadsPost.author, name: '原子美術', handleDisplay: '@gariber' } })
+    expect(el.querySelector('[data-part="name"]')?.textContent).toBe('原子美術')
+    expect(el.querySelector('[data-part="handle"]')?.textContent).toBe('@gariber')
+  })
+
   it('X 貼文仍是 X 的標誌與順序，沒有話題', () => {
     const el = mount({ ...threadsPost, platform: 'x', topic: undefined, author: { ...threadsPost.author, handleDisplay: '@gariber' } })
     expect(el.querySelector('[data-part="x-mark"] path')?.getAttribute('d')).toBe(siX.path)

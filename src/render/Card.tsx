@@ -1272,15 +1272,23 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError, type
         <div style={{ display: 'flex', alignItems: 'center', gap: scale.avatarGap, marginBottom: scale.headGap, flex: '0 0 auto' }}>
           {s.show.avatar && <Avatar author={author} size={scale.avatar} />}
           {/*
-            兩行：顯示名稱一行、@帳號一行。這是 X 自己的排法——X 預設同時顯示
-            名稱與帳號，Threads 預設只顯示帳號。卡片要像它取材的那個平台，所以
-            這一項照 X 走，不跟 ThreadsFrame。
+            卡片像它取材的那個平台：X 兩行，顯示名稱一行、@帳號一行；Threads
+            只顯示帳號，用名稱的字重與字級——暱稱在 Threads 本來就不顯示，放上去
+            只會多佔字。
           */}
           <div style={{ lineHeight: 1.2, minWidth: 0 }}>
-            <div data-part="name" style={{ fontWeight: typeTuning?.nameWeight ?? 700, fontSize: scale.name }}>{author.name}</div>
-            <div data-part="handle" style={{ opacity: CARD_ALPHA.handle, fontSize: scale.handle }}>
-              {author.handleDisplay}
-            </div>
+            {post.platform === 'threads' ? (
+              <div data-part="handle" style={{ fontWeight: typeTuning?.nameWeight ?? 700, fontSize: scale.name }}>
+                {author.handleDisplay || author.name}
+              </div>
+            ) : (
+              <>
+                <div data-part="name" style={{ fontWeight: typeTuning?.nameWeight ?? 700, fontSize: scale.name }}>{author.name}</div>
+                <div data-part="handle" style={{ opacity: CARD_ALPHA.handle, fontSize: scale.handle }}>
+                  {author.handleDisplay}
+                </div>
+              </>
+            )}
             {post.topic && (
               <div data-part="topic" style={{ opacity: CARD_ALPHA.handle, fontSize: scale.handle }}>
                 {'› ' + post.topic}
