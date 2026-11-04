@@ -1,7 +1,7 @@
 import { Fragment } from 'preact'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
-import { siX } from 'simple-icons'
-import type { Post, CardSettings, Segment, Media, MediaKind, Metric, QuotedPost, ParentPost } from '../types'
+import { siThreads, siX } from 'simple-icons'
+import type { Post, Platform, CardSettings, Segment, Media, MediaKind, Metric, QuotedPost, ParentPost, TypeTuning } from '../types'
 import { findPaper } from './papers'
 import { DEFAULT_STYLE, FONTS } from './styles'
 import {
@@ -17,8 +17,9 @@ import {
   STAT_ICON_EM,
   mediaBoxHeight,
   wholeMediaBox,
+  wholeTileWidth,
 } from './card.css'
-import { METRIC_META, X_CARD_METRIC_ORDER } from './metrics'
+import { METRIC_META, THREADS_CARD_METRIC_ORDER, X_CARD_METRIC_ORDER } from './metrics'
 import { translatedLabel, GROK_LOGO_PATH, GROK_LOGO_VIEWBOX } from './translated'
 
 /**
@@ -115,9 +116,20 @@ function Stat({ metric }: { metric: Metric }) {
   )
 }
 
-/** 固定依 X 操作列排序；缺少某項時保留「—」，但不把瀏覽數重複塞進操作列。 */
-function cardMetrics(metrics: Metric[]): Metric[] {
-  return X_CARD_METRIC_ORDER.map(
+/**
+ * 每個平台在卡片上長得不一樣的地方，集中在這裡：標誌、統計列順序與浮水印網址。
+ * 其餘版面兩個平台共用。浮水印指向各自的網頁版（ThreadsFrame、XFrame），
+ * 看到卡片的人照著網址找得到同一個平台的工具。
+ */
+function platformChrome(platform: Platform) {
+  return platform === 'threads'
+    ? { mark: siThreads.path, markPart: 'threads-mark', metricOrder: THREADS_CARD_METRIC_ORDER, brand: 'threadsframe.gariber.studio' }
+    : { mark: siX.path, markPart: 'x-mark', metricOrder: X_CARD_METRIC_ORDER, brand: 'xframe.gariber.studio' }
+}
+
+/** 依平台操作列排序；缺少某項時保留「—」，但不把瀏覽數重複塞進操作列。 */
+function cardMetrics(metrics: Metric[], platform: Platform): Metric[] {
+  return platformChrome(platform).metricOrder.map(
     (kind) => metrics.find((metric) => metric.kind === kind) ?? { kind, value: null },
   )
 }
@@ -217,10 +229,11 @@ function GrokMark({ size }: { size: number }) {
 }
 
 /** 官方品牌圖示取自 Simple Icons；卡片內只作平台識別，不提供互動。 */
-function XMark({ size }: { size: number }) {
+function PlatformMark({ platform, size }: { platform: Platform; size: number }) {
+  const chrome = platformChrome(platform)
   return (
     <svg
-      data-part="x-mark"
+      data-part={chrome.markPart}
       aria-hidden="true"
       viewBox="0 0 24 24"
       width={size}
@@ -233,7 +246,7 @@ function XMark({ size }: { size: number }) {
         flex: '0 0 auto',
       }}
     >
-      <path d={siX.path} />
+      <path d={chrome.mark} />
     </svg>
   )
 }
@@ -343,6 +356,7 @@ function MediaGrid({
   videoUrl,
   onPlay,
   onVideoError,
+  maxTileWidth,
 }: {
   media: Media[]
   owner: MediaOwner
@@ -365,6 +379,8 @@ function MediaGrid({
   onPlay?: () => void
   /** 影片播不動時的反應。通常是「退回封面」。 */
   onVideoError?: () => void
+  /** 不裁切時單張媒體的寬度上限（見 wholeTileWidth）。直式的會縮窄、靠左。 */
+  maxTileWidth?: number
 }) {
   // 同 Avatar：抓取失敗（無 dataUrl）的圖位直接隱藏，不可退回跨域網址
   const usable = media.filter((m) => m.dataUrl)
@@ -474,7 +490,18 @@ function MediaGrid({
         <div
           key={i}
           data-part="media-tile"
-          style={{ position: 'relative', minWidth: 0, cursor: playable(m) ? 'pointer' : undefined }}
+          style={{
+            position: 'relative',
+            minWidth: 0,
+            // 圓角跟著這一格。只靠外層裁的話，縮窄靠左的直式媒體右邊兩個角是直的，
+            // 看起來像被切掉一截 —— 外層是滿寬的，它的右側圓角落在空白處。
+            borderRadius: 12,
+            overflow: 'hidden',
+            cursor: playable(m) ? 'pointer' : undefined,
+            width: maxTileWidth !== undefined && usable.length === 1
+              ? `min(100%, ${Math.floor(maxTileWidth)}px)`
+              : undefined,
+          }}
           onClick={playable(m) ? onPlay : undefined}
         >
           <img
@@ -651,6 +678,71 @@ function QuoteBlock({ post, masked, fontSize, accent, showMedia }: {
 }
 
 /**
+ * 貼文底下的留言，照 Threads 上留言的樣子（ThreadsFrame 也是這套）：
+ *
+ *   [頭像]  帳號  3h
+ *           內文……
+ *           ♡ 521   💬 1   ⇄ 4   ➤ 11
+ *
+ * 帳號與時間同一行、內文縮排對齊帳號、互動數只標不是零的。比主文小一級——
+ * 留言是附帶的，主角仍是貼文。
+ */
+function CommentList({ comments, masked, fontSize, accent, platform }: {
+  comments: QuotedPost[]
+  masked: boolean
+  fontSize: number
+  accent: string
+  platform: Platform
+}) {
+  const avatar = Math.round(fontSize * 1.3)
+  const indent = avatar + Math.round(fontSize * 0.5)
+  return (
+    <div
+      data-part="comments"
+      style={{
+        marginTop: Math.round(fontSize * 0.9),
+        paddingTop: Math.round(fontSize * 0.7),
+        borderTop: '1px solid rgba(127,127,127,.22)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: Math.round(fontSize * 0.8),
+        flex: '0 0 auto',
+      }}
+    >
+      {comments.map((c) => {
+        const author = masked ? MASKED_AUTHOR : c.author
+        const stats = cardMetrics(c.metrics, platform).filter((m) => m.value)
+        return (
+          <div key={c.id} data-part="comment" style={{ fontSize: fontSize * 0.86 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: Math.round(fontSize * 0.5) }}>
+              <Avatar author={author} size={avatar} />
+              <span style={{ fontWeight: 600 }}>{author.handleDisplay || author.name}</span>
+              <span style={{ opacity: CARD_ALPHA.time }}>{relTime(c.createdAt)}</span>
+            </div>
+            <div
+              ref={noBrowserTranslation}
+              data-part="comment-body"
+              dir="auto"
+              style={{ marginLeft: indent, marginTop: -Math.round(fontSize * 0.2), lineHeight: 1.5, whiteSpace: 'pre-wrap' }}
+            >
+              <Text segments={c.text} accent={accent} />
+            </div>
+            {stats.length > 0 && (
+              <div style={{
+                marginLeft: indent, marginTop: Math.round(fontSize * 0.3), display: 'flex',
+                gap: '1.1em', fontSize: fontSize * 0.68, opacity: CARD_ALPHA.time,
+              }}>
+                {stats.map((m) => <Stat key={m.kind} metric={m} />)}
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+/**
  * 對話串裡的父貼文。
  *
  * 版式照 X 的詳情頁，而 X 對「祖先」與「被聚焦的那一則」刻意用兩套排法：
@@ -810,7 +902,7 @@ function ThreadParent({ post, masked, scale, fontSize, accent, show, canvasWidth
   )
 }
 
-export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
+export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError, typeTuning, comments }: {
   post: Post
   settings: CardSettings
   /**
@@ -830,6 +922,10 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
    * 不知道可以再點一次。
    */
   onVideoError?: () => void
+  /** 內文與名稱的行距、字距、字重。不傳就是原本的樣子（網頁版）。 */
+  typeTuning?: TypeTuning
+  /** 放在貼文底下的留言（已挑好、照順序）。不傳就沒有留言區。 */
+  comments?: QuotedPost[]
 }) {
   const s = settings
   const accent = accentFrom(s.textColor)
@@ -922,7 +1018,12 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
   const fixedAspect = ratio !== undefined
   /** 絕對時間會獨立成行落在頁尾那一組的最上面，決定由誰承接剩餘空間。 */
   const showsAbsoluteTime = s.show.timestamp && s.timeFormat === 'absolute'
+  /*
+   * wholeMedia（app）時媒體不進固定圖框：照原比例滿寬排，放不下就走「沒有主圖」
+   * 那條路，整張面板等比縮小 —— 寧可整張小一點，也不裁掉媒體的任何一塊。
+   */
   const constrainedMedia = ratio !== undefined &&
+    !s.wholeMedia &&
     s.show.media &&
     shownMedia.length > 0
   /** 單支影片或 GIF：圖框照它自己的比例，整支呈現（見 wholeMediaBox）。 */
@@ -948,12 +1049,24 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
    * 就會每一輪都重設，收斂係數永遠回到 1——量到要縮、縮了又被重設、再量再縮，
    * 卡片停在「沒縮」的狀態而內容其實是溢出的。字串比的是值，不受這件事影響。
    */
+  /** 不裁切時單張媒體的寬度上限（直式縮窄、靠左，見 wholeTileWidth）。 */
+  const tileCap = s.wholeMedia && canvasHeight !== undefined
+    ? wholeTileWidth(canvasHeight - canvasPaddingY(s.aspect, s.padding, canvasWidth) * 2, mediaAspect)
+    : undefined
   const fitKey = [
     s.aspect, s.padding, s.fontSize, s.show.parent, s.show.media, s.show.avatar,
-    s.show.timestamp, s.show.quoted, s.show.photosWithVideo, s.timeFormat, s.maskIdentity, post.id,
+    s.show.timestamp, s.show.quoted, s.show.photosWithVideo, s.timeFormat, s.maskIdentity, s.wholeMedia, post.id,
+    typeTuning && [typeTuning.lineHeight, typeTuning.letterSpacingEm, typeTuning.bodyWeight].join(','),
     weightedLength(post, visibleParts), canvasWidth,
+    // 不裁切時圖框寬窄由媒體比例與畫布高度決定（見 wholeTileWidth），兩者都晚
+    // 一步才量到；量到之前圖是滿寬的、會先把字級縮下去，不重設就回不來了。
+    tileCap === undefined ? '' : Math.floor(tileCap),
+    comments?.map((c) => c.id).join(',') ?? '',
   ].join('|')
   useLayoutEffect(() => {
+    // ref 也要一起歸位：同一輪接著跑的量測讀的是 ref，讀到舊值會在舊的縮小
+    // 結果上再乘一次，等於重設沒發生。
+    contentFitRef.current = 1
     setContentFit(1)
   }, [fitKey])
 
@@ -1142,7 +1255,7 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
             flex: '0 0 auto',
           }}
         >
-          <XMark size={scale.logo} />
+          <PlatformMark platform={post.platform} size={scale.logo} />
         </div>
 
         {parentPost && (
@@ -1160,15 +1273,28 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
         <div style={{ display: 'flex', alignItems: 'center', gap: scale.avatarGap, marginBottom: scale.headGap, flex: '0 0 auto' }}>
           {s.show.avatar && <Avatar author={author} size={scale.avatar} />}
           {/*
-            兩行：顯示名稱一行、@帳號一行。這是 X 自己的排法——X 預設同時顯示
-            名稱與帳號，Threads 預設只顯示帳號。卡片要像它取材的那個平台，所以
-            這一項照 X 走，不跟 ThreadsFrame。
+            卡片像它取材的那個平台：X 兩行，顯示名稱一行、@帳號一行；Threads
+            只顯示帳號，用名稱的字重與字級——暱稱在 Threads 本來就不顯示，放上去
+            只會多佔字。
           */}
           <div style={{ lineHeight: 1.2, minWidth: 0 }}>
-            <div data-part="name" style={{ fontWeight: 700, fontSize: scale.name }}>{author.name}</div>
-            <div data-part="handle" style={{ opacity: CARD_ALPHA.handle, fontSize: scale.handle }}>
-              {author.handleDisplay}
-            </div>
+            {post.platform === 'threads' ? (
+              <div data-part="handle" style={{ fontWeight: typeTuning?.nameWeight ?? 700, fontSize: scale.name }}>
+                {author.handleDisplay || author.name}
+              </div>
+            ) : (
+              <>
+                <div data-part="name" style={{ fontWeight: typeTuning?.nameWeight ?? 700, fontSize: scale.name }}>{author.name}</div>
+                <div data-part="handle" style={{ opacity: CARD_ALPHA.handle, fontSize: scale.handle }}>
+                  {author.handleDisplay}
+                </div>
+              </>
+            )}
+            {post.topic && (
+              <div data-part="topic" style={{ opacity: CARD_ALPHA.handle, fontSize: scale.handle }}>
+                {'› ' + post.topic}
+              </div>
+            )}
           </div>
           {s.show.timestamp && (
             // 只有相對時間放標頭右上角。絕對時間長 8 倍（'1h' vs
@@ -1201,7 +1327,11 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
           dir="auto"
           style={{
             fontSize,
-            lineHeight: 1.62,
+            lineHeight: typeTuning?.lineHeight ?? 1.62,
+            ...(typeTuning && {
+              letterSpacing: `${typeTuning.letterSpacingEm}em`,
+              fontWeight: typeTuning.bodyWeight,
+            }),
             whiteSpace: 'pre-wrap',
             position: 'relative',
             flex: '0 0 auto',
@@ -1232,6 +1362,7 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
             focusY={s.mediaFocusY}
             height={mediaHeight}
             aspect={wholeMedia && mediaAspect > 0 ? mediaAspect : undefined}
+            maxTileWidth={tileCap}
             videoUrl={videoUrl}
             onPlay={onPlayVideo}
             onVideoError={onVideoError}
@@ -1245,6 +1376,16 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
             fontSize={fontSize}
             accent={accent}
             showMedia={s.show.media}
+          />
+        )}
+
+        {comments && comments.length > 0 && (
+          <CommentList
+            comments={comments}
+            masked={s.maskIdentity}
+            fontSize={fontSize}
+            accent={accent}
+            platform={post.platform}
           />
         )}
 
@@ -1263,6 +1404,9 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
                * 時間與分隔線「之間」，等於把頁尾撕成兩半，中間夾一條空帶。
                */
               marginTop: fixedAspect ? 'auto' : scale.timeGap,
+              // auto 在內容剛好塞滿時會算成 0，時間就貼著上面的圖。間距改由
+              // padding 保底。
+              paddingTop: fixedAspect ? scale.timeGap : undefined,
               opacity: CARD_ALPHA.time,
               fontSize: scale.time,
               whiteSpace: 'nowrap',
@@ -1294,6 +1438,8 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
              * 地方會把頁尾撕成兩半，中間夾一條空帶。
              */
             marginTop: fixedAspect && !showsAbsoluteTime ? 'auto' : scale.gap,
+            // 同上：auto 可能算成 0，分隔線就直接壓在影片下緣。
+            paddingTop: fixedAspect && !showsAbsoluteTime ? scale.gap : undefined,
             flex: '0 0 auto',
             boxSizing: 'border-box',
           }}
@@ -1327,7 +1473,7 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
                   flex: '0 0 auto',
                 }}
               >
-                {cardMetrics(post.metrics).map((m, i) => (
+                {cardMetrics(post.metrics, post.platform).map((m, i) => (
                   <Fragment key={m.kind}>
                     {i > 0 && <Sep />}
                     <Stat metric={m} />
@@ -1355,10 +1501,10 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError }: {
             }}
           >
             {/*
-              網域放在後面而不是「Gariber Studio」：對看到卡片的人來說，
-              「去哪裡找得到」比「誰做的」有用。與 ThreadsFrame 同格式。
+              只寫網域、不寫「Gariber Studio」：對看到卡片的人來說，
+              「去哪裡找得到」比「誰做的」有用。
             */}
-            XFrame · gariber.studio
+            {platformChrome(post.platform).brand}
           </div>
         </div>
       </div>

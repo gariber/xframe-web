@@ -11,7 +11,7 @@ export type Segment =
  * Threads 沒有，Threads 有分享數而 X 沒有。因此卡片上放哪幾個、什麼順序，
  * 由各平台的 adapter 決定，這裡只定義有哪些可能。
  */
-export type MetricKind = 'views' | 'replies' | 'reposts' | 'likes' | 'bookmarks'
+export type MetricKind = 'views' | 'replies' | 'reposts' | 'likes' | 'bookmarks' | 'shares'
 
 /** `value` 為 null 代表來源沒有提供這個數字，與「數字是零」不同。 */
 export type Metric = { kind: MetricKind; value: number | null }
@@ -65,11 +65,10 @@ export type Media = {
 }
 
 /**
- * 目前只有 X。階段 2 加 'threads'，階段 3 加 'weibo' | 'xhs'。
- * 現在就定義這個型別而不是等到有第二個平台，是因為 Post.platform 需要它 ——
- * 而 platform 本身在單一平台時就有用：它決定匯出的檔名前綴。
+ * X 與 Threads。Threads 只在 iOS app 的 adapter 註冊表裡啟用（見 app/adapters.ts），
+ * 網頁版與擴充功能仍只認 X。platform 也決定匯出的檔名前綴。
  */
-export type Platform = 'x'
+export type Platform = 'x' | 'threads'
 
 /**
  * 這則貼文的資料從哪裡來。
@@ -129,6 +128,11 @@ export type Post = {
    */
   replyTo?: ParentPost
   /**
+   * 貼文底下的熱門留言（依讚數排序）。只有 Threads 的公開頁帶得到；X 的未登入
+   * 頁面沒有回覆串。卡片上放哪幾則由使用者挑（見 app/App.tsx）。
+   */
+  comments?: QuotedPost[]
+  /**
    * 內文是否完整。
    *
    * `false` 代表**來源就沒給全文**，不是排版放不下 —— 排版永遠不截字（見
@@ -139,6 +143,8 @@ export type Post = {
    * 這個旗標 —— 正好對上「主推文完整、引用推文截斷」這個 X 實際會出現的組合。
    */
   textComplete: boolean
+  /** Threads 的話題（作者列旁的那個標籤）。X 沒有這個概念。 */
+  topic?: string
   /**
    * 內文已被譯文取代時，記錄**原文**的語言；未取代時是 undefined。
    *
@@ -218,4 +224,21 @@ export type CardSettings = {
    * 解決的，是這個比例在直式螢幕上的固有問題，所以整個拿掉而不是留著讓人踩。
    */
   aspect: 'auto' | '1:1' | '4:5' | '9:16'
+  /**
+   * 媒體一律照原比例滿寬呈現，不裁切；固定比例放不下時整張面板等比縮小。
+   * iOS app 開啟（見 app/settings.ts），網頁版不設定，維持原本的固定圖框與裁切。
+   */
+  wholeMedia?: boolean
+}
+
+/**
+ * 卡片文字的行距、字距與字重。iOS app 依氛圍套用（見 app/typography.ts）；
+ * 網頁版不傳，卡片維持原本的數值。
+ */
+export type TypeTuning = {
+  lineHeight: number
+  letterSpacingEm: number
+  bodyWeight: number
+  nameWeight: number
+  latinStack?: string
 }

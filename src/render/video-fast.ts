@@ -101,6 +101,11 @@ export async function exportVideoFast(
     : null
   if (audioSource !== null) output.addAudioTrack(audioSource)
 
+  // 被放棄（停住）或使用者取消時，把編碼器與容器收掉——卡在 add() 裡的迴圈靠
+  // 迴圈內的 aborted 檢查是等不到的。
+  options.signal?.addEventListener('abort', () => {
+    if (output.state === 'started' || output.state === 'pending') void output.cancel().catch(() => {})
+  }, { once: true })
   await output.start()
   // 走到這裡才算確定跑得起來：拆得開、解得開、編得出來、容器也開好了。
   options.onMode?.('fast')

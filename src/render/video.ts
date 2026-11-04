@@ -289,6 +289,47 @@ export type VideoExportOptions = {
 }
 
 /**
+ * 快路多久沒進度就放棄、改走慢路。
+ *
+ * 實測 iOS 模擬器的 WKWebView：編碼器收了七、八格之後就再也不吐資料，
+ * `add()` 永遠不回來——不拋錯、不結束，畫面停在「轉檔中 0%」。真機上的硬體
+ * 編碼器不見得會這樣，但只要發生一次，使用者就只能把 app 關掉。正常的快路
+ * 每秒好幾十格，八秒沒有一格就是停住了。
+ */
+const FAST_STALL_MS = 8000
+
+/**
+ * 跑 work；它超過 stallMs 沒呼叫 beat() 就以「停住了」拒絕，讓呼叫端走退路。
+ *
+ * 放棄時呼叫 onStall，讓呼叫端把那條路真的停掉（停住的快路還握著解碼器與編碼器）。
+ * 放棄之後 work 再回報的進度一律不理，不會再觸發一次放棄。
+ */
+export function guardStall<T>(
+  work: (beat: () => void) => Promise<T>,
+  stallMs: number,
+  onStall?: () => void,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout>
+    let settled = false
+    const arm = () => {
+      if (settled) return
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        settled = true
+        onStall?.()
+        reject(new Error(`快速轉檔停住了（${stallMs / 1000} 秒沒有進度）`))
+      }, stallMs)
+    }
+    arm()
+    work(arm).then(
+      (value) => { if (settled) return; settled = true; clearTimeout(timer); resolve(value) },
+      (error) => { if (settled) return; settled = true; clearTimeout(timer); reject(error) },
+    )
+  })
+}
+
+/**
  * 把卡片與影片合成成一支可以分享的影片。
  *
  * 先試快路（WebCodecs，快於即時），不行才退回即時錄製。
@@ -309,7 +350,17 @@ export async function exportVideo(
     const { exportVideoFast } = await import('./video-fast')
     // onMode 由快路自己在確定跑得起來之後才回報，不在這裡搶先講 —— 先講的話
     // 介面會閃一下「轉檔中」再跳成「錄製中」。
-    return await exportVideoFast(composition, source, options)
+    // 停住時要真的停掉快路：它還握著解碼器與編碼器，不停的話每按一次就漏一組，
+    // 而且它若之後又動起來，進度會跟慢路搶著回報。
+    const fast = new AbortController()
+    options.signal?.addEventListener('abort', () => fast.abort(), { once: true })
+    let abandoned = false
+    return await guardStall((beat) => exportVideoFast(composition, source, {
+      ...options,
+      signal: fast.signal,
+      onMode: (mode, reason) => { beat(); options.onMode?.(mode, reason) },
+      onProgress: (fraction) => { beat(); if (!abandoned) options.onProgress?.(fraction) },
+    }), FAST_STALL_MS, () => { abandoned = true; fast.abort() })
   } catch (error) {
     // 使用者自己按停止的，不要再用慢路跑一次
     if (options.signal?.aborted) throw error
@@ -346,6 +397,9 @@ export async function recordVideo(
   await new Promise<void>((resolve, reject) => {
     video.onloadeddata = () => resolve()
     video.onerror = () => reject(new Error('影片解不開'))
+    // iOS 的 WebKit 不理 preload：沒人叫它 load()，一支還沒播過的影片永遠
+    // 等不到 loadeddata（app 的 WKWebView 實測卡在這裡，畫面停在「錄製中 0%」）。
+    video.load()
   })
 
   const compositor = createCompositor(composition, options.focusY)

@@ -181,6 +181,19 @@ export const MEDIA_SHARE_MIN = 0.3
 export const MEDIA_SHARE_MAX = 0.6
 
 /**
+ * app（wholeMedia）的單張媒體最寬多寬，照 Threads 的擺法：直式的高度封頂在
+ * 可用高度的 MEDIA_SHARE_MAX，寬度由比例推回、靠左擺；橫式與方形照常滿寬。
+ *
+ * 不這樣做的話，一支直式影片照滿寬排會高過整張卡片，最後只能整張面板一起縮，
+ * 內文跟著縮到讀不到（實測 Threads 的 9:16 影片貼文）。框的形狀永遠等於媒體的
+ * 形狀，所以不裁切、也不會有黑邊。回傳 undefined 表示不設上限。
+ */
+export function wholeTileWidth(availableHeight: number, mediaAspect: number): number | undefined {
+  if (availableHeight <= 0 || mediaAspect <= 0 || mediaAspect >= 1) return undefined
+  return availableHeight * MEDIA_SHARE_MAX * mediaAspect
+}
+
+/**
  * 圖框的高度，由量到的可用高度算出——回傳 px，不是百分比。
  *
  * 百分比在這裡行不通：面板為了「內容多就長高」用的是 minHeight 而非 height，

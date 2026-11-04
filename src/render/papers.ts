@@ -212,11 +212,63 @@ export const LIBRARY: Paper[] = [
 
 export const ALL_PAPERS: Paper[] = [...PAPERS, ...LIBRARY]
 
+/*
+ * iOS app「幽默」氛圍專用的紙張（使用者 2026-10-29 挑的四款）。
+ *
+ * 不放進 ALL_PAPERS：網頁版的選紙面板與「隨機一張」都不會出現它們。
+ * 但 findPaper 認得，卡片才畫得出來。尺寸以比較頁縮圖（170px 寬）為基準，
+ * 依畫布短邊等比放大，所以縮圖與匯出是同一個構圖。
+ */
+const unit = (w: number, h: number) => Math.min(w, h) / 170
+
+function dots(fg: string, bg: string) {
+  return (w: number, h: number) => {
+    const step = px(34 * unit(w, h))
+    const off = px(17 * unit(w, h))
+    const dot = `radial-gradient(circle, ${fg} 18%, transparent 19%)`
+    return `${dot} 0 0 / ${step} ${step}, ${dot} ${off} ${off} / ${step} ${step}, ${bg}`
+  }
+}
+
+function candyStripes(a: string, b: string) {
+  return (w: number, h: number) => {
+    const band = px(16 * unit(w, h))
+    const twice = px(32 * unit(w, h))
+    return `repeating-linear-gradient(135deg, ${a} 0 ${band}, ${b} ${band} ${twice})`
+  }
+}
+
+/** 散落的圓：[x%, y%, 半徑（縮圖 px）, 顏色]。 */
+function spots(list: [number, number, number, string][], bg: string) {
+  return (w: number, h: number) => {
+    const u = unit(w, h)
+    const layers = list.map(([x, y, r, color]) =>
+      `radial-gradient(circle at ${x}% ${y}%, ${color} 0 ${px(r * u)}, transparent ${px((r + 1) * u)})`)
+    return [...layers, bg].join(', ')
+  }
+}
+
+export const HUMOR_PAPERS: Paper[] = [
+  { id: 'humor-polka', name: '波卡圓點', panel: '#fffdf3', ink: '#3a2a00', css: dots('#ff5c8a', '#ffd84d') },
+  { id: 'humor-candy', name: '糖果條紋', panel: '#ffffff', ink: '#4a1030', css: candyStripes('#ff9ec7', '#fff4f9') },
+  {
+    id: 'humor-confetti', name: '彩色紙屑', panel: '#ffffff', ink: '#222222',
+    css: spots([
+      [12, 18, 4, '#ff5c5c'], [78, 12, 5, '#3db7ff'], [30, 64, 4, '#ffcc00'], [86, 52, 4, '#2ecc71'],
+      [58, 88, 5, '#b05cff'], [8, 90, 4, '#ff8a00'], [62, 36, 3, '#ff5c8a'],
+    ], '#fff7ec'),
+  },
+  {
+    id: 'humor-sticker', name: '貼紙拼貼', panel: '#ffffff', ink: '#14213d',
+    css: spots([[18, 22, 46, '#ff7a1a'], [88, 40, 58, '#2f5bff'], [25, 88, 52, '#b8f13a']], '#fff3e0'),
+  },
+]
+
 export const DEFAULT_PAPER = PAPERS[0]
 
 /** 認不得的 id（舊存檔、改過名的紙）退回預設，不會留下一張畫不出來的背景。 */
 export function findPaper(id: string): Paper {
-  return ALL_PAPERS.find((p) => p.id === id) ?? DEFAULT_PAPER
+  return ALL_PAPERS.find((p) => p.id === id) ?? HUMOR_PAPERS.find((p) => p.id === id) ?? DEFAULT_PAPER
 }
 
 /** 隨機一張，但不會抽到現在這一張 —— 按了沒變化會以為按鈕壞了。 */

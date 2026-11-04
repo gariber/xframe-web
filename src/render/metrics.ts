@@ -3,6 +3,9 @@ import type { MetricKind } from '../types'
 /** X 單篇貼文操作列的可見順序；瀏覽數在 X 上位於時間旁，不屬於這一列。 */
 export const X_CARD_METRIC_ORDER: readonly MetricKind[] = ['replies', 'reposts', 'likes', 'bookmarks']
 
+/** Threads 貼文底下操作列的可見順序（與 ThreadsFrame 相同）。 */
+export const THREADS_CARD_METRIC_ORDER: readonly MetricKind[] = ['likes', 'replies', 'reposts', 'shares']
+
 /**
  * 互動數的圖示與標籤。
  *
@@ -37,5 +40,10 @@ export const METRIC_META: Record<MetricKind, { icon: string; label: string }> = 
     // X 自己的書籤外框：和回覆／轉推／喜歡同為 24×24 單色線性圖示。
     icon: 'M4 4.5C4 3.12 5.12 2 6.5 2h11C18.88 2 20 3.12 20 4.5v18.44l-8-5.71-8 5.71V4.5Zm2 0v14.56l6-4.29 6 4.29V4.5c0-.28-.22-.5-.5-.5h-11c-.28 0-.5.22-.5.5Z',
     label: '書籤',
+  },
+  shares: {
+    // Threads 的分享：紙飛機。
+    icon: 'M21.6 3.1a.8.8 0 0 0-.86-.17L2.9 10.1a.8.8 0 0 0 .02 1.5l7.2 2.6 2.6 7.2a.8.8 0 0 0 1.5.02l7.2-17.84a.8.8 0 0 0-.17-.86ZM13.5 17.9l-1.7-4.6 4.4-4.4-1.1-1.1-4.4 4.4-4.6-1.7 12-4.8-4.6 12.2Z',
+    label: '分享',
   },
 }
