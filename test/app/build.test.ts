@@ -7,7 +7,7 @@ describe('app 組建目標', () => {
   it('Capacitor 從 dist-app 載入，fetch 走原生（不受 CORS 限制）', () => {
     expect(capacitorConfig.webDir).toBe('dist-app')
     expect(capacitorConfig.appId).toBe('studio.gariber.xframe')
-    expect(capacitorConfig.appName).toBe('XFrame')
+    expect(capacitorConfig.appName).toBe('PostCard')
     expect(capacitorConfig.plugins?.CapacitorHttp?.enabled).toBe(true)
   })
 

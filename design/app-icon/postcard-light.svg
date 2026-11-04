@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs><clipPath id="card"><rect x="322" y="172" width="380" height="680" rx="64"/></clipPath></defs>
+  <rect width="1024" height="1024" fill="#F6EFE2"/>
+  <g clip-path="url(#card)">
+    <polygon points="300,590 730,400 730,880 300,880" fill="#E5533D"/>
+    <polygon points="300,150 730,150 730,400 300,590" fill="#1C1B1F"/>
+    <g transform="rotate(-24 512 720)" fill="none" stroke="#F6EFE2" stroke-width="15" stroke-linecap="round"><path d="M400 680 Q413.5 658 427 680 Q440.5 702 454 680 Q467.5 658 481 680 Q494.5 702 508 680 Q521.5 658 535 680 Q548.5 702 562 680 Q575.5 658 589 680 Q602.5 702 616 680 Q629.5 658 643 680"/><path d="M400 730 Q413.5 708 427 730 Q440.5 752 454 730 Q467.5 708 481 730 Q494.5 752 508 730 Q521.5 708 535 730 Q548.5 752 562 730 Q575.5 708 589 730 Q602.5 752 616 730 Q629.5 708 643 730"/><path d="M400 780 Q413.5 758 427 780 Q440.5 802 454 780 Q467.5 758 481 780 Q494.5 802 508 780 Q521.5 758 535 780 Q548.5 802 562 780 Q575.5 758 589 780 Q602.5 802 616 780 Q629.5 758 643 780"/></g>
+  </g>
+  <g transform="rotate(-8 470 316)" fill="none" stroke="#F6EFE2" stroke-width="40" stroke-linecap="round"><circle cx="470" cy="316" r="70"/><path d="M400 305.5V460"/></g>
+</svg>

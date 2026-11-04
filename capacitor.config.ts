@@ -9,7 +9,7 @@ import type { CapacitorConfig } from '@capacitor/cli'
  */
 const config: CapacitorConfig = {
   appId: 'studio.gariber.xframe',
-  appName: 'XFrame',
+  appName: 'PostCard',
   webDir: 'dist-app',
   /*
    * WKWebView 的預設 UA 沒有 `Safari/…`，X 對這種 UA 直接斷線（fetch 只得到

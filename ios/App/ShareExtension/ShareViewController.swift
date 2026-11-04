@@ -1,7 +1,7 @@
 import UIKit
 import UniformTypeIdentifiers
 
-/// 在 X 或 Threads 按「分享」→ XFrame：不顯示任何畫面，把分享進來的網址（或含網址的文字）
+/// 在 X 或 Threads 按「分享」→ PostCard：不顯示任何畫面，把分享進來的網址（或含網址的文字）
 /// 包成 `xframe://card?url=…` 叫醒主 app，自己立刻收掉。挑網址、清追蹤參數都交給主 app。
 final class ShareViewController: UIViewController {
     override func viewDidAppear(_ animated: Bool) {

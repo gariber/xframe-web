@@ -273,7 +273,7 @@ export function App({ deps = REAL_DEPS, initialUrl, subscribe }: {
       </div>
 
       <div class="stage" ref={boxRef}>
-        {status.phase === 'idle' && <p class="msg">在 X 或 Threads 按「分享」選 XFrame，或在上面貼上網址。</p>}
+        {status.phase === 'idle' && <p class="msg">在 X 或 Threads 按「分享」選 PostCard，或在上面貼上網址。</p>}
         {status.phase === 'loading' && <p class="msg" role="status">讀取中…</p>}
         {status.phase === 'error' && <p class="msg err" role="alert">{status.message}</p>}
         {post && (
