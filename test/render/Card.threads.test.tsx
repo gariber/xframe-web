@@ -63,6 +63,12 @@ describe('Card — Threads', () => {
     expect(el.querySelector('[data-part="handle"]')?.textContent).toBe('gariber')
   })
 
+  it('浮水印寫 Threads 版的網址（X 卡片寫 X 版的）', () => {
+    expect(mount(threadsPost).querySelector('[data-part="brand"]')?.textContent?.trim()).toBe('threadsframe.gariber.studio')
+    const x = mount({ ...threadsPost, platform: 'x', topic: undefined })
+    expect(x.querySelector('[data-part="brand"]')?.textContent?.trim()).toBe('xframe.gariber.studio')
+  })
+
   it('X 貼文仍同時顯示暱稱與帳號', () => {
     const el = mount({ ...threadsPost, platform: 'x', topic: undefined, author: { ...threadsPost.author, name: '原子美術', handleDisplay: '@gariber' } })
     expect(el.querySelector('[data-part="name"]')?.textContent).toBe('原子美術')

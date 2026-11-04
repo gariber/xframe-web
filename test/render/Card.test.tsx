@@ -85,7 +85,7 @@ describe('Card', () => {
 
   it('品牌標識只有低對比小字，不加線或底框', () => {
     const brand = mount().querySelector('[data-part="brand"]') as HTMLElement
-    expect(brand.textContent?.trim()).toBe('XFrame · gariber.studio')
+    expect(brand.textContent?.trim()).toBe('xframe.gariber.studio')
     // 一般字重配上全卡最低的透明度。細字重＋較高透明度會同時送出「細」與
     // 「亮」兩個打架的訊號，右下角反而浮出來。
     expect(brand.style.fontWeight).toBe('400')

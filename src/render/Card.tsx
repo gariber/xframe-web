@@ -117,13 +117,14 @@ function Stat({ metric }: { metric: Metric }) {
 }
 
 /**
- * 每個平台在卡片上長得不一樣的地方，集中在這裡：標誌與統計列順序。
- * 其餘版面兩個平台共用。
+ * 每個平台在卡片上長得不一樣的地方，集中在這裡：標誌、統計列順序與浮水印網址。
+ * 其餘版面兩個平台共用。浮水印指向各自的網頁版（ThreadsFrame、XFrame），
+ * 看到卡片的人照著網址找得到同一個平台的工具。
  */
 function platformChrome(platform: Platform) {
   return platform === 'threads'
-    ? { mark: siThreads.path, markPart: 'threads-mark', metricOrder: THREADS_CARD_METRIC_ORDER }
-    : { mark: siX.path, markPart: 'x-mark', metricOrder: X_CARD_METRIC_ORDER }
+    ? { mark: siThreads.path, markPart: 'threads-mark', metricOrder: THREADS_CARD_METRIC_ORDER, brand: 'threadsframe.gariber.studio' }
+    : { mark: siX.path, markPart: 'x-mark', metricOrder: X_CARD_METRIC_ORDER, brand: 'xframe.gariber.studio' }
 }
 
 /** 依平台操作列排序；缺少某項時保留「—」，但不把瀏覽數重複塞進操作列。 */
@@ -1500,10 +1501,10 @@ export function Card({ post, settings, videoUrl, onPlayVideo, onVideoError, type
             }}
           >
             {/*
-              網域放在後面而不是「Gariber Studio」：對看到卡片的人來說，
-              「去哪裡找得到」比「誰做的」有用。與 ThreadsFrame 同格式。
+              只寫網域、不寫「Gariber Studio」：對看到卡片的人來說，
+              「去哪裡找得到」比「誰做的」有用。
             */}
-            XFrame · gariber.studio
+            {platformChrome(post.platform).brand}
           </div>
         </div>
       </div>
